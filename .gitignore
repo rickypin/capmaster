@@ -1,0 +1,227 @@
+# ============================================
+# AI/IDE Tool Configurations
+# ============================================
+.clinerules/
+.kilocode/
+.roo/
+.windsurf/
+.cursor/
+.kiro/
+.qoder/
+.augment/
+
+# ============================================
+# Operating System Files
+# ============================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# ============================================
+# Editor and IDE Files
+# ============================================
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# JetBrains IDEs (IntelliJ IDEA, PyCharm, etc.)
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Vim
+*.swp
+*.swo
+*.un~
+Session.vim
+.netrwhist
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# Atom
+.atom/
+
+# ============================================
+# Programming Language Specific
+# ============================================
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Shell
+*.swp
+*.swo
+
+# ============================================
+# Build and Compilation
+# ============================================
+# General build artifacts
+build/
+dist/
+target/
+out/
+bin/
+obj/
+
+# Compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+
+# ============================================
+# Temporary and Cache Files
+# ============================================
+# General temporary files
+*.tmp
+*.temp
+*.cache
+*.bak
+*.backup
+*.orig
+*.old
+*.orig.*
+*.rej
+
+# Logs
+*.log
+logs/
+log/
+
+# ============================================
+# Sensitive Information
+# ============================================
+# Environment variables
+.env
+.env.*
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Secrets and keys
+secrets.json
+secrets.yml
+*.key
+*.pem
+*.crt
+*.cer
+*.p12
+*.pfx
+id_rsa
+id_dsa
+
+# Passwords and credentials
+*.password
+*.credential
+auth.json
+
+# ============================================
+# Package Management
+# ============================================
+# Python
+.pip-cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.cache
+
+# Node.js
+.npm
+.yarn-integrity
+
+# ============================================
+# Documentation and Reports
+# ============================================
+# Generated documentation
+docs/_build/
+docs/build/
+*.pdf
+*.docx
+
+# Test coverage reports
+coverage/
+.nyc_output
+
+# ============================================
+# Project Data Files
+# ============================================
+# Test cases and sample data
+cases/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# ============================================
+# Miscellaneous
+# ============================================
+# Local configuration overrides
+config.local.*
+local.*
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Lock files (keep if needed for CI/CD)
+# package-lock.json
+# yarn.lock
+# Pipfile.lock
