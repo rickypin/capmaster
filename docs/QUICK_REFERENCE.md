@@ -1,0 +1,388 @@
+# CapMaster Quick Reference Card
+
+**Version:** 1.0.0  
+**Last Updated:** 2024-11-02
+
+---
+
+## Installation
+
+```bash
+pip install -e .
+capmaster --version
+```
+
+---
+
+## Common Commands
+
+### Analyze PCAP Files
+
+```bash
+# Single file
+capmaster analyze -i sample.pcap
+
+# Directory (non-recursive)
+capmaster analyze -i /path/to/pcaps/
+
+# Directory (recursive)
+capmaster analyze -i /path/to/pcaps/ -r
+
+# Custom output directory
+capmaster analyze -i sample.pcap -o /custom/output/
+
+# Verbose output
+capmaster -v analyze -i sample.pcap
+capmaster -vv analyze -i sample.pcap  # Debug mode
+```
+
+### Match TCP Connections
+
+```bash
+# Basic matching
+capmaster match -i /path/to/pcaps/
+
+# Save to file
+capmaster match -i /path/to/pcaps/ -o matches.txt
+
+# Header-only mode
+capmaster match -i /path/to/pcaps/ --mode header
+
+# Custom bucketing
+capmaster match -i /path/to/pcaps/ --bucket server
+capmaster match -i /path/to/pcaps/ --bucket port
+capmaster match -i /path/to/pcaps/ --bucket none
+
+# Custom threshold
+capmaster match -i /path/to/pcaps/ --threshold 0.70
+
+# Combined options
+capmaster match -i /path/to/pcaps/ \
+  --mode auto \
+  --bucket server \
+  --threshold 0.60 \
+  -o results.txt
+```
+
+### Filter One-Way Connections
+
+```bash
+# Basic filtering
+capmaster filter -i input.pcap
+
+# Custom output
+capmaster filter -i input.pcap -o clean.pcap
+
+# Custom threshold
+capmaster filter -i input.pcap -t 50
+
+# Combined options
+capmaster filter -i input.pcap -o clean.pcap -t 100
+```
+
+---
+
+## Command Options
+
+### Global Options
+
+| Option | Description |
+|--------|-------------|
+| `--version` | Show version and exit |
+| `-v, --verbose` | INFO level logging |
+| `-vv` | DEBUG level logging |
+| `--help` | Show help message |
+
+### Analyze Options
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--input` | `-i` | Input file or directory | Required |
+| `--output` | `-o` | Output directory | `<input_dir>/statistics/` |
+| `--recursive` | `-r` | Recursive scan | False |
+
+### Match Options
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--input` | `-i` | Input directory | Required |
+| `--output` | `-o` | Output file | stdout |
+| `--mode` | | Matching mode (auto/header) | auto |
+| `--bucket` | | Bucketing strategy | auto |
+| `--threshold` | | Score threshold (0.0-1.0) | 0.60 |
+
+### Filter Options
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--input` | `-i` | Input file | Required |
+| `--output` | `-o` | Output file | `<input>_filtered.pcap` |
+| `--threshold` | `-t` | ACK threshold | 20 |
+
+---
+
+## Analysis Modules
+
+| Module | Output Suffix | Description |
+|--------|---------------|-------------|
+| Protocol Hierarchy | `protocol-hierarchy.txt` | Protocol distribution |
+| TCP Conversations | `tcp-conversations.txt` | TCP session statistics |
+| TCP Zero Window | `tcp-zero-window.txt` | Flow control issues |
+| TCP Duration | `tcp-duration.txt` | Timing statistics |
+| TCP Completeness | `tcp-completeness.txt` | SYN/FIN/RST analysis |
+| UDP Conversations | `udp-conversations.txt` | UDP session statistics |
+| DNS Statistics | `dns-stats.txt` | DNS query/response stats |
+| HTTP Statistics | `http-stats.txt` | HTTP request/response stats |
+| TLS Statistics | `tls-stats.txt` | TLS/SSL handshake stats |
+| FTP Statistics | `ftp-stats.txt` | FTP command/response stats |
+| ICMP Statistics | `icmp-stats.txt` | ICMP message stats |
+| IPv4 Hosts | `ipv4-hosts.txt` | IP endpoint statistics |
+
+---
+
+## Match Features & Weights
+
+| Feature | Weight | Description |
+|---------|--------|-------------|
+| SYN Options | 25% | TCP SYN packet options |
+| Client ISN | 12% | Client initial sequence number |
+| Server ISN | 6% | Server initial sequence number |
+| TCP Timestamp | 10% | TCP timestamp option |
+| Client Payload | 15% | MD5 hash of client data |
+| Server Payload | 8% | MD5 hash of server data |
+| Length Signature | 8% | Packet length similarity |
+| IP ID | 16% | IP identification sequence |
+
+---
+
+## Bucketing Strategies
+
+| Strategy | Best For | Description |
+|----------|----------|-------------|
+| `auto` | General use | Automatic selection |
+| `server` | Multiple servers | Group by server IP |
+| `port` | Single server | Group by server port |
+| `none` | Small datasets | No grouping (exhaustive) |
+
+---
+
+## Threshold Guidelines
+
+### Match Threshold
+
+| Range | Use Case |
+|-------|----------|
+| 0.40-0.60 | Lenient matching, more results |
+| 0.60-0.70 | Balanced (default) |
+| 0.70-0.85 | Strict matching, high confidence |
+
+### Filter Threshold
+
+| Range | Use Case |
+|-------|----------|
+| 10-20 | Aggressive filtering |
+| 20-50 | Balanced (default) |
+| 50-100 | Conservative filtering |
+
+---
+
+## Output Files
+
+### Analyze Output
+
+```
+<input_dir>/statistics/
+├── <basename>-1-protocol-hierarchy.txt
+├── <basename>-1-tcp-conversations.txt
+├── <basename>-1-tcp-zero-window.txt
+└── ... (12 files total)
+```
+
+### Match Output
+
+```
+=== TCP Connection Matching Results ===
+
+File 1: client.pcap
+File 2: server.pcap
+
+Matched Pairs: 63
+
+Match #1 (Score: 0.95)
+  File 1: Stream 5 | 192.168.1.100:54321 -> 93.184.216.34:443
+  File 2: Stream 12 | 10.0.0.50:54321 -> 93.184.216.34:443
+```
+
+### Filter Output
+
+```
+<input>_filtered.pcap
+```
+
+---
+
+## Common Workflows
+
+### 1. Complete Analysis
+
+```bash
+# Analyze all files
+capmaster analyze -i captures/ -r
+
+# View results
+ls captures/statistics/
+```
+
+### 2. Match and Filter
+
+```bash
+# Match connections
+capmaster match -i captures/ -o matches.txt
+
+# Filter both files
+capmaster filter -i captures/client.pcap -o captures/client_clean.pcap
+capmaster filter -i captures/server.pcap -o captures/server_clean.pcap
+```
+
+### 3. Debug Workflow
+
+```bash
+# Run with debug output
+capmaster -vv analyze -i problem.pcap 2> debug.log
+
+# Check log
+cat debug.log
+```
+
+---
+
+## Troubleshooting
+
+### tshark Not Found
+
+```bash
+# macOS
+brew install wireshark
+
+# Ubuntu
+sudo apt install tshark
+
+# Verify
+which tshark
+```
+
+### No Matches Found
+
+```bash
+# Try lower threshold
+capmaster match -i captures/ --threshold 0.40
+
+# Try different bucketing
+capmaster match -i captures/ --bucket none
+
+# Check files
+ls -lh captures/*.pcap
+```
+
+### Permission Denied
+
+```bash
+# Check permissions
+ls -l file.pcap
+
+# Fix permissions
+chmod 644 file.pcap
+```
+
+---
+
+## Performance Tips
+
+1. **Use filtering first** for large files
+2. **Enable bucketing** for match operations
+3. **Use recursive mode** for batch analysis
+4. **Adjust thresholds** based on needs
+5. **Use SSD storage** for better I/O
+
+---
+
+## Environment Variables
+
+```bash
+# Set tshark path (if not in PATH)
+export TSHARK_PATH=/custom/path/to/tshark
+
+# Set log level
+export CAPMASTER_LOG_LEVEL=DEBUG
+```
+
+---
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General error |
+| 2 | Invalid arguments |
+| 3 | File not found |
+| 4 | tshark error |
+
+---
+
+## Getting Help
+
+```bash
+# General help
+capmaster --help
+
+# Command-specific help
+capmaster analyze --help
+capmaster match --help
+capmaster filter --help
+
+# Version info
+capmaster --version
+```
+
+---
+
+## Resources
+
+- **README**: Installation and quick start
+- **USER_GUIDE**: Detailed usage guide
+- **CHANGELOG**: Version history
+- **PERFORMANCE_REPORT**: Benchmark results
+
+---
+
+## Examples
+
+### Example 1: Quick Analysis
+
+```bash
+capmaster analyze -i sample.pcap
+cat statistics/sample-1-protocol-hierarchy.txt
+```
+
+### Example 2: Match with Custom Settings
+
+```bash
+capmaster match -i captures/ \
+  --threshold 0.70 \
+  --bucket server \
+  -o high_confidence_matches.txt
+```
+
+### Example 3: Clean and Analyze
+
+```bash
+capmaster filter -i noisy.pcap -o clean.pcap
+capmaster analyze -i clean.pcap
+```
+
+---
+
+**Quick Reference Card v1.0.0**  
+*For detailed information, see USER_GUIDE.md*
+

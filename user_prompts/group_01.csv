@@ -1,3 +1,0 @@
-codex --full-auto exec "cases/TC-002-1-20211208/ 目录下存放了相关的pcap文件，用户反馈访服务响应慢，分析原因"
-codex --full-auto exec "cases/TC-002-8-20210817-S/ 目录下存放了相关的pcap文件，用户反馈访服务响应慢，分析原因"
-codex --full-auto exec "cases/TC-001-1-20160407/ 目录下存放了访问同一服务的流量先后流经不同的网络节点捕获到的pcap文件，以及基础统计信息，用户反馈访服务异常，分析原因"

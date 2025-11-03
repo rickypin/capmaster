@@ -1,0 +1,104 @@
+# CapMaster Analyze Plugin - Default Module Configuration
+# This file defines all analysis modules and their tshark command configurations
+
+modules:
+  # Protocol Hierarchy Statistics
+  - name: protocol_hierarchy
+    description: "Protocol hierarchy statistics"
+    output_suffix: "protocol-hierarchy.txt"
+    protocols: []
+    tshark_args: ["-q", "-z", "io,phs"]
+
+  # TCP Statistics
+  - name: tcp_conversations
+    description: "TCP conversations statistics"
+    output_suffix: "tcp-conversations.txt"
+    protocols: ["tcp"]
+    tshark_args: ["-q", "-z", "conv,tcp"]
+
+  - name: tcp_zero_window
+    description: "TCP zero window packets"
+    output_suffix: "tcp-zero-window.txt"
+    protocols: ["tcp"]
+    tshark_args:
+      - "-Y"
+      - "tcp.analysis.zero_window"
+      - "-T"
+      - "fields"
+      - "-e"
+      - "frame.number"
+      - "-e"
+      - "frame.time"
+      - "-e"
+      - "ip.src"
+      - "-e"
+      - "ip.dst"
+      - "-e"
+      - "tcp.srcport"
+      - "-e"
+      - "tcp.dstport"
+
+  - name: tcp_duration
+    description: "TCP time delta statistics"
+    output_suffix: "tcp-duration.txt"
+    protocols: ["tcp"]
+    tshark_args:
+      - "-q"
+      - "-z"
+      - "io,stat,0,MIN(tcp.time_delta)tcp.time_delta,MAX(tcp.time_delta)tcp.time_delta,AVG(tcp.time_delta)tcp.time_delta"
+
+  - name: tcp_completeness
+    description: "TCP connection completeness analysis"
+    output_suffix: "tcp-completeness.txt"
+    protocols: ["tcp"]
+    tshark_args: ["-q", "-z", "conv,tcp"]
+
+  # UDP Statistics
+  - name: udp_conversations
+    description: "UDP conversations statistics"
+    output_suffix: "udp-conversations.txt"
+    protocols: ["udp"]
+    tshark_args: ["-q", "-z", "conv,udp"]
+
+  # Application Layer Statistics
+  - name: dns_stats
+    description: "DNS statistics"
+    output_suffix: "dns-stats.txt"
+    protocols: ["dns"]
+    tshark_args: ["-q", "-z", "dns,tree"]
+
+  - name: http_stats
+    description: "HTTP statistics"
+    output_suffix: "http-stats.txt"
+    protocols: ["http"]
+    tshark_args: ["-q", "-z", "http,tree"]
+
+  - name: ftp_stats
+    description: "FTP statistics"
+    output_suffix: "ftp-stats.txt"
+    protocols: ["ftp"]
+    tshark_args:
+      - "-Y"
+      - "ftp"
+      - "-T"
+      - "fields"
+      - "-e"
+      - "frame.number"
+      - "-e"
+      - "ftp.request.command"
+      - "-e"
+      - "ftp.response.code"
+
+  - name: icmp_stats
+    description: "ICMP statistics"
+    output_suffix: "icmp-stats.txt"
+    protocols: ["icmp"]
+    tshark_args: ["-q", "-z", "icmp,srt"]
+
+  # Network Layer Statistics
+  - name: ipv4_hosts
+    description: "IPv4 hosts statistics"
+    output_suffix: "ipv4-hosts.txt"
+    protocols: ["ip"]
+    tshark_args: ["-q", "-z", "endpoints,ip"]
+

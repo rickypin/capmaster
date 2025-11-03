@@ -1,0 +1,90 @@
+"""Main CLI entry point for capmaster."""
+
+import sys
+
+import click
+
+from capmaster.plugins import discover_plugins, get_all_plugins
+from capmaster.utils.logger import console, console_err, setup_logger
+
+# Version
+__version__ = "1.0.0"
+
+
+@click.group()
+@click.version_option(version=__version__, prog_name="capmaster")
+@click.option(
+    "-v",
+    "--verbose",
+    count=True,
+    help="Increase verbosity (-v for INFO, -vv for DEBUG)",
+)
+@click.pass_context
+def cli(ctx: click.Context, verbose: int) -> None:
+    """
+    CapMaster - Unified PCAP Analysis Tool.
+
+    A Python CLI tool for PCAP analysis, TCP connection matching, and filtering.
+
+    \b
+    Available Commands:
+      analyze    Analyze PCAP files and generate statistics
+      match      Match TCP connections between PCAP files
+      filter     Remove one-way TCP connections from PCAP files
+      clean      Remove statistics directories
+
+    \b
+    Examples:
+      # Analyze a single PCAP file
+      capmaster analyze -i capture.pcap
+
+      # Match connections between two PCAP files
+      capmaster match -i captures/
+
+      # Filter one-way connections
+      capmaster filter -i capture.pcap -o clean.pcap
+
+      # Clean statistics directories
+      capmaster clean -i /path/to/data
+
+      # Run with verbose output
+      capmaster -v analyze -i capture.pcap
+
+    \b
+    For more information on a specific command:
+      capmaster <command> --help
+    """
+    # Ensure context object exists
+    ctx.ensure_object(dict)
+
+    # Store verbosity in context
+    ctx.obj["verbose"] = verbose
+
+    # Setup logger
+    logger = setup_logger("capmaster", verbose)
+    ctx.obj["logger"] = logger
+
+
+def main() -> None:
+    """Main entry point for the CLI."""
+    try:
+        # Discover and register all plugins
+        discover_plugins()
+
+        # Register plugin commands
+        for plugin_class in get_all_plugins():
+            plugin = plugin_class()
+            plugin.setup_cli(cli)
+
+        # Run CLI
+        cli(obj={})
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Interrupted by user[/yellow]")
+        sys.exit(130)
+    except Exception as e:
+        console_err.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

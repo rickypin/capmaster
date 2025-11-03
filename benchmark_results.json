@@ -1,0 +1,38 @@
+{
+  "analyze": [
+    {
+      "description": "Small PCAP (VOIP)",
+      "file": "V-001/VOIP.pcap",
+      "size_mb": 0.6449089050292969,
+      "capmaster_time": 1.1308977603912354,
+      "capmaster_status": "success"
+    }
+  ],
+  "match": [
+    {
+      "description": "Small dataset (63 connections)",
+      "directory": "TC-001-1-20160407",
+      "file_count": 2,
+      "total_size_mb": 0.35452938079833984,
+      "capmaster_time": 0.46275782585144043,
+      "capmaster_status": "success"
+    },
+    {
+      "description": "Small dataset (few connections)",
+      "directory": "TC-002-5-20220215-O",
+      "file_count": 2,
+      "total_size_mb": 1.0951662063598633,
+      "capmaster_time": 0.43985414505004883,
+      "capmaster_status": "success"
+    }
+  ],
+  "filter": [
+    {
+      "description": "Small PCAP (VOIP)",
+      "file": "V-001/VOIP.pcap",
+      "size_mb": 0.6449089050292969,
+      "capmaster_time": 0.24437808990478516,
+      "capmaster_status": "success"
+    }
+  ]
+}

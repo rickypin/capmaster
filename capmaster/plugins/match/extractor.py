@@ -1,0 +1,214 @@
+"""TCP field extraction from PCAP files."""
+
+import csv
+import tempfile
+from collections.abc import Iterator
+from pathlib import Path
+
+from capmaster.core.tshark_wrapper import TsharkWrapper
+from capmaster.plugins.match.connection import TcpPacket
+
+
+class TcpFieldExtractor:
+    """
+    Extract TCP fields from PCAP files using tshark.
+
+    This class uses tshark to extract relevant TCP fields needed for
+    connection matching, including frame number, stream ID, IP addresses,
+    ports, flags, sequence numbers, options, and payload length.
+    """
+
+    # Fields to extract from tshark
+    FIELDS = [
+        "frame.number",
+        "frame.time_epoch",
+        "tcp.stream",
+        "ip.src",
+        "ip.dst",
+        "tcp.srcport",
+        "tcp.dstport",
+        "tcp.flags",
+        "tcp.seq",
+        "tcp.ack",
+        "tcp.options",
+        "tcp.len",
+        "ip.id",
+        "tcp.options.timestamp.tsval",  # TCP timestamp TSval
+        "tcp.options.timestamp.tsecr",  # TCP timestamp TSecr
+        "data.data",  # Payload data (hex)
+    ]
+
+    def __init__(self) -> None:
+        """Initialize the extractor with a tshark wrapper."""
+        self.tshark = TsharkWrapper()
+
+    def extract(self, pcap_file: Path) -> Iterator[TcpPacket]:
+        """
+        Extract TCP packets from a PCAP file.
+
+        Args:
+            pcap_file: Path to the PCAP file
+
+        Yields:
+            TcpPacket objects for each TCP packet in the file
+
+        Raises:
+            RuntimeError: If tshark extraction fails
+        """
+        # Create temporary file for tshark output
+        with tempfile.NamedTemporaryFile(mode="w+", suffix=".tsv", delete=False) as tmp_file:
+            tmp_path = Path(tmp_file.name)
+
+        try:
+            # Build tshark command
+            args = [
+                "-r",
+                str(pcap_file),
+                "-Y",
+                "tcp",  # Filter for TCP packets only
+                # NOTE: Use relative sequence numbers to match original script behavior
+                # Original script uses tcp.seq which defaults to relative sequence numbers
+                # This means SYN packets have seq=0, making ISN matching work correctly
+                "-o",
+                "tcp.desegment_tcp_streams:false",  # Disable TCP reassembly
+                "-T",
+                "fields",
+                "-E",
+                "separator=\t",
+                "-E",
+                "quote=d",
+                "-E",
+                "occurrence=f",  # First occurrence only
+            ]
+
+            # Add field extraction arguments
+            for field in self.FIELDS:
+                args.extend(["-e", field])
+
+            # Execute tshark
+            result = self.tshark.execute(args, output_file=tmp_path)
+
+            if result.returncode != 0:
+                raise RuntimeError(f"tshark extraction failed: {result.stderr}")
+
+            # Parse the TSV output
+            yield from self._parse_tsv(tmp_path)
+
+        finally:
+            # Clean up temporary file
+            if tmp_path.exists():
+                tmp_path.unlink()
+
+    def _parse_tsv(self, tsv_file: Path) -> Iterator[TcpPacket]:
+        """
+        Parse TSV output from tshark.
+
+        Args:
+            tsv_file: Path to the TSV file
+
+        Yields:
+            TcpPacket objects
+        """
+        with open(tsv_file, encoding="utf-8", errors="replace") as f:
+            reader = csv.reader(f, delimiter="\t")
+
+            for row in reader:
+                if len(row) < len(self.FIELDS):
+                    # Skip incomplete rows
+                    continue
+
+                try:
+                    packet = self._parse_row(row)
+                    if packet:
+                        yield packet
+                except (ValueError, IndexError):
+                    # Skip malformed rows
+                    continue
+
+    def _parse_row(self, row: list[str]) -> TcpPacket | None:
+        """
+        Parse a single TSV row into a TcpPacket.
+
+        Args:
+            row: List of field values from TSV
+
+        Returns:
+            TcpPacket object or None if parsing fails
+        """
+        try:
+            # Extract fields (in the same order as FIELDS)
+            frame_number = int(row[0]) if row[0] else 0
+            timestamp = float(row[1]) if row[1] else 0.0
+            stream_id = int(row[2]) if row[2] else 0
+            src_ip = row[3] or ""
+            dst_ip = row[4] or ""
+            src_port = int(row[5]) if row[5] else 0
+            dst_port = int(row[6]) if row[6] else 0
+            flags = row[7] or "0x0000"
+            seq = int(row[8]) if row[8] else 0
+            ack = int(row[9]) if row[9] else 0
+            options = row[10] or ""
+            length = int(row[11]) if row[11] else 0
+            ip_id = int(row[12], 16) if row[12] else 0  # IP ID is in hex
+            tcp_timestamp_tsval = row[13] if len(row) > 13 else ""
+            tcp_timestamp_tsecr = row[14] if len(row) > 14 else ""
+            payload_data = row[15] if len(row) > 15 else ""
+
+            return TcpPacket(
+                frame_number=frame_number,
+                stream_id=stream_id,
+                src_ip=src_ip,
+                dst_ip=dst_ip,
+                src_port=src_port,
+                dst_port=dst_port,
+                flags=flags,
+                seq=seq,
+                ack=ack,
+                options=options,
+                length=length,
+                ip_id=ip_id,
+                timestamp=timestamp,
+                tcp_timestamp_tsval=tcp_timestamp_tsval,
+                tcp_timestamp_tsecr=tcp_timestamp_tsecr,
+                payload_data=payload_data,
+            )
+        except (ValueError, IndexError):
+            return None
+
+    def extract_to_file(self, pcap_file: Path, output_file: Path) -> None:
+        """
+        Extract TCP fields and save to a TSV file.
+
+        Args:
+            pcap_file: Path to the PCAP file
+            output_file: Path to the output TSV file
+        """
+        # Build tshark command
+        args = [
+            "-r",
+            str(pcap_file),
+            "-Y",
+            "tcp",
+            "-o",
+            "tcp.relative_sequence_numbers:false",  # Use absolute sequence numbers
+            "-o",
+            "tcp.desegment_tcp_streams:false",  # Disable TCP reassembly
+            "-T",
+            "fields",
+            "-E",
+            "separator=\t",
+            "-E",
+            "quote=d",
+            "-E",
+            "occurrence=f",
+        ]
+
+        # Add field extraction arguments
+        for field in self.FIELDS:
+            args.extend(["-e", field])
+
+        # Execute tshark
+        result = self.tshark.execute(args, output_file=output_file)
+
+        if result.returncode != 0:
+            raise RuntimeError(f"tshark extraction failed: {result.stderr}")
