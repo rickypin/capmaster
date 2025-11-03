@@ -65,19 +65,37 @@ By default, statistics are saved to `<input_dir>/statistics/`:
 
 ```
 statistics/
-├── capture-1-protocol-hierarchy.txt
-├── capture-1-tcp-conversations.txt
-├── capture-1-tcp-zero-window.txt
-├── capture-1-tcp-duration.txt
-├── capture-1-tcp-completeness.txt
-├── capture-1-udp-conversations.txt
-├── capture-1-dns-stats.txt
-├── capture-1-http-stats.txt
-├── capture-1-tls-stats.txt
-├── capture-1-ftp-stats.txt
-├── capture-1-icmp-stats.txt
-└── capture-1-ipv4-hosts.txt
+├── capture-protocol-hierarchy.txt
+├── capture-ipv4-conversations.txt
+├── capture-ipv4-source-ttls.txt
+├── capture-ipv4-destinations-and-ports.txt
+├── capture-ipv4-hosts.txt
+├── capture-tcp-conversations.txt
+├── capture-tcp-zero-window.txt
+├── capture-tcp-connection-duration.txt
+├── capture-tcp-completeness.txt
+├── capture-udp-conversations.txt
+├── capture-dns-stats.txt
+├── capture-dns-query-response.txt
+├── capture-http-stats.txt
+├── capture-http-response-code.txt
+├── capture-ftp-response-code.txt
+├── capture-ftp-data-stats.txt
+├── capture-tls-alert-message.txt
+├── capture-icmp-messages.txt
+├── capture-sip-stats.txt
+├── capture-rtp-stats.txt
+├── capture-rtcp-stats.txt
+├── capture-mgcp-stats.txt
+├── capture-sdp-stats.txt
+├── capture-voip-quality.txt
+├── capture-ssh-stats.txt
+├── capture-json-stats.txt
+├── capture-xml-stats.txt
+└── capture-mq-stats.txt
 ```
+
+Note: The actual files generated depend on the protocols detected in the PCAP file. Not all files will be created if the corresponding protocols are not present.
 
 ### Analysis Modules
 

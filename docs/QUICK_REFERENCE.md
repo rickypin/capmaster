@@ -78,6 +78,25 @@ capmaster filter -i input.pcap -t 50
 
 # Combined options
 capmaster filter -i input.pcap -o clean.pcap -t 100
+
+# Filter directory recursively with concurrent processing
+capmaster filter -i captures/ -w 4
+```
+
+### Clean Statistics Directories
+
+```bash
+# Clean recursively (with confirmation)
+capmaster clean -i /path/to/data
+
+# Clean only top-level directory
+capmaster clean -i /path/to/data -r
+
+# Dry run to preview
+capmaster clean -i /path/to/data --dry-run
+
+# Clean without confirmation
+capmaster clean -i /path/to/data -y
 ```
 
 ---
@@ -99,7 +118,9 @@ capmaster filter -i input.pcap -o clean.pcap -t 100
 |--------|-------|-------------|---------|
 | `--input` | `-i` | Input file or directory | Required |
 | `--output` | `-o` | Output directory | `<input_dir>/statistics/` |
-| `--recursive` | `-r` | Recursive scan | False |
+| `--no-recursive` | `-r` | Do NOT recursively scan directories | Recursive by default |
+| `--workers` | `-w` | Number of worker processes | 1 |
+| `--format` | `-f` | Output file format (txt/md) | txt |
 
 ### Match Options
 
@@ -115,28 +136,72 @@ capmaster filter -i input.pcap -o clean.pcap -t 100
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
-| `--input` | `-i` | Input file | Required |
-| `--output` | `-o` | Output file | `<input>_filtered.pcap` |
+| `--input` | `-i` | Input file or directory | Required |
+| `--output` | `-o` | Output file or directory | `<input>_filtered.pcap` |
 | `--threshold` | `-t` | ACK threshold | 20 |
+| `--no-recursive` | `-r` | Do NOT recursively scan directories | Recursive by default |
+| `--workers` | `-w` | Number of worker processes | 1 |
+
+### Clean Options
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--input` | `-i` | Input directory to search | Required |
+| `--no-recursive` | `-r` | Do NOT recursively search directories | Recursive by default |
+| `--dry-run` | | Show what would be deleted | False |
+| `--yes` | `-y` | Skip confirmation prompt | False |
 
 ---
 
-## Analysis Modules
+## Analysis Modules (28 total)
 
+### Network Layer
 | Module | Output Suffix | Description |
 |--------|---------------|-------------|
 | Protocol Hierarchy | `protocol-hierarchy.txt` | Protocol distribution |
+| IPv4 Conversations | `ipv4-conversations.txt` | IPv4 conversation statistics |
+| IPv4 Source TTLs | `ipv4-source-ttls.txt` | TTL distribution by source |
+| IPv4 Destinations | `ipv4-destinations-and-ports.txt` | Destination IPs and ports |
+| IPv4 Hosts | `ipv4-hosts.txt` | IP endpoint statistics |
+
+### Transport Layer
+| Module | Output Suffix | Description |
+|--------|---------------|-------------|
 | TCP Conversations | `tcp-conversations.txt` | TCP session statistics |
 | TCP Zero Window | `tcp-zero-window.txt` | Flow control issues |
-| TCP Duration | `tcp-duration.txt` | Timing statistics |
+| TCP Duration | `tcp-connection-duration.txt` | Connection timing statistics |
 | TCP Completeness | `tcp-completeness.txt` | SYN/FIN/RST analysis |
 | UDP Conversations | `udp-conversations.txt` | UDP session statistics |
+
+### Application Layer
+| Module | Output Suffix | Description |
+|--------|---------------|-------------|
 | DNS Statistics | `dns-stats.txt` | DNS query/response stats |
+| DNS Query/Response | `dns-query-response.txt` | DNS QR statistics |
 | HTTP Statistics | `http-stats.txt` | HTTP request/response stats |
-| TLS Statistics | `tls-stats.txt` | TLS/SSL handshake stats |
-| FTP Statistics | `ftp-stats.txt` | FTP command/response stats |
-| ICMP Statistics | `icmp-stats.txt` | ICMP message stats |
-| IPv4 Hosts | `ipv4-hosts.txt` | IP endpoint statistics |
+| HTTP Response | `http-response-code.txt` | HTTP response codes |
+| FTP Statistics | `ftp-response-code.txt` | FTP response codes |
+| FTP Data | `ftp-data-stats.txt` | FTP data transfer stats |
+| TLS Alert | `tls-alert-message.txt` | TLS alert messages |
+| ICMP Statistics | `icmp-messages.txt` | ICMP message stats |
+
+### VoIP Protocols
+| Module | Output Suffix | Description |
+|--------|---------------|-------------|
+| SIP Statistics | `sip-stats.txt` | SIP protocol statistics |
+| RTP Statistics | `rtp-stats.txt` | RTP stream statistics |
+| RTCP Statistics | `rtcp-stats.txt` | RTCP statistics |
+| MGCP Statistics | `mgcp-stats.txt` | MGCP protocol statistics |
+| SDP Statistics | `sdp-stats.txt` | SDP session statistics |
+| VoIP Quality | `voip-quality.txt` | VoIP quality metrics |
+
+### Other Protocols
+| Module | Output Suffix | Description |
+|--------|---------------|-------------|
+| SSH Statistics | `ssh-stats.txt` | SSH protocol statistics |
+| JSON Statistics | `json-stats.txt` | JSON data statistics |
+| XML Statistics | `xml-stats.txt` | XML data statistics |
+| MQ Statistics | `mq-stats.txt` | Message Queue statistics |
 
 ---
 

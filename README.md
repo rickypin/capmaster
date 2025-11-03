@@ -8,7 +8,7 @@ A unified Python CLI tool for PCAP analysis, TCP connection matching, and filter
 
 ## Features
 
-- 📊 **Comprehensive PCAP Analysis** - 12 statistical analysis modules for protocol hierarchy, TCP/UDP conversations, DNS, HTTP, TLS, and more
+- 📊 **Comprehensive PCAP Analysis** - 28 statistical analysis modules for protocol hierarchy, TCP/UDP conversations, DNS, HTTP, TLS, VoIP (SIP/RTP/RTCP/MGCP), SSH, and more
 - 🔗 **Intelligent TCP Connection Matching** - Advanced 8-feature scoring algorithm to match TCP connections across multiple PCAP files
 - 🔍 **One-Way Connection Filtering** - Detect and remove one-way TCP connections from PCAP files
 - 🧹 **Statistics Cleanup** - Easily remove statistics directories to reclaim disk space
@@ -161,25 +161,54 @@ Analyze PCAP files and generate comprehensive statistics.
 capmaster analyze [OPTIONS]
 
 Options:
-  -i, --input PATH   Input PCAP file or directory [required]
-  -o, --output PATH  Output directory (default: <input_dir>/statistics/)
-  -r, --recursive    Recursively scan directories for PCAP files
-  --help             Show this message and exit
+  -i, --input PATH       Input PCAP file or directory [required]
+  -o, --output PATH      Output directory (default: <input_dir>/statistics/)
+  -r, --no-recursive     Do NOT recursively scan directories (default: recursive)
+  -w, --workers INTEGER  Number of worker processes for concurrent processing
+                         (default: 1)
+  -f, --format [txt|md]  Output file format: txt or md (default: txt)
+  --help                 Show this message and exit
 ```
 
-**Analysis Modules:**
+**Analysis Modules (28 total):**
+
+**Network Layer:**
 - Protocol Hierarchy
+- IPv4 Conversations
+- IPv4 Source TTLs
+- IPv4 Destinations and Ports
+- IPv4 Host Endpoints
+
+**Transport Layer:**
 - TCP Conversations
 - TCP Zero Window Events
 - TCP Duration Statistics
 - TCP Completeness (SYN/FIN/RST analysis)
 - UDP Conversations
+
+**Application Layer:**
 - DNS Statistics
+- DNS Query/Response Statistics
 - HTTP Statistics
-- TLS/SSL Statistics
+- HTTP Response Codes
 - FTP Statistics
+- FTP Data Statistics
+- TLS Alert Messages
 - ICMP Statistics
-- IPv4 Host Endpoints
+
+**VoIP Protocols:**
+- SIP Statistics
+- RTP Statistics
+- RTCP Statistics
+- MGCP Statistics
+- SDP Statistics
+- VoIP Quality Metrics
+
+**Other Protocols:**
+- SSH Statistics
+- JSON Statistics
+- XML Statistics
+- MQ (Message Queue) Statistics
 
 ### `match` - TCP Connection Matching
 
@@ -227,6 +256,9 @@ Options:
                            (default: <input>_filtered.pcap)
   -t, --threshold INTEGER  ACK increment threshold for one-way detection
                            (default: 20)
+  -r, --no-recursive       Do NOT recursively scan directories (default: recursive)
+  -w, --workers INTEGER    Number of worker processes for concurrent processing
+                           (default: 1)
   --help                   Show this message and exit
 ```
 

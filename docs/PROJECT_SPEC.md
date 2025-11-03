@@ -230,7 +230,9 @@ class AnalysisModule(ABC):
 
 ## 6. Analyze 插件规范
 
-### 6.1 统计模块列表 (17个模块，完全对齐原脚本)
+### 6.1 统计模块列表 (28个模块)
+
+**网络层模块 (5个):**
 
 | 模块 | 输出后缀 | 必需协议 | tshark 参数 | Python后处理 |
 |------|---------|---------|------------|-------------|
@@ -239,18 +241,49 @@ class AnalysisModule(ABC):
 | ipv4_source_ttls | ipv4-source-ttls.txt | [ip] | `-q -z ip_ttl,tree` | 无 |
 | ipv4_destinations | ipv4-destinations-and-ports.txt | [ip] | `-q -z dests,tree` | 无 |
 | ipv4_hosts | ipv4-hosts.txt | [ip] | `-q -z endpoints,ip` | 无 |
+
+**传输层模块 (5个):**
+
+| 模块 | 输出后缀 | 必需协议 | tshark 参数 | Python后处理 |
+|------|---------|---------|------------|-------------|
 | tcp_conversations | tcp-conversations.txt | [tcp] | `-q -z conv,tcp` | 无 |
 | tcp_zero_window | tcp-zero-window.txt | [tcp] | `-Y "tcp.analysis.zero_window" -T fields ...` | Counter计数+排序 |
 | tcp_duration | tcp-connection-duration.txt | [tcp] | `-q -z conv,tcp` | regex解析+分桶 |
 | tcp_completeness | tcp-completeness.txt | [tcp] | `-2 -Y tcp -T fields -e tcp.completeness.str ...` | 标志解码+分类 |
 | udp_conversations | udp-conversations.txt | [udp] | `-q -z conv,udp` | 无 |
+
+**应用层模块 (8个):**
+
+| 模块 | 输出后缀 | 必需协议 | tshark 参数 | Python后处理 |
+|------|---------|---------|------------|-------------|
 | dns_stats | dns-stats.txt | [dns] | `-q -z dns,tree` | 无 |
 | dns_qr_stats | dns-query-response.txt | [dns] | `-q -z dns_qr,tree` | 无 |
-| tls_alert | tls-alert-message.txt | [tls,ssl] | `-Y "tls.alert_message && tcp" -T fields ...` | defaultdict聚合 |
 | http_stats | http-stats.txt | [http] | `-q -z http,tree` | 无 |
 | http_response | http-response-code.txt | [http] | `-Y "http.response" -T fields ...` | defaultdict聚合 |
 | ftp_stats | ftp-response-code.txt | [ftp] | `-Y "ftp.response.code" -T fields ...` | defaultdict聚合 |
+| ftp_data_stats | ftp-data-stats.txt | [ftp-data] | `-q -z io,stat ...` | 无 |
+| tls_alert | tls-alert-message.txt | [tls,ssl] | `-Y "tls.alert_message && tcp" -T fields ...` | defaultdict聚合 |
 | icmp_stats | icmp-messages.txt | [icmp] | `-Y icmp -T fields -e icmp.type -e icmp.code ...` | 类型/代码映射 |
+
+**VoIP协议模块 (6个):**
+
+| 模块 | 输出后缀 | 必需协议 | tshark 参数 | Python后处理 |
+|------|---------|---------|------------|-------------|
+| sip_stats | sip-stats.txt | [sip] | `-q -z sip,stat` | 无 |
+| rtp_stats | rtp-stats.txt | [rtp] | `-q -z rtp,streams` | 无 |
+| rtcp_stats | rtcp-stats.txt | [rtcp] | `-q -z rtcp` | 无 |
+| mgcp_stats | mgcp-stats.txt | [mgcp] | `-q -z mgcp,rtd` | 无 |
+| sdp_stats | sdp-stats.txt | [sdp] | `-Y sdp -T fields ...` | 统计分析 |
+| voip_quality | voip-quality.txt | [rtp] | `-q -z rtp,streams` | 质量指标计算 |
+
+**其他协议模块 (4个):**
+
+| 模块 | 输出后缀 | 必需协议 | tshark 参数 | Python后处理 |
+|------|---------|---------|------------|-------------|
+| ssh_stats | ssh-stats.txt | [ssh] | `-Y ssh -T fields ...` | 统计分析 |
+| json_stats | json-stats.txt | [json] | `-Y json -T fields ...` | JSON解析统计 |
+| xml_stats | xml-stats.txt | [xml] | `-Y xml -T fields ...` | XML解析统计 |
+| mq_stats | mq-stats.txt | [mq] | `-Y mq -T fields ...` | 消息队列统计 |
 
 ### 6.2 配置文件格式 (config/default_commands.yaml)
 
