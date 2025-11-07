@@ -112,14 +112,15 @@ class ConnectionScorer:
         Returns:
             MatchScore object with detailed scoring
         """
-        # Check 5-tuple requirement (必要条件, direction-independent)
-        if not self._check_5tuple(conn1, conn2):
+        # Check 3-tuple requirement (必要条件, direction-independent)
+        # Only requires TCP port pair to match, IP addresses can differ (for NAT scenarios)
+        if not self._check_3tuple(conn1, conn2):
             return MatchScore(
                 normalized_score=0.0,
                 raw_score=0.0,
                 available_weight=0.0,
                 ipid_match=False,
-                evidence="no-5tuple",
+                evidence="no-3tuple",
             )
 
         # Check IPID requirement (必要条件)
@@ -133,19 +134,6 @@ class ConnectionScorer:
                 available_weight=0.0,
                 ipid_match=False,
                 evidence="no-ipid",
-            )
-
-        # Check time overlap requirement (新增)
-        time_overlap = self._check_time_overlap(conn1, conn2)
-
-        # If no time overlap, return 0 score immediately
-        if not time_overlap:
-            return MatchScore(
-                normalized_score=0.0,
-                raw_score=0.0,
-                available_weight=0.0,
-                ipid_match=True,
-                evidence="no-time-overlap",
             )
 
         # Determine if we should use payload features
@@ -249,6 +237,32 @@ class ConnectionScorer:
             → Match ✅ (same connection, different direction)
         """
         return conn1.get_normalized_5tuple() == conn2.get_normalized_5tuple()
+
+    def _check_3tuple(self, conn1: TcpConnection, conn2: TcpConnection) -> bool:
+        """
+        Check if 3-tuple (port pair) matches (direction-independent).
+
+        Two connections match if they have the same TCP port pair,
+        regardless of IP addresses or which side is labeled as client/server.
+        This is useful for NAT scenarios where IP addresses change but ports remain the same.
+
+        Args:
+            conn1: First connection
+            conn2: Second connection
+
+        Returns:
+            True if normalized port pairs match, False otherwise
+
+        Example:
+            conn1: 10.0.0.1:8080 <-> 192.168.1.1:443
+            conn2: 172.16.0.1:443 <-> 10.10.10.1:8080
+            → Match ✅ (same port pair: 443, 8080)
+
+            conn1: 10.0.0.1:8080 <-> 192.168.1.1:443
+            conn2: 172.16.0.1:8080 <-> 10.10.10.1:9000
+            → No match ❌ (different port pairs)
+        """
+        return conn1.get_normalized_3tuple() == conn2.get_normalized_3tuple()
 
     def _check_ipid(self, conn1: TcpConnection, conn2: TcpConnection) -> bool:
         """

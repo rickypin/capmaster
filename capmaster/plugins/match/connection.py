@@ -115,6 +115,33 @@ class TcpConnection:
         else:
             return (self.server_ip, self.server_port, self.client_ip, self.client_port)
 
+    def get_normalized_3tuple(self) -> tuple[int, int]:
+        """
+        Get normalized 3-tuple (port pair) for direction-independent matching.
+
+        This method returns only the two TCP ports in canonical order,
+        ignoring IP addresses. This is useful for NAT scenarios where
+        IP addresses change but ports remain the same.
+
+        Returns:
+            Tuple of (port1, port2) where port1 <= port2
+
+        Example:
+            Connection: 10.0.0.1:8080 <-> 192.168.1.1:443
+            Returns: (443, 8080)
+
+            Connection: 192.168.1.1:443 <-> 10.0.0.1:8080
+            Returns: (443, 8080)  # Same result, direction-independent
+        """
+        port1 = self.client_port
+        port2 = self.server_port
+
+        # Sort ports to get canonical order
+        if port1 <= port2:
+            return (port1, port2)
+        else:
+            return (port2, port1)
+
 
 @dataclass
 class TcpPacket:
