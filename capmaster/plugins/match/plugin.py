@@ -11,7 +11,7 @@ from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
 from capmaster.plugins.match.connection import ConnectionBuilder
 from capmaster.plugins.match.extractor import TcpFieldExtractor
-from capmaster.plugins.match.matcher import BucketStrategy, ConnectionMatcher
+from capmaster.plugins.match.matcher import BucketStrategy, ConnectionMatcher, MatchMode
 from capmaster.plugins.match.sampler import ConnectionSampler
 from capmaster.utils.errors import (
     InsufficientFilesError,
@@ -78,6 +78,13 @@ class MatchPlugin(PluginBase):
             default=0.60,
             help="Minimum normalized score threshold for matches (0.0-1.0, default: 0.60)",
         )
+        @click.option(
+            "--match-mode",
+            type=click.Choice(["one-to-one", "one-to-many"], case_sensitive=False),
+            default="one-to-one",
+            help="Matching mode (one-to-one: each connection matches at most once, "
+            "one-to-many: allow one connection to match multiple connections based on time overlap)",
+        )
         @click.pass_context
         def match_command(
             ctx: click.Context,
@@ -86,6 +93,7 @@ class MatchPlugin(PluginBase):
             mode: str,
             bucket: str,
             threshold: float,
+            match_mode: str,
         ) -> None:
             """
             Match TCP connections between PCAP files.
@@ -224,9 +232,11 @@ class MatchPlugin(PluginBase):
                 match_task = progress.add_task("[green]Matching connections...", total=1)
                 logger.info("Matching connections...")
                 bucket_enum = BucketStrategy(bucket_strategy)
+                match_mode_enum = MatchMode(match_mode.replace("-", "_").upper())
                 matcher = ConnectionMatcher(
                     bucket_strategy=bucket_enum,
                     score_threshold=score_threshold,
+                    match_mode=match_mode_enum,
                 )
 
                 matches = matcher.match(connections1, connections2)

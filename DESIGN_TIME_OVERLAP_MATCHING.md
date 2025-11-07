@@ -219,11 +219,15 @@ def _match_bucket_one_to_many(
 2. ✅ 在 `score()` 方法中添加时间重叠检查
 3. ✅ 更新相关测试
 
-### Phase 3: 支持一对多匹配（可选，需要讨论）
-1. ⚠️ 评估是否需要一对多匹配
-2. ⚠️ 如果需要，设计新的匹配算法
-3. ⚠️ 更新 `ConnectionMatcher`
-4. ⚠️ 更新 compare 插件的逻辑
+### Phase 3: 支持一对多匹配 ✅ 已完成
+1. ✅ 添加 `MatchMode` 枚举（ONE_TO_ONE, ONE_TO_MANY）
+2. ✅ 修改 `ConnectionMatcher` 支持两种匹配模式
+3. ✅ 实现 `_match_bucket_one_to_one()` 方法（原有逻辑）
+4. ✅ 实现 `_match_bucket_one_to_many()` 方法（新逻辑）
+5. ✅ 更新 `get_match_stats()` 添加一对多统计信息
+6. ✅ 在 match 插件添加 `--match-mode` 选项
+7. ✅ 在 compare 插件添加 `--match-mode` 选项
+8. ✅ 更新相关测试
 
 ## 测试案例
 

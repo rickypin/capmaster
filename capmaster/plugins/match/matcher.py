@@ -25,6 +25,16 @@ class BucketStrategy(Enum):
     """No bucketing (compare all connections)"""
 
 
+class MatchMode(Enum):
+    """Matching mode for connection matching."""
+
+    ONE_TO_ONE = "one-to-one"
+    """Greedy one-to-one matching (default, backward compatible)"""
+
+    ONE_TO_MANY = "one-to-many"
+    """Allow one connection to match multiple connections based on time overlap"""
+
+
 @dataclass
 class ConnectionMatch:
     """
@@ -52,8 +62,11 @@ class ConnectionMatcher:
     """
     Match connections between two PCAP files.
 
-    Uses a greedy one-to-one matching algorithm with bucketing
-    to improve performance.
+    Supports two matching modes:
+    - ONE_TO_ONE: Greedy one-to-one matching (default, backward compatible)
+    - ONE_TO_MANY: Allow one connection to match multiple connections based on time overlap
+
+    Uses bucketing to improve performance.
 
     Implements weighted normalization scoring matching the original script.
     """
@@ -62,6 +75,7 @@ class ConnectionMatcher:
         self,
         bucket_strategy: BucketStrategy = BucketStrategy.AUTO,
         score_threshold: float = 0.60,
+        match_mode: MatchMode = MatchMode.ONE_TO_ONE,
     ):
         """
         Initialize the matcher.
@@ -70,9 +84,11 @@ class ConnectionMatcher:
             bucket_strategy: Strategy for bucketing connections
             score_threshold: Minimum normalized score for a valid match (default: 0.60)
                            Matching original script's default threshold
+            match_mode: Matching mode (ONE_TO_ONE or ONE_TO_MANY, default: ONE_TO_ONE)
         """
         self.bucket_strategy = bucket_strategy
         self.score_threshold = score_threshold
+        self.match_mode = match_mode
         self.scorer = ConnectionScorer()
 
     def match(
@@ -194,7 +210,33 @@ class ConnectionMatcher:
         bucket2: list[TcpConnection],
     ) -> list[ConnectionMatch]:
         """
-        Match connections within a bucket using greedy algorithm.
+        Match connections within a bucket.
+
+        Supports two modes:
+        - ONE_TO_ONE: Greedy one-to-one matching (each connection matches at most once)
+        - ONE_TO_MANY: Allow one connection to match multiple connections
+
+        Args:
+            bucket1: Connections from first PCAP
+            bucket2: Connections from second PCAP
+
+        Returns:
+            List of matched pairs
+        """
+        if self.match_mode == MatchMode.ONE_TO_ONE:
+            return self._match_bucket_one_to_one(bucket1, bucket2)
+        else:
+            return self._match_bucket_one_to_many(bucket1, bucket2)
+
+    def _match_bucket_one_to_one(
+        self,
+        bucket1: list[TcpConnection],
+        bucket2: list[TcpConnection],
+    ) -> list[ConnectionMatch]:
+        """
+        Match connections using greedy one-to-one algorithm.
+
+        Each connection can match at most once.
 
         Args:
             bucket1: Connections from first PCAP
@@ -230,6 +272,44 @@ class ConnectionMatcher:
 
         return matches
 
+    def _match_bucket_one_to_many(
+        self,
+        bucket1: list[TcpConnection],
+        bucket2: list[TcpConnection],
+    ) -> list[ConnectionMatch]:
+        """
+        Match connections allowing one-to-many relationships.
+
+        One connection can match multiple connections if they have:
+        - Same IPID
+        - Time overlap
+        - Score above threshold
+
+        This is useful when one PCAP has a long stream that spans multiple
+        shorter streams in another PCAP (same 5-tuple, different time ranges).
+
+        Args:
+            bucket1: Connections from first PCAP
+            bucket2: Connections from second PCAP
+
+        Returns:
+            List of matched pairs (can have multiple matches per connection)
+        """
+        matches = []
+
+        # Score all pairs and accept all valid matches
+        for conn1 in bucket1:
+            for conn2 in bucket2:
+                score = self.scorer.score(conn1, conn2)
+
+                if score.is_valid_match(self.score_threshold):
+                    matches.append(ConnectionMatch(conn1, conn2, score))
+
+        # Sort by normalized score (descending) for consistent ordering
+        matches.sort(key=lambda m: m.score.normalized_score, reverse=True)
+
+        return matches
+
     def get_match_stats(
         self,
         connections1: Sequence[TcpConnection],
@@ -238,6 +318,10 @@ class ConnectionMatcher:
     ) -> dict:
         """
         Get statistics about the matching operation.
+
+        Note: In ONE_TO_MANY mode, matched_pairs can be greater than
+        total_connections_1 or total_connections_2 because one connection
+        can match multiple connections.
 
         Args:
             connections1: Connections from first PCAP
@@ -252,13 +336,35 @@ class ConnectionMatcher:
 
         avg_score = sum(m.score.normalized_score for m in matches) / len(matches) if matches else 0
 
-        return {
+        stats = {
             "total_connections_1": len(connections1),
             "total_connections_2": len(connections2),
             "matched_pairs": len(matches),
+            "unique_matched_1": len(matched1),
+            "unique_matched_2": len(matched2),
             "unmatched_1": len(connections1) - len(matched1),
             "unmatched_2": len(connections2) - len(matched2),
             "match_rate_1": len(matched1) / len(connections1) if connections1 else 0,
             "match_rate_2": len(matched2) / len(connections2) if connections2 else 0,
             "average_score": avg_score,
+            "match_mode": self.match_mode.value,
         }
+
+        # Add one-to-many specific stats
+        if self.match_mode == MatchMode.ONE_TO_MANY:
+            # Count how many times each connection was matched
+            from collections import Counter
+
+            conn1_match_counts = Counter(m.conn1.stream_id for m in matches)
+            conn2_match_counts = Counter(m.conn2.stream_id for m in matches)
+
+            stats["max_matches_per_conn1"] = max(conn1_match_counts.values()) if conn1_match_counts else 0
+            stats["max_matches_per_conn2"] = max(conn2_match_counts.values()) if conn2_match_counts else 0
+            stats["avg_matches_per_conn1"] = (
+                sum(conn1_match_counts.values()) / len(conn1_match_counts) if conn1_match_counts else 0
+            )
+            stats["avg_matches_per_conn2"] = (
+                sum(conn2_match_counts.values()) / len(conn2_match_counts) if conn2_match_counts else 0
+            )
+
+        return stats

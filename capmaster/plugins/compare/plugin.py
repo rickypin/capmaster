@@ -13,7 +13,7 @@ from capmaster.plugins.compare.packet_comparator import PacketComparator
 from capmaster.plugins.compare.packet_extractor import PacketExtractor
 from capmaster.plugins.match.connection import ConnectionBuilder
 from capmaster.plugins.match.extractor import TcpFieldExtractor
-from capmaster.plugins.match.matcher import BucketStrategy, ConnectionMatcher
+from capmaster.plugins.match.matcher import BucketStrategy, ConnectionMatcher, MatchMode
 from capmaster.utils.errors import (
     InsufficientFilesError,
     handle_error,
@@ -187,6 +187,13 @@ class ComparePlugin(PluginBase):
             default=False,
             help="Silent mode: suppress progress bars and screen output (logs and file output still work)",
         )
+        @click.option(
+            "--match-mode",
+            type=click.Choice(["one-to-one", "one-to-many"], case_sensitive=False),
+            default="one-to-one",
+            help="Matching mode (one-to-one: each connection matches at most once, "
+            "one-to-many: allow one connection to match multiple connections based on time overlap)",
+        )
         @click.pass_context
         def compare_command(
             ctx: click.Context,
@@ -203,6 +210,7 @@ class ComparePlugin(PluginBase):
             db_connection: str | None,
             kase_id: int | None,
             silent: bool,
+            match_mode: str,
         ) -> None:
             """
             Compare TCP connections at packet level between PCAP files.
@@ -419,9 +427,11 @@ class ComparePlugin(PluginBase):
                 match_task = progress.add_task("[yellow]Matching connections...", total=1) if not silent else None
 
                 bucket_enum = BucketStrategy(bucket_strategy)
+                match_mode_enum = MatchMode(match_mode.replace("-", "_").upper())
                 matcher = ConnectionMatcher(
                     bucket_strategy=bucket_enum,
                     score_threshold=score_threshold,
+                    match_mode=match_mode_enum,
                 )
 
                 matches = matcher.match(baseline_connections, compare_connections)
