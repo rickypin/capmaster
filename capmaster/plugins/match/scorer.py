@@ -112,6 +112,16 @@ class ConnectionScorer:
         Returns:
             MatchScore object with detailed scoring
         """
+        # Check 5-tuple requirement (必要条件, direction-independent)
+        if not self._check_5tuple(conn1, conn2):
+            return MatchScore(
+                normalized_score=0.0,
+                raw_score=0.0,
+                available_weight=0.0,
+                ipid_match=False,
+                evidence="no-5tuple",
+            )
+
         # Check IPID requirement (必要条件)
         ipid_match = self._check_ipid(conn1, conn2)
 
@@ -219,28 +229,60 @@ class ConnectionScorer:
             evidence=evidence,
         )
 
-    def _check_ipid(self, conn1: TcpConnection, conn2: TcpConnection) -> bool:
+    def _check_5tuple(self, conn1: TcpConnection, conn2: TcpConnection) -> bool:
         """
-        Check if IPID requirement is met (必要条件).
+        Check if 5-tuple matches (direction-independent).
 
-        Based on network topology analysis:
-        - Transparent network: IPID unchanged
-        - NAT translation: IPID unchanged
-
-        Therefore, IPID must match exactly (not range-based).
-
-        Note: IPID=0 is valid (some packets have IPID=0x0000)
+        Two connections match if they have the same normalized 5-tuple,
+        regardless of which side is labeled as client/server.
 
         Args:
             conn1: First connection
             conn2: Second connection
 
         Returns:
-            True if IPID matches exactly, False otherwise
+            True if normalized 5-tuples match, False otherwise
+
+        Example:
+            conn1: 8.42.96.45:35101 <-> 8.67.2.125:26302
+            conn2: 8.67.2.125:26302 <-> 8.42.96.45:35101
+            → Match ✅ (same connection, different direction)
         """
-        # IPID must match exactly (including 0)
-        # Note: We don't reject IPID=0 as it's a valid value
-        return conn1.ipid_first == conn2.ipid_first
+        return conn1.get_normalized_5tuple() == conn2.get_normalized_5tuple()
+
+    def _check_ipid(self, conn1: TcpConnection, conn2: TcpConnection) -> bool:
+        """
+        Check if IPID requirement is met (必要条件).
+
+        Uses flexible IPID matching: two connections match if they share
+        at least one common IPID value across all their packets.
+
+        This allows matching streams where:
+        - One long stream contains multiple shorter streams' IPIDs
+        - Streams have the same 5-tuple but different time ranges
+
+        Based on network topology analysis:
+        - Transparent network: IPID unchanged
+        - NAT translation: IPID unchanged
+
+        Args:
+            conn1: First connection
+            conn2: Second connection
+
+        Returns:
+            True if connections share at least one IPID, False otherwise
+
+        Example:
+            conn1.ipid_set = {61507, 9053}
+            conn2.ipid_set = {61507, 14265}
+            → Match ✅ (share IPID 61507)
+
+            conn1.ipid_set = {61507}
+            conn2.ipid_set = {14265}
+            → No match ❌ (no common IPID)
+        """
+        # Check if there's any intersection between IPID sets
+        return bool(conn1.ipid_set & conn2.ipid_set)
 
     def _check_time_overlap(self, conn1: TcpConnection, conn2: TcpConnection) -> bool:
         """

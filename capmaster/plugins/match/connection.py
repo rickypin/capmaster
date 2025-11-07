@@ -73,6 +73,9 @@ class TcpConnection:
     ipid_first: int
     """First IP ID value (0 if not available)"""
 
+    ipid_set: set[int]
+    """Set of all unique IP ID values in the stream (for flexible IPID matching)"""
+
     first_packet_time: float
     """Timestamp of the earliest packet in the stream (Unix timestamp in seconds)"""
 
@@ -91,6 +94,26 @@ class TcpConnection:
             f"time=[{self.first_packet_time:.3f}, {self.last_packet_time:.3f}], "
             f"packets={self.packet_count})"
         )
+
+    def get_normalized_5tuple(self) -> tuple[str, int, str, int]:
+        """
+        Get normalized 5-tuple for direction-independent matching.
+
+        Returns the 5-tuple in a canonical form where the "smaller" endpoint
+        (by IP:Port comparison) always comes first. This allows matching
+        connections regardless of which side initiated the connection.
+
+        Returns:
+            Tuple of (ip1, port1, ip2, port2) where ip1:port1 <= ip2:port2
+        """
+        endpoint1 = (self.client_ip, self.client_port)
+        endpoint2 = (self.server_ip, self.server_port)
+
+        # Sort endpoints to get canonical order
+        if endpoint1 <= endpoint2:
+            return (self.client_ip, self.client_port, self.server_ip, self.server_port)
+        else:
+            return (self.server_ip, self.server_port, self.client_ip, self.client_port)
 
 
 @dataclass
@@ -302,6 +325,12 @@ class ConnectionBuilder:
 
         packet_count = len(packets)
 
+        # Collect all unique IPID values from all packets
+        ipid_set = {p.ip_id for p in packets if p.ip_id is not None and p.ip_id != 0}
+        # If no valid IPIDs found, use the first IPID (even if 0)
+        if not ipid_set and ipid_first is not None:
+            ipid_set = {ipid_first}
+
         return TcpConnection(
             stream_id=stream_id,
             client_ip=client_ip,
@@ -319,6 +348,7 @@ class ConnectionBuilder:
             length_signature=length_signature,
             is_header_only=is_header_only,
             ipid_first=ipid_first,
+            ipid_set=ipid_set,
             first_packet_time=first_packet_time,
             last_packet_time=last_packet_time,
             packet_count=packet_count,

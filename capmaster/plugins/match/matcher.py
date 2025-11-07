@@ -183,6 +183,8 @@ class ConnectionMatcher:
         """
         Create buckets of connections based on strategy.
 
+        Uses normalized 5-tuple for direction-independent bucketing.
+
         Args:
             connections: List of connections
             strategy: Bucketing strategy
@@ -194,9 +196,13 @@ class ConnectionMatcher:
 
         for conn in connections:
             if strategy == BucketStrategy.SERVER:
-                key = conn.server_ip
+                # Use both IPs from normalized 5-tuple to handle direction independence
+                ip1, port1, ip2, port2 = conn.get_normalized_5tuple()
+                key = f"{ip1}:{ip2}"
             elif strategy == BucketStrategy.PORT:
-                key = str(conn.server_port)
+                # Use both ports from normalized 5-tuple to handle direction independence
+                ip1, port1, ip2, port2 = conn.get_normalized_5tuple()
+                key = f"{port1}:{port2}"
             else:  # NONE or AUTO (fallback)
                 key = "all"
 

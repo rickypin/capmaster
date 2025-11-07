@@ -144,6 +144,7 @@ class MatchPlugin(PluginBase):
                 mode=mode,
                 bucket_strategy=bucket,
                 score_threshold=threshold,
+                match_mode=match_mode,
             )
             ctx.exit(exit_code)
 
@@ -154,6 +155,7 @@ class MatchPlugin(PluginBase):
         mode: str = "auto",
         bucket_strategy: str = "auto",
         score_threshold: float = 0.60,
+        match_mode: str = "one-to-one",
     ) -> int:
         """
         Execute the match plugin.
@@ -164,6 +166,7 @@ class MatchPlugin(PluginBase):
             mode: Matching mode (auto or header)
             bucket_strategy: Bucketing strategy
             score_threshold: Minimum score threshold
+            match_mode: Matching mode (one-to-one or one-to-many)
 
         Returns:
             Exit code (0 for success, non-zero for failure)
@@ -232,7 +235,7 @@ class MatchPlugin(PluginBase):
                 match_task = progress.add_task("[green]Matching connections...", total=1)
                 logger.info("Matching connections...")
                 bucket_enum = BucketStrategy(bucket_strategy)
-                match_mode_enum = MatchMode(match_mode.replace("-", "_").upper())
+                match_mode_enum = MatchMode(match_mode)
                 matcher = ConnectionMatcher(
                     bucket_strategy=bucket_enum,
                     score_threshold=score_threshold,

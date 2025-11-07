@@ -315,6 +315,7 @@ class ComparePlugin(PluginBase):
                 db_connection=db_connection,
                 kase_id=kase_id,
                 silent=silent,
+                match_mode=match_mode,
             )
             ctx.exit(exit_code)
 
@@ -333,6 +334,7 @@ class ComparePlugin(PluginBase):
         db_connection: str | None = None,
         kase_id: int | None = None,
         silent: bool = False,
+        match_mode: str = "one-to-one",
     ) -> int:
         """
         Execute the compare plugin.
@@ -427,7 +429,7 @@ class ComparePlugin(PluginBase):
                 match_task = progress.add_task("[yellow]Matching connections...", total=1) if not silent else None
 
                 bucket_enum = BucketStrategy(bucket_strategy)
-                match_mode_enum = MatchMode(match_mode.replace("-", "_").upper())
+                match_mode_enum = MatchMode(match_mode)
                 matcher = ConnectionMatcher(
                     bucket_strategy=bucket_enum,
                     score_threshold=score_threshold,
