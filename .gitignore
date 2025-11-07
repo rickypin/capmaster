@@ -119,8 +119,10 @@ htmlcov/
 .tox/
 .nox/
 coverage.xml
+coverage.json
 *.cover
 .hypothesis/
+benchmark_results.json
 
 # Type checking
 .mypy_cache/
