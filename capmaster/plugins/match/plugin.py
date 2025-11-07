@@ -49,9 +49,9 @@ class MatchPlugin(PluginBase):
             "-i",
             "--input",
             "input_path",
-            type=click.Path(exists=True, path_type=Path),
+            type=str,
             required=True,
-            help="Input directory containing PCAP files",
+            help="Input directory, file list, or comma-separated PCAP files",
         )
         @click.option(
             "-o",
@@ -81,7 +81,7 @@ class MatchPlugin(PluginBase):
         @click.pass_context
         def match_command(
             ctx: click.Context,
-            input_path: Path,
+            input_path: str,
             output_file: Path | None,
             mode: str,
             bucket: str,
@@ -102,6 +102,9 @@ class MatchPlugin(PluginBase):
             Examples:
               # Match connections in a directory (auto mode)
               capmaster match -i captures/
+
+              # Match comma-separated file list
+              capmaster match -i "file1.pcap,file2.pcap"
 
               # Match with custom threshold
               capmaster match -i captures/ --threshold 0.70
@@ -138,7 +141,7 @@ class MatchPlugin(PluginBase):
 
     def execute(  # type: ignore[override]
         self,
-        input_path: Path,
+        input_path: str | Path,
         output_file: Path | None = None,
         mode: str = "auto",
         bucket_strategy: str = "auto",
@@ -148,7 +151,7 @@ class MatchPlugin(PluginBase):
         Execute the match plugin.
 
         Args:
-            input_path: Directory containing PCAP files
+            input_path: Directory, file list, or comma-separated PCAP files
             output_file: Output file for results (None for stdout)
             mode: Matching mode (auto or header)
             bucket_strategy: Bucketing strategy
@@ -166,8 +169,15 @@ class MatchPlugin(PluginBase):
             ) as progress:
                 # Scan for PCAP files
                 scan_task = progress.add_task("[cyan]Scanning for PCAP files...", total=1)
-                logger.info(f"Scanning directory: {input_path}")
-                pcap_files = PcapScanner.scan([str(input_path)], recursive=False)
+
+                # Parse input path (supports comma-separated file list)
+                if isinstance(input_path, str):
+                    input_paths = PcapScanner.parse_input(input_path)
+                else:
+                    input_paths = [str(input_path)]
+
+                logger.info(f"Scanning: {input_path}")
+                pcap_files = PcapScanner.scan(input_paths, recursive=False)
                 progress.update(scan_task, advance=1)
 
                 if len(pcap_files) < 2:
@@ -296,10 +306,10 @@ class MatchPlugin(PluginBase):
 
         for i, match in enumerate(matches, 1):
             lines.append(
-                f"\n[{i}] A: {match.conn1.client_ip}:{match.conn1.client_port} -> {match.conn1.server_ip}:{match.conn1.server_port}"
+                f"\n[{i}] A: {match.conn1.client_ip}:{match.conn1.client_port} <-> {match.conn1.server_ip}:{match.conn1.server_port}"
             )
             lines.append(
-                f"    B: {match.conn2.client_ip}:{match.conn2.client_port} -> {match.conn2.server_ip}:{match.conn2.server_port}"
+                f"    B: {match.conn2.client_ip}:{match.conn2.client_port} <-> {match.conn2.server_ip}:{match.conn2.server_port}"
             )
             lines.append(
                 f"    置信度: {match.score.normalized_score:.2f} | 证据: {match.score.evidence}"

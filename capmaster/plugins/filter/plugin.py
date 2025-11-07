@@ -173,9 +173,9 @@ class FilterPlugin(PluginBase):
             "-i",
             "--input",
             "input_path",
-            type=click.Path(exists=True, path_type=Path),
+            type=str,
             required=True,
-            help="Input PCAP file or directory",
+            help="Input PCAP file, directory, or comma-separated file list",
         )
         @click.option(
             "-o",
@@ -208,7 +208,7 @@ class FilterPlugin(PluginBase):
         @click.pass_context
         def filter_command(
             ctx: click.Context,
-            input_path: Path,
+            input_path: str,
             output_path: Path | None,
             threshold: int,
             no_recursive: bool,
@@ -231,6 +231,9 @@ class FilterPlugin(PluginBase):
 
               # Filter with custom output file
               capmaster filter -i capture.pcap -o clean.pcap
+
+              # Filter comma-separated file list
+              capmaster filter -i "file1.pcap,file2.pcap,file3.pcap"
 
               # Filter all PCAP files in a directory (recursive by default)
               capmaster filter -i captures/ -o filtered/
@@ -276,7 +279,7 @@ class FilterPlugin(PluginBase):
 
     def execute(  # type: ignore[override]
         self,
-        input_path: Path,
+        input_path: str | Path,
         output_path: Path | None = None,
         ack_threshold: int = 20,
         recursive: bool = True,
@@ -286,7 +289,7 @@ class FilterPlugin(PluginBase):
         Execute the filter plugin.
 
         Args:
-            input_path: Input PCAP file or directory
+            input_path: Input PCAP file, directory, or comma-separated file list
             output_path: Output PCAP file or directory
             ack_threshold: ACK increment threshold
             recursive: Whether to recursively scan directories (default: True)
@@ -296,11 +299,17 @@ class FilterPlugin(PluginBase):
             Exit code (0 for success, non-zero for failure)
         """
         try:
+            # Parse input path (supports comma-separated file list)
+            if isinstance(input_path, str):
+                input_paths = PcapScanner.parse_input(input_path)
+            else:
+                input_paths = [str(input_path)]
+
             # Scan for PCAP files using PcapScanner (consistent with analyze plugin)
-            pcap_files = PcapScanner.scan([str(input_path)], recursive=recursive)
+            pcap_files = PcapScanner.scan(input_paths, recursive=recursive)
 
             if not pcap_files:
-                raise NoPcapFilesError(input_path)
+                raise NoPcapFilesError(str(input_path))
 
             logger.info(f"Found {len(pcap_files)} PCAP file(s)")
 

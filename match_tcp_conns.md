@@ -31,8 +31,8 @@
 - **输出文件**: `<输出目录>/correlations.txt`
 - **输出格式**:
   ```
-  [1] A: 192.168.1.10:12345 -> 10.0.0.1:80
-      B: 172.16.0.5:54321 -> 10.0.0.1:80
+  [1] A: 192.168.1.10:12345 <-> 10.0.0.1:80
+      B: 172.16.0.5:54321 <-> 10.0.0.1:80
       置信度: 0.95 | 证据: synopt isnC dataC ipid
   ```
 
@@ -249,7 +249,7 @@ for (i, j, score) in candidates:
 class TcpConnection:
     def __init__(self):
         self.stream_id = 0
-        self.five_tuple = ""  # "src_ip:src_port -> dst_ip:dst_port"
+        self.five_tuple = ""  # "client_ip:client_port <-> server_ip:server_port"
         self.synopt = ""      # SYN 选项序列
         self.isn_c = 0        # 客户端 ISN
         self.isn_s = 0        # 服务器 ISN

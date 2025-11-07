@@ -125,6 +125,19 @@ class ConnectionScorer:
                 evidence="no-ipid",
             )
 
+        # Check time overlap requirement (新增)
+        time_overlap = self._check_time_overlap(conn1, conn2)
+
+        # If no time overlap, return 0 score immediately
+        if not time_overlap:
+            return MatchScore(
+                normalized_score=0.0,
+                raw_score=0.0,
+                available_weight=0.0,
+                ipid_match=True,
+                evidence="no-time-overlap",
+            )
+
         # Determine if we should use payload features
         # Don't use payload if either connection is header-only
         use_payload = use_payload and not (conn1.is_header_only or conn2.is_header_only)
@@ -228,6 +241,42 @@ class ConnectionScorer:
         # IPID must match exactly (including 0)
         # Note: We don't reject IPID=0 as it's a valid value
         return conn1.ipid_first == conn2.ipid_first
+
+    def _check_time_overlap(self, conn1: TcpConnection, conn2: TcpConnection) -> bool:
+        """
+        Check if two connections have time overlap.
+
+        Time overlap exists if the time ranges [first, last] of the two connections intersect.
+        This is important for matching streams with the same 5-tuple but different time ranges.
+
+        Time overlap formula:
+        - No overlap if: conn1 ends before conn2 starts OR conn2 ends before conn1 starts
+        - Overlap exists if: NOT (no overlap)
+
+        Args:
+            conn1: First connection
+            conn2: Second connection
+
+        Returns:
+            True if time ranges overlap, False otherwise
+
+        Example:
+            conn1: [0, 100]
+            conn2: [50, 150]
+            → Overlap: [50, 100] ✅
+
+            conn1: [0, 100]
+            conn2: [200, 300]
+            → No overlap ❌
+        """
+        # Check if ranges overlap
+        # No overlap if: conn1 ends before conn2 starts OR conn2 ends before conn1 starts
+        no_overlap = (
+            conn1.last_packet_time < conn2.first_packet_time
+            or conn2.last_packet_time < conn1.first_packet_time
+        )
+
+        return not no_overlap
 
     def _score_syn_options(self, conn1: TcpConnection, conn2: TcpConnection) -> tuple[float, float]:
         """

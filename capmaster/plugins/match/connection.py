@@ -73,12 +73,23 @@ class TcpConnection:
     ipid_first: int
     """First IP ID value (0 if not available)"""
 
+    first_packet_time: float
+    """Timestamp of the earliest packet in the stream (Unix timestamp in seconds)"""
+
+    last_packet_time: float
+    """Timestamp of the latest packet in the stream (Unix timestamp in seconds)"""
+
+    packet_count: int
+    """Total number of packets in the stream"""
+
     def __str__(self) -> str:
         """String representation for debugging."""
         return (
             f"TcpConnection(stream={self.stream_id}, "
-            f"{self.client_ip}:{self.client_port} -> {self.server_ip}:{self.server_port}, "
-            f"header_only={self.is_header_only})"
+            f"{self.client_ip}:{self.client_port} <-> {self.server_ip}:{self.server_port}, "
+            f"ipid={self.ipid_first}, "
+            f"time=[{self.first_packet_time:.3f}, {self.last_packet_time:.3f}], "
+            f"packets={self.packet_count})"
         )
 
 
@@ -279,6 +290,18 @@ class ConnectionBuilder:
         # Compute length signature (with direction)
         length_signature = self._compute_length_signature(packets, client_ip, server_ip)
 
+        # Compute time range (earliest and latest packet timestamps)
+        timestamps = [p.timestamp for p in packets if p.timestamp is not None]
+        if timestamps:
+            first_packet_time = min(timestamps)
+            last_packet_time = max(timestamps)
+        else:
+            # Fallback: use syn_timestamp if no timestamps available
+            first_packet_time = syn_timestamp
+            last_packet_time = syn_timestamp
+
+        packet_count = len(packets)
+
         return TcpConnection(
             stream_id=stream_id,
             client_ip=client_ip,
@@ -296,6 +319,9 @@ class ConnectionBuilder:
             length_signature=length_signature,
             is_header_only=is_header_only,
             ipid_first=ipid_first,
+            first_packet_time=first_packet_time,
+            last_packet_time=last_packet_time,
+            packet_count=packet_count,
         )
 
     def _compute_payload_hashes(

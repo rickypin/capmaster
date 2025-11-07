@@ -9,16 +9,43 @@ class PcapScanner:
     VALID_EXTENSIONS: set[str] = {".pcap", ".pcapng"}
 
     @classmethod
-    def scan(cls, paths: list[str], recursive: bool = False) -> list[Path]:
+    def parse_input(cls, input_str: str) -> list[str]:
+        """
+        Parse input string to extract file/directory paths.
+
+        Supports:
+        - Single file path: "/path/to/file.pcap"
+        - Single directory path: "/path/to/dir"
+        - Comma-separated file list: "/path/to/file1.pcap,/path/to/file2.pcap"
+
+        Args:
+            input_str: Input string containing path(s)
+
+        Returns:
+            List of path strings
+        """
+        # Check if input contains comma (file list)
+        if "," in input_str:
+            # Split by comma and strip whitespace
+            paths = [p.strip() for p in input_str.split(",")]
+            # Filter out empty strings
+            return [p for p in paths if p]
+        else:
+            # Single path
+            return [input_str.strip()]
+
+    @classmethod
+    def scan(cls, paths: list[str], recursive: bool = False, preserve_order: bool = False) -> list[Path]:
         """
         Scan and return all valid PCAP files from the given paths.
 
         Args:
             paths: List of file or directory paths to scan
             recursive: If True, scan directories recursively
+            preserve_order: If True, preserve input order instead of sorting alphabetically
 
         Returns:
-            List of valid PCAP file paths, sorted alphabetically
+            List of valid PCAP file paths, sorted alphabetically (unless preserve_order=True)
 
         Raises:
             FileNotFoundError: If a path does not exist
@@ -37,8 +64,19 @@ class PcapScanner:
             elif path.is_dir():
                 pcap_files.extend(cls._scan_directory(path, recursive))
 
-        # Remove duplicates and sort
-        return sorted(set(pcap_files))
+        # Remove duplicates
+        if preserve_order:
+            # Preserve order while removing duplicates
+            seen = set()
+            result = []
+            for p in pcap_files:
+                if p not in seen:
+                    seen.add(p)
+                    result.append(p)
+            return result
+        else:
+            # Remove duplicates and sort alphabetically
+            return sorted(set(pcap_files))
 
     @classmethod
     def _scan_directory(cls, directory: Path, recursive: bool) -> list[Path]:

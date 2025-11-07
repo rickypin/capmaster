@@ -193,63 +193,33 @@ def _match_bucket_one_to_many(
     return matches
 ```
 
-### 方案 2: 添加方向检查（补充）
+### 方案 2: 方向检查（已废弃）
 
-基于之前的讨论，同时添加方向检查：
+**注意：五元组一致时，方向无关。不需要检查方向。**
 
-```python
-def _check_direction(self, conn1: TcpConnection, conn2: TcpConnection) -> bool:
-    """
-    Check if connections have the same direction.
-    
-    Args:
-        conn1: First connection
-        conn2: Second connection
-    
-    Returns:
-        True if direction matches, False otherwise
-    """
-    same_direction = (
-        conn1.client_ip == conn2.client_ip and
-        conn1.server_ip == conn2.server_ip and
-        conn1.client_port == conn2.client_port and
-        conn1.server_port == conn2.server_port
-    )
-    return same_direction
-```
+当五元组（src_ip, src_port, dst_ip, dst_port, protocol）一致时：
+- `A:35101 → B:26302`
+- `B:26302 → A:35101`
 
-在 `score()` 方法中添加：
-```python
-# Check direction requirement
-direction_match = self._check_direction(conn1, conn2)
-if not direction_match:
-    return MatchScore(
-        normalized_score=0.0,
-        raw_score=0.0,
-        available_weight=0.0,
-        ipid_match=True,
-        evidence="wrong-direction",
-    )
-```
+这两个方向描述的是**同一个 TCP 连接**，只是观察视角不同（抓包点不同）。
+
+因此：
+- ❌ **不需要**检查方向是否一致
+- ✅ **只需要**检查五元组是否一致（已经在连接提取时完成）
 
 ## 实现步骤
 
-### Phase 1: 添加时间范围字段
+### Phase 1: 添加时间范围字段 ✅ 已完成
 1. ✅ 修改 `TcpConnection` 添加 `first_packet_time`, `last_packet_time`, `packet_count`
 2. ✅ 修改 `ConnectionBuilder._build_connection()` 计算时间范围
 3. ✅ 更新相关测试
 
-### Phase 2: 添加时间重叠检查
+### Phase 2: 添加时间重叠检查 ✅ 已完成
 1. ✅ 在 `ConnectionScorer` 添加 `_check_time_overlap()` 方法
 2. ✅ 在 `score()` 方法中添加时间重叠检查
 3. ✅ 更新相关测试
 
-### Phase 3: 添加方向检查（可选）
-1. ✅ 在 `ConnectionScorer` 添加 `_check_direction()` 方法
-2. ✅ 在 `score()` 方法中添加方向检查
-3. ✅ 更新相关测试
-
-### Phase 4: 支持一对多匹配（可选，需要讨论）
+### Phase 3: 支持一对多匹配（可选，需要讨论）
 1. ⚠️ 评估是否需要一对多匹配
 2. ⚠️ 如果需要，设计新的匹配算法
 3. ⚠️ 更新 `ConnectionMatcher`

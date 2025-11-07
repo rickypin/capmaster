@@ -58,5 +58,10 @@ def discover_plugins() -> None:
     except ImportError:
         pass
 
+    try:
+        import capmaster.plugins.compare  # noqa: F401
+    except ImportError:
+        pass
+
 
 __all__ = ["PluginBase", "register_plugin", "get_all_plugins", "discover_plugins"]

@@ -7,11 +7,12 @@ This comprehensive guide covers all aspects of using CapMaster for PCAP analysis
 1. [Getting Started](#getting-started)
 2. [Analyze Command](#analyze-command)
 3. [Match Command](#match-command)
-4. [Filter Command](#filter-command)
-5. [Clean Command](#clean-command)
-6. [Advanced Usage](#advanced-usage)
-7. [Troubleshooting](#troubleshooting)
-8. [Best Practices](#best-practices)
+4. [Compare Command](#compare-command)
+5. [Filter Command](#filter-command)
+6. [Clean Command](#clean-command)
+7. [Advanced Usage](#advanced-usage)
+8. [Troubleshooting](#troubleshooting)
+9. [Best Practices](#best-practices)
 
 ## Getting Started
 
@@ -340,6 +341,229 @@ Match #1 (Score: 0.95)
 
 Match #2 (Score: 0.82)
   ...
+```
+
+## Compare Command
+
+The `compare` command performs detailed packet-level comparison of matched TCP connections between two PCAP files.
+
+### Use Cases
+
+- Verify packet-level consistency between client and server captures
+- Identify differences in IP ID, TCP flags, sequence numbers, and acknowledgment numbers
+- Analyze network behavior differences across capture points
+- Debug NAT, load balancer, or proxy issues
+
+### Basic Usage
+
+```bash
+# Compare two PCAP files
+capmaster compare -i /path/to/captures/
+
+# Save results to file
+capmaster compare -i /path/to/captures/ -o comparison.txt
+
+# Show flow hash for each connection
+capmaster compare -i /path/to/captures/ --show-flow-hash
+```
+
+### Input Requirements
+
+The input directory must contain **exactly 2 PCAP files**:
+
+```
+captures/
+├── client.pcap
+└── server.pcap
+```
+
+### Comparison Process
+
+The compare command works in three stages:
+
+1. **Match Connections**: Uses the same matching algorithm as the `match` command
+2. **Extract Packets**: Extracts all packets for each matched connection pair
+3. **Compare Packets**: Performs detailed packet-level comparison using IP ID as the pairing key
+
+### Comparison Fields
+
+For each packet pair, the following fields are compared:
+
+| Field | Description |
+|-------|-------------|
+| IP ID | IP identification field (used as pairing key) |
+| TCP Flags | TCP flags (SYN, ACK, FIN, RST, PSH, URG, ECE, CWR) |
+| Sequence Number | TCP sequence number |
+| Acknowledgment Number | TCP acknowledgment number |
+
+### Flow Hash Feature
+
+The `--show-flow-hash` option calculates and displays a bidirectional flow identifier for each TCP connection:
+
+```bash
+capmaster compare -i captures/ --show-flow-hash
+```
+
+**Flow Hash Characteristics:**
+- **Bidirectional**: Same hash for both directions of a flow
+- **5-Tuple Based**: Uses source IP, destination IP, source port, destination port, and protocol
+- **Normalized**: Endpoints are ordered consistently
+
+**Use Cases:**
+- Identify the same connection across different PCAP files
+- Group packets belonging to the same flow
+- Correlate connections in network analysis
+
+See [Flow Hash Feature Documentation](FLOW_HASH_FEATURE.md) for detailed information.
+
+### Score Threshold
+
+Adjust the minimum score for connection matching:
+
+```bash
+# Default threshold (0.60)
+capmaster compare -i captures/
+
+# Stricter matching (higher threshold)
+capmaster compare -i captures/ --threshold 0.80
+
+# More lenient matching (lower threshold)
+capmaster compare -i captures/ --threshold 0.40
+```
+
+### Bucketing Strategies
+
+Same as the `match` command:
+
+```bash
+# Auto (default)
+capmaster compare -i captures/ --bucket auto
+
+# Server IP bucketing
+capmaster compare -i captures/ --bucket server
+
+# Port bucketing
+capmaster compare -i captures/ --bucket port
+
+# No bucketing
+capmaster compare -i captures/ --bucket none
+```
+
+### Output Format
+
+#### Overall Summary
+
+```
+================================================================================
+TCP Connection Packet-Level Comparison Report
+================================================================================
+File A: client.pcap
+File B: server.pcap
+Matched Connections: 50
+
+Overall Summary:
+  Total matched connections: 50
+  Identical connections: 35
+  Connections with differences: 15
+```
+
+#### Flow Hash Summary (with --show-flow-hash)
+
+```
+================================================================================
+Flow Hash Summary
+================================================================================
+Connection                                                   Flow Hash                 Status
+--------------------------------------------------------------------------------
+192.168.1.100:54321 <-> 10.0.0.1:80                         a6bdc8ceba87bd4e (LHS>=RHS) Identical
+192.168.1.101:54322 <-> 10.0.0.1:443                        db6b29fa86d8297f (RHS>LHS)  3 diffs
+...
+```
+
+#### Difference Type Statistics
+
+```
+================================================================================
+Difference Type Statistics
+================================================================================
+Difference Type      Total Count     Affected Connections
+--------------------------------------------------------------------------------
+TCP FLAGS            45              12
+SEQUENCE             23              8
+ACKNOWLEDGMENT       18              7
+IPID                 5               3
+--------------------------------------------------------------------------------
+TOTAL                91              15
+```
+
+#### TCP FLAGS Detailed Breakdown
+
+```
+================================================================================
+TCP FLAGS Detailed Breakdown
+================================================================================
+File A FLAGS                        File B FLAGS                        Count
+--------------------------------------------------------------------------------
+0x0010 [ACK]                        0x0018 [PSH, ACK]                   25
+  Example Frame ID pairs (File A → File B):
+    (123→456), (124→457), (125→458), (126→459), (127→460)
+    ... and 20 more pairs
+0x0002 [SYN]                        0x0012 [SYN, ACK]                   10
+  Example Frame ID pairs (File A → File B):
+    (100→400), (101→401), (102→402)
+...
+```
+
+#### Per-Connection Summary
+
+```
+================================================================================
+Per-Connection Summary
+================================================================================
+Connection ID                                      Score      Diffs      Types
+--------------------------------------------------------------------------------
+192.168.1.100:54321 <-> 10.0.0.1:80               0.95       3          tcp_flags
+192.168.1.101:54322 <-> 10.0.0.1:443              0.88       5          tcp_flags, sequence
+...
+```
+
+Or with `--show-flow-hash`:
+
+```
+================================================================================
+Per-Connection Summary
+================================================================================
+Connection ID                                      Score      Diffs      Flow Hash
+--------------------------------------------------------------------------------
+192.168.1.100:54321 <-> 10.0.0.1:80               0.95       3          a6bdc8ceba87bd4e (LHS>=RHS)
+192.168.1.101:54322 <-> 10.0.0.1:443              0.88       5          db6b29fa86d8297f (RHS>LHS)
+...
+```
+
+### Examples
+
+#### Basic Comparison
+
+```bash
+capmaster compare -i captures/
+```
+
+#### High-Confidence Matches Only
+
+```bash
+capmaster compare -i captures/ --threshold 0.80
+```
+
+#### With Flow Hash
+
+```bash
+capmaster compare -i captures/ --show-flow-hash -o results.txt
+```
+
+#### Custom Bucketing
+
+```bash
+capmaster compare -i captures/ --bucket port --threshold 0.70
 ```
 
 ## Filter Command

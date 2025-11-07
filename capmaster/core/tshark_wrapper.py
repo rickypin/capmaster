@@ -1,8 +1,11 @@
 """Wrapper for tshark command-line tool."""
 
+import logging
 import shutil
 import subprocess
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class TsharkWrapper:
@@ -86,8 +89,12 @@ class TsharkWrapper:
             CompletedProcess with stdout, stderr, and returncode
 
         Raises:
-            subprocess.CalledProcessError: If tshark command fails
+            subprocess.CalledProcessError: If tshark command fails with exit code != 2
             subprocess.TimeoutExpired: If command times out
+
+        Notes:
+            Exit code 2 is treated as a warning (e.g., truncated PCAP files) and
+            does not raise an exception, as tshark still produces useful output.
         """
         cmd = [self.tshark_path]
 
@@ -98,7 +105,7 @@ class TsharkWrapper:
         # Add custom arguments
         cmd.extend(args)
 
-        # Execute command
+        # Execute command without check=True to handle exit codes manually
         if output_file is not None:
             # Redirect stdout to file for text output
             with open(output_file, "w", encoding="utf-8") as f:
@@ -107,7 +114,7 @@ class TsharkWrapper:
                     stdout=f,
                     stderr=subprocess.PIPE,
                     text=True,
-                    check=True,
+                    check=False,  # Don't raise on non-zero exit
                     timeout=timeout,
                 )
         else:
@@ -116,8 +123,28 @@ class TsharkWrapper:
                 cmd,
                 capture_output=True,
                 text=True,
-                check=True,
+                check=False,  # Don't raise on non-zero exit
                 timeout=timeout,
+            )
+
+        # Handle exit codes
+        # Exit code 0: Success
+        # Exit code 2: Warning (e.g., truncated file) - still produces output
+        # Other codes: Error
+        if result.returncode == 0:
+            # Success
+            pass
+        elif result.returncode == 2:
+            # Warning - log but don't fail
+            if result.stderr:
+                logger.warning(f"tshark warning: {result.stderr.strip()}")
+        else:
+            # Error - raise exception
+            raise subprocess.CalledProcessError(
+                result.returncode,
+                cmd,
+                output=result.stdout,
+                stderr=result.stderr
             )
 
         return result

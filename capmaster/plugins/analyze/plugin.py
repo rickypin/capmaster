@@ -28,6 +28,7 @@ def _process_single_file(
     pcap_file: Path,
     output_dir: Path | None,
     output_format: str = "txt",
+    selected_modules: tuple[str, ...] | None = None,
 ) -> tuple[Path, int]:
     """
     Process a single PCAP file (used for multiprocessing).
@@ -36,6 +37,7 @@ def _process_single_file(
         pcap_file: Path to PCAP file
         output_dir: Optional output directory
         output_format: Output format ("txt" or "md", default: "txt")
+        selected_modules: Optional tuple of module names to run
 
     Returns:
         Tuple of (pcap_file, number of outputs generated)
@@ -50,6 +52,10 @@ def _process_single_file(
         discover_modules()
         module_classes = get_all_modules()
         modules = [module_class() for module_class in module_classes]
+
+        # Filter modules if specific modules are requested
+        if selected_modules:
+            modules = [m for m in modules if m.name in selected_modules]
 
         # Create output directory
         output_path = OutputManager.create_output_dir(pcap_file, output_dir)
@@ -91,8 +97,8 @@ class AnalyzePlugin(PluginBase):
             "--input",
             "input_path",
             required=True,
-            type=click.Path(exists=True, path_type=Path),
-            help="Input PCAP file or directory",
+            type=str,
+            help="Input PCAP file, directory, or comma-separated file list",
         )
         @click.option(
             "-o",
@@ -123,14 +129,23 @@ class AnalyzePlugin(PluginBase):
             default="txt",
             help="Output file format: txt or md (default: txt)",
         )
+        @click.option(
+            "-m",
+            "--modules",
+            "selected_modules",
+            multiple=True,
+            type=str,
+            help="Specific modules to run (e.g., -m protocol_hierarchy -m dns_stats). If not specified, run all modules.",
+        )
         @click.pass_context
         def analyze_command(
             ctx: click.Context,
-            input_path: Path,
+            input_path: str,
             output_dir: Path | None,
             no_recursive: bool,
             workers: int,
             output_format: str,
+            selected_modules: tuple[str, ...],
         ) -> None:
             """
             Analyze PCAP files and generate statistics.
@@ -150,6 +165,9 @@ class AnalyzePlugin(PluginBase):
               # Analyze all PCAP files in a directory (recursive by default)
               capmaster analyze -i captures/
 
+              # Analyze comma-separated file list
+              capmaster analyze -i "file1.pcap,file2.pcap,file3.pcap"
+
               # Analyze only top-level directory (no recursion)
               capmaster analyze -i captures/ -r -o results/
 
@@ -162,10 +180,20 @@ class AnalyzePlugin(PluginBase):
               # Generate output in Markdown format
               capmaster analyze -i capture.pcap -f md
 
+              # Run only specific modules
+              capmaster analyze -i capture.pcap -m protocol_hierarchy
+              capmaster analyze -i capture.pcap -m protocol_hierarchy -m dns_stats
+
             \b
             Concurrent Processing:
               Use -w/--workers to enable concurrent processing of multiple files.
               Default is 1 (sequential). Recommended: number of CPU cores.
+
+            \b
+            Module Selection:
+              Use -m/--modules to run specific analysis modules.
+              Can be specified multiple times to run multiple modules.
+              If not specified, all available modules will be run.
 
             \b
             Output:
@@ -181,6 +209,7 @@ class AnalyzePlugin(PluginBase):
                 recursive=recursive,
                 workers=workers,
                 output_format=output_format,
+                selected_modules=selected_modules if selected_modules else None,
             )
             ctx.exit(exit_code)
 
@@ -190,24 +219,32 @@ class AnalyzePlugin(PluginBase):
 
         Args:
             **kwargs: Keyword arguments including:
-                - input_path: Path to input PCAP file or directory
+                - input_path: String path to input PCAP file, directory, or comma-separated file list
                 - output_dir: Optional custom output directory
                 - recursive: Whether to recursively scan directories (default: True)
                 - workers: Number of worker processes for concurrent processing
                 - output_format: Output format ("txt" or "md", default: "txt")
+                - selected_modules: Optional tuple of module names to run
 
         Returns:
             Exit code (0 for success, non-zero for failure)
         """
         # Extract arguments from kwargs
-        input_path = kwargs.get("input_path")
+        input_path_raw = kwargs.get("input_path")
         output_dir = kwargs.get("output_dir")
         recursive = kwargs.get("recursive", True)  # Default to True (matching original script)
         workers = kwargs.get("workers", 1)
         output_format = kwargs.get("output_format", "txt")
+        selected_modules_raw = kwargs.get("selected_modules")
 
-        if input_path is None or not isinstance(input_path, Path):
-            logger.error("Input path is required and must be a Path object")
+        # Type narrowing for selected_modules
+        selected_modules: tuple[str, ...] | None = None
+        if selected_modules_raw is not None and isinstance(selected_modules_raw, tuple):
+            selected_modules = selected_modules_raw
+
+        # Validate and parse input_path
+        if input_path_raw is None or not isinstance(input_path_raw, str):
+            logger.error("Input path is required and must be a string")
             return 1
 
         if output_dir is not None and not isinstance(output_dir, Path):
@@ -219,6 +256,9 @@ class AnalyzePlugin(PluginBase):
 
         if not isinstance(workers, int) or workers < 1:
             workers = 1
+
+        if not isinstance(output_format, str):
+            output_format = "txt"
 
         try:
             # Initialize core components
@@ -239,13 +279,32 @@ class AnalyzePlugin(PluginBase):
                 logger.warning("No analysis modules found")
                 return 1
 
-            logger.info(f"Loaded {len(modules)} analysis modules")
+            # Filter modules if specific modules are requested
+            if selected_modules:
+                # Get all available module names
+                available_modules = {m.name for m in modules}
+
+                # Validate that all selected modules exist
+                invalid_modules = set(selected_modules) - available_modules
+                if invalid_modules:
+                    logger.error(f"Unknown module(s): {', '.join(sorted(invalid_modules))}")
+                    logger.error(f"Available modules: {', '.join(sorted(available_modules))}")
+                    return 1
+
+                # Filter modules to only selected ones
+                modules = [m for m in modules if m.name in selected_modules]
+                logger.info(f"Running {len(modules)} selected module(s): {', '.join(sorted(selected_modules))}")
+            else:
+                logger.info(f"Loaded {len(modules)} analysis modules")
+
+            # Parse input path (supports comma-separated file list)
+            input_paths = PcapScanner.parse_input(input_path_raw)
 
             # Scan for PCAP files
-            pcap_files = PcapScanner.scan([str(input_path)], recursive=recursive)
+            pcap_files = PcapScanner.scan(input_paths, recursive=recursive)
 
             if not pcap_files:
-                raise NoPcapFilesError(input_path)
+                raise NoPcapFilesError(input_path_raw)
 
             logger.info(f"Found {len(pcap_files)} PCAP file(s)")
 
@@ -270,7 +329,13 @@ class AnalyzePlugin(PluginBase):
                     with ProcessPoolExecutor(max_workers=workers) as pool:
                         # Submit all tasks
                         futures = {
-                            pool.submit(_process_single_file, pcap_file, output_dir, output_format): pcap_file
+                            pool.submit(
+                                _process_single_file,
+                                pcap_file,
+                                output_dir,
+                                output_format,
+                                selected_modules
+                            ): pcap_file
                             for pcap_file in pcap_files
                         }
 

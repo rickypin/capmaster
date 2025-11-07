@@ -44,8 +44,7 @@ class ConnectionMatch:
         """String representation."""
         return (
             f"Match(score={self.score.normalized_score:.2f}, "
-            f"{self.conn1.client_ip}:{self.conn1.server_port} <-> "
-            f"{self.conn2.client_ip}:{self.conn2.server_port})"
+            f"{self.conn1.client_ip}:{self.conn1.client_port} <-> {self.conn1.server_ip}:{self.conn1.server_port})"
         )
 
 
