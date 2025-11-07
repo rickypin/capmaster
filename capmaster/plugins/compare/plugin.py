@@ -456,21 +456,15 @@ class ComparePlugin(PluginBase):
                 results = []
 
                 for match in matches:
-                    # Extract packets for this connection from both files using TCP 5-tuple
-                    # Do NOT use stream_id as it may differ between files
-                    baseline_packets = extractor.extract_packets(
+                    # Extract packets for this connection from both files
+                    # Use stream_id to distinguish between multiple streams with same 5-tuple
+                    baseline_packets = extractor.extract_by_stream_id(
                         baseline_file,
-                        match.conn1.client_ip,
-                        match.conn1.client_port,
-                        match.conn1.server_ip,
-                        match.conn1.server_port,
+                        match.conn1.stream_id,
                     )
-                    compare_packets = extractor.extract_packets(
+                    compare_packets = extractor.extract_by_stream_id(
                         compare_file,
-                        match.conn2.client_ip,
-                        match.conn2.client_port,
-                        match.conn2.server_ip,
-                        match.conn2.server_port,
+                        match.conn2.stream_id,
                     )
 
                     # Create connection identifier
@@ -582,8 +576,20 @@ class ComparePlugin(PluginBase):
             lines.append(f"{'No.':<6} {'Stream ID':<12} {'Client IP:Port':<25} {'Server IP:Port':<25} {'Packets':<10} {'First Time':<22} {'Last Time':<22}")
         lines.append("-" * 140)
 
+        # Group results by baseline stream_id to avoid duplicates
+        baseline_streams_seen = set()
+        unique_baseline_count = 0
+
         for idx, (match, packets_a, packets_b, result) in enumerate(results, 1):
             conn = match.conn1  # Baseline connection
+
+            # Skip if we've already output this baseline stream
+            if conn.stream_id in baseline_streams_seen:
+                continue
+
+            baseline_streams_seen.add(conn.stream_id)
+            unique_baseline_count += 1
+
             client_addr = f"{conn.client_ip}:{conn.client_port}"
             server_addr = f"{conn.server_ip}:{conn.server_port}"
 
@@ -606,15 +612,15 @@ class ComparePlugin(PluginBase):
                 )
                 flow_hash_str = format_flow_hash(hash_hex, flow_side)
                 lines.append(
-                    f"{idx:<6} {conn.stream_id:<12} {client_addr:<25} {server_addr:<25} {len(packets_a):<10} {first_time_str:<22} {last_time_str:<22} {flow_hash_str:<30}"
+                    f"{unique_baseline_count:<6} {conn.stream_id:<12} {client_addr:<25} {server_addr:<25} {len(packets_a):<10} {first_time_str:<22} {last_time_str:<22} {flow_hash_str:<30}"
                 )
             else:
                 lines.append(
-                    f"{idx:<6} {conn.stream_id:<12} {client_addr:<25} {server_addr:<25} {len(packets_a):<10} {first_time_str:<22} {last_time_str:<22}"
+                    f"{unique_baseline_count:<6} {conn.stream_id:<12} {client_addr:<25} {server_addr:<25} {len(packets_a):<10} {first_time_str:<22} {last_time_str:<22}"
                 )
 
         lines.append("-" * 140)
-        lines.append(f"Total: {len(results)} connections")
+        lines.append(f"Total: {unique_baseline_count} connections")
 
         # Section 2: Matched TCP Connections from Compare File
         lines.append(f"\n{'='*140}")
@@ -627,8 +633,20 @@ class ComparePlugin(PluginBase):
             lines.append(f"{'No.':<6} {'Stream ID':<12} {'Client IP:Port':<25} {'Server IP:Port':<25} {'Packets':<10} {'First Time':<22} {'Last Time':<22}")
         lines.append("-" * 140)
 
+        # Group results by compare stream_id to avoid duplicates
+        compare_streams_seen = set()
+        unique_compare_count = 0
+
         for idx, (match, packets_a, packets_b, result) in enumerate(results, 1):
             conn = match.conn2  # Compare connection
+
+            # Skip if we've already output this compare stream
+            if conn.stream_id in compare_streams_seen:
+                continue
+
+            compare_streams_seen.add(conn.stream_id)
+            unique_compare_count += 1
+
             client_addr = f"{conn.client_ip}:{conn.client_port}"
             server_addr = f"{conn.server_ip}:{conn.server_port}"
 
@@ -651,15 +669,15 @@ class ComparePlugin(PluginBase):
                 )
                 flow_hash_str = format_flow_hash(hash_hex, flow_side)
                 lines.append(
-                    f"{idx:<6} {conn.stream_id:<12} {client_addr:<25} {server_addr:<25} {len(packets_b):<10} {first_time_str:<22} {last_time_str:<22} {flow_hash_str:<30}"
+                    f"{unique_compare_count:<6} {conn.stream_id:<12} {client_addr:<25} {server_addr:<25} {len(packets_b):<10} {first_time_str:<22} {last_time_str:<22} {flow_hash_str:<30}"
                 )
             else:
                 lines.append(
-                    f"{idx:<6} {conn.stream_id:<12} {client_addr:<25} {server_addr:<25} {len(packets_b):<10} {first_time_str:<22} {last_time_str:<22}"
+                    f"{unique_compare_count:<6} {conn.stream_id:<12} {client_addr:<25} {server_addr:<25} {len(packets_b):<10} {first_time_str:<22} {last_time_str:<22}"
                 )
 
         lines.append("-" * 140)
-        lines.append(f"Total: {len(results)} connections")
+        lines.append(f"Total: {unique_compare_count} connections")
 
         # Overall summary statistics
         identical_count = sum(1 for _, _, _, r in results if r.is_identical)
@@ -668,90 +686,114 @@ class ComparePlugin(PluginBase):
         lines.append(f"\n{'='*100}")
         lines.append("Overall Summary")
         lines.append("=" * 100)
-        lines.append(f"Total matched connections: {len(results)}")
+        lines.append(f"Total matched pairs: {len(results)}")
+        lines.append(f"Unique baseline streams: {unique_baseline_count}")
+        lines.append(f"Unique compare streams: {unique_compare_count}")
         lines.append(f"Identical connections: {identical_count}")
         lines.append(f"Connections with differences: {diff_count}")
 
-        # Collect all differences by type across all connections
-        diff_type_counter = Counter()
-        connections_with_diff_type = {}  # Track which connections have each diff type
-        tcp_flags_details = Counter()  # Track specific TCP FLAGS differences
-        tcp_flags_frame_pairs = {}  # Track frame id pairs for each TCP FLAGS difference
+        # Collect statistics per stream pair
+        # Structure: {(baseline_stream_id, compare_stream_id): {diff_type: count, tcp_flags: {flags_pair: count}}}
+        stream_pair_stats = {}
 
         for match, packets_a, packets_b, result in results:
+            # Create stream pair identifier
+            stream_pair = (match.conn1.stream_id, match.conn2.stream_id)
+
+            if stream_pair not in stream_pair_stats:
+                stream_pair_stats[stream_pair] = {
+                    'diff_types': Counter(),
+                    'tcp_flags': Counter(),
+                    'tcp_flags_frames': {},
+                    'connection_id': result.connection_id,
+                    'is_identical': result.is_identical,
+                }
+
             if not result.is_identical:
-                # Count differences by type
+                # Count differences by type for this stream pair
                 for diff in result.differences:
-                    diff_type_counter[diff.diff_type] += 1
+                    stream_pair_stats[stream_pair]['diff_types'][diff.diff_type] += 1
 
-                    # Track connections with this diff type
-                    if diff.diff_type not in connections_with_diff_type:
-                        connections_with_diff_type[diff.diff_type] = set()
-                    connections_with_diff_type[diff.diff_type].add(result.connection_id)
-
-                    # Collect TCP FLAGS details
+                    # Collect TCP FLAGS details for this stream pair
                     if diff.diff_type == DiffType.TCP_FLAGS:
                         flags_pair = f"{diff.value_a} → {diff.value_b}"
-                        tcp_flags_details[flags_pair] += 1
+                        stream_pair_stats[stream_pair]['tcp_flags'][flags_pair] += 1
 
                         # Track frame id pairs for this flags difference
-                        if flags_pair not in tcp_flags_frame_pairs:
-                            tcp_flags_frame_pairs[flags_pair] = []
-                        tcp_flags_frame_pairs[flags_pair].append((diff.frame_a, diff.frame_b))
+                        if flags_pair not in stream_pair_stats[stream_pair]['tcp_flags_frames']:
+                            stream_pair_stats[stream_pair]['tcp_flags_frames'][flags_pair] = []
+                        stream_pair_stats[stream_pair]['tcp_flags_frames'][flags_pair].append((diff.frame_a, diff.frame_b))
 
-        # Output categorized statistics
-        if diff_type_counter:
-            lines.append(f"\n{'='*100}")
-            lines.append("Difference Type Statistics")
-            lines.append("=" * 100)
-            lines.append(f"{'Difference Type':<20} {'Total Count':<15} {'Affected Connections':<25}")
-            lines.append("-" * 100)
+        # Output statistics per stream pair
+        if stream_pair_stats:
+            lines.append(f"\n{'='*140}")
+            lines.append("Per-Stream-Pair Statistics")
+            lines.append("=" * 140)
 
-            # Sort by count (descending)
-            for diff_type, count in diff_type_counter.most_common():
-                affected_conns = len(connections_with_diff_type.get(diff_type, set()))
-                # Use the enum value directly with _DIFF suffix
-                diff_type_name = diff_type.value.upper() + '_DIFF'
-                lines.append(f"{diff_type_name:<20} {count:<15} {affected_conns:<25}")
+            # Sort stream pairs by baseline stream id, then compare stream id
+            sorted_pairs = sorted(stream_pair_stats.keys())
 
-            lines.append("-" * 100)
+            for stream_pair in sorted_pairs:
+                stats = stream_pair_stats[stream_pair]
+                baseline_stream, compare_stream = stream_pair
 
-        # TCP FLAGS detailed breakdown
-        if tcp_flags_details:
-            lines.append(f"\n{'='*100}")
-            lines.append("TCP FLAGS Detailed Breakdown")
-            lines.append("=" * 100)
-            lines.append(f"{'Baseline FLAGS':<35} {'Compare FLAGS':<35} {'Count':<15}")
-            lines.append("-" * 100)
+                lines.append(f"\n{'─'*140}")
+                lines.append(f"Stream Pair: Baseline Stream {baseline_stream} ↔ Compare Stream {compare_stream}")
+                lines.append(f"Connection: {stats['connection_id']}")
+                lines.append(f"{'─'*140}")
 
-            # Sort by count (descending)
-            for flags_pair, count in tcp_flags_details.most_common():
-                flags_baseline, flags_compare = flags_pair.split(" → ")
-                # Parse flags to human-readable format
-                flags_baseline_readable = parse_tcp_flags(flags_baseline)
-                flags_compare_readable = parse_tcp_flags(flags_compare)
-                lines.append(f"{flags_baseline_readable:<35} {flags_compare_readable:<35} {count:<15}")
+                # Show if identical
+                if stats['is_identical']:
+                    lines.append(f"\n  Status: ✓ Identical (no differences found)")
+                    continue
 
-                # Show frame id pairs for this flags difference
-                frame_pairs = tcp_flags_frame_pairs.get(flags_pair, [])
-                if frame_pairs:
-                    # Show first few pairs as examples
-                    max_examples = 10
-                    lines.append(f"  Example Frame ID pairs (Baseline → Compare):")
+                # Difference Type Statistics for this stream pair
+                if stats['diff_types']:
+                    lines.append(f"\n  Difference Type Statistics:")
+                    lines.append(f"  {'Difference Type':<20} {'Count':<15}")
+                    lines.append(f"  {'-'*35}")
 
-                    # Format pairs in a compact way, multiple per line
-                    pairs_per_line = 5
-                    for i in range(0, min(max_examples, len(frame_pairs)), pairs_per_line):
-                        batch = frame_pairs[i:i+pairs_per_line]
-                        pair_strs = [f"({frame_baseline}→{frame_compare})" for frame_baseline, frame_compare in batch]
-                        lines.append(f"    {', '.join(pair_strs)}")
+                    for diff_type, count in stats['diff_types'].most_common():
+                        diff_type_name = diff_type.value.upper() + '_DIFF'
+                        lines.append(f"  {diff_type_name:<20} {count:<15}")
 
-                    # If there are more pairs, show summary
-                    if len(frame_pairs) > max_examples:
-                        lines.append(f"    ... and {len(frame_pairs) - max_examples} more pairs")
+                    lines.append(f"  {'-'*35}")
 
-            lines.append("-" * 100)
-            lines.append(f"{'TOTAL':<71} {sum(tcp_flags_details.values()):<15}")
+                # TCP FLAGS Detailed Breakdown for this stream pair
+                if stats['tcp_flags']:
+                    lines.append(f"\n  TCP FLAGS Detailed Breakdown:")
+                    lines.append(f"  {'Baseline FLAGS':<35} {'Compare FLAGS':<35} {'Count':<15}")
+                    lines.append(f"  {'-'*85}")
+
+                    for flags_pair, count in stats['tcp_flags'].most_common():
+                        flags_baseline, flags_compare = flags_pair.split(" → ")
+                        # Parse flags to human-readable format
+                        flags_baseline_readable = parse_tcp_flags(flags_baseline)
+                        flags_compare_readable = parse_tcp_flags(flags_compare)
+                        lines.append(f"  {flags_baseline_readable:<35} {flags_compare_readable:<35} {count:<15}")
+
+                        # Show frame id pairs for this flags difference
+                        frame_pairs = stats['tcp_flags_frames'].get(flags_pair, [])
+                        if frame_pairs:
+                            # Show first few pairs as examples
+                            max_examples = 10
+                            lines.append(f"    Example Frame ID pairs (Baseline → Compare):")
+
+                            # Format pairs in a compact way, multiple per line
+                            pairs_per_line = 5
+                            for i in range(0, min(max_examples, len(frame_pairs)), pairs_per_line):
+                                batch = frame_pairs[i:i+pairs_per_line]
+                                pair_strs = [f"({frame_baseline}→{frame_compare})" for frame_baseline, frame_compare in batch]
+                                lines.append(f"      {', '.join(pair_strs)}")
+
+                            # If there are more pairs, show summary
+                            if len(frame_pairs) > max_examples:
+                                lines.append(f"      ... and {len(frame_pairs) - max_examples} more pairs")
+
+                    lines.append(f"  {'-'*85}")
+                    lines.append(f"  {'TOTAL':<71} {sum(stats['tcp_flags'].values()):<15}")
+
+            lines.append(f"\n{'='*140}")
 
         # Remove "Connection Details" section as requested
 
@@ -818,7 +860,11 @@ class ComparePlugin(PluginBase):
                     pcap_id = 0
                     logger.info(f"Using default pcap_id=0 (legacy mode)")
 
-                # Process each matched connection
+                # Group results by baseline stream_id to merge multiple matches
+                # Key: (baseline_stream_id, flow_hash)
+                # Value: {first_time, last_time, all_tcp_flags_diffs, all_seq_num_diffs, conn}
+                baseline_stream_groups = {}
+
                 for match, packets_a, packets_b, result in results:
                     conn = match.conn1  # Use baseline connection
 
@@ -830,24 +876,53 @@ class ComparePlugin(PluginBase):
                         conn.server_port,
                     )
 
+                    # Create group key
+                    group_key = (conn.stream_id, flow_hash)
+
+                    # Initialize group if not exists
+                    if group_key not in baseline_stream_groups:
+                        baseline_stream_groups[group_key] = {
+                            'conn': conn,
+                            'flow_hash': flow_hash,
+                            'first_time': None,
+                            'last_time': None,
+                            'tcp_flags_diffs': [],
+                            'seq_num_diffs': [],
+                        }
+
+                    group = baseline_stream_groups[group_key]
+
                     # Extract first_time and last_time from baseline packets (file1)
-                    # Convert from Unix timestamp (seconds) to nanoseconds, rounded to microsecond precision
-                    first_time = None
-                    last_time = None
                     if packets_a:
-                        # packets_a are already sorted chronologically
-                        first_timestamp = packets_a[0].timestamp  # float, in seconds
-                        last_timestamp = packets_a[-1].timestamp  # float, in seconds
+                        first_timestamp = packets_a[0].timestamp
+                        last_timestamp = packets_a[-1].timestamp
 
-                        # Convert to nanoseconds, rounded to microsecond precision
-                        first_time = round_to_microseconds(first_timestamp)
-                        last_time = round_to_microseconds(last_timestamp)
+                        first_time_ns = round_to_microseconds(first_timestamp)
+                        last_time_ns = round_to_microseconds(last_timestamp)
 
-                    # Count TCP flags differences
+                        # Update group's time range
+                        if group['first_time'] is None or first_time_ns < group['first_time']:
+                            group['first_time'] = first_time_ns
+                        if group['last_time'] is None or last_time_ns > group['last_time']:
+                            group['last_time'] = last_time_ns
+
+                    # Collect TCP flags differences
                     tcp_flags_diffs = [
                         d for d in result.differences
                         if d.diff_type == DiffType.TCP_FLAGS
                     ]
+                    group['tcp_flags_diffs'].extend(tcp_flags_diffs)
+
+                    # Collect sequence number differences
+                    seq_num_diffs = [
+                        d for d in result.differences
+                        if d.diff_type == DiffType.SEQ_NUM
+                    ]
+                    group['seq_num_diffs'].extend(seq_num_diffs)
+
+                # Write one record per baseline stream
+                for group_key, group in baseline_stream_groups.items():
+                    tcp_flags_diffs = group['tcp_flags_diffs']
                     tcp_flags_cnt = len(tcp_flags_diffs)
 
                     # Build TCP flags difference type and text as string
@@ -864,30 +939,26 @@ class ComparePlugin(PluginBase):
 
                         # Get the most common flags change type (use -> instead of →)
                         if flags_pairs:
-                            # Sort by occurrence count and get the most common one
                             sorted_pairs = sorted(flags_pairs.items(), key=lambda x: len(x[1]), reverse=True)
                             most_common_pair = sorted_pairs[0][0]
-                            # Convert → to -> for database storage
                             tcp_flags_type = most_common_pair.replace('→', '->')
 
-                        # Format as list of strings, then join with semicolon
-                        for pair, frames in flags_pairs.items():
-                            tcp_flags_text_list.append(f"{pair} ({len(frames)} occurrences)")
+                        # Format as frame mapping list: Frame 100→101; Frame 101→102; ...
+                        # Limit to first 10 pairs, show "... and X more" if there are more
+                        max_examples = 10
+                        for i, diff in enumerate(tcp_flags_diffs[:max_examples]):
+                            tcp_flags_text_list.append(f"Frame {diff.frame_a}→{diff.frame_b}")
+                        if len(tcp_flags_diffs) > max_examples:
+                            tcp_flags_text_list.append(f"... and {len(tcp_flags_diffs) - max_examples} more")
 
-                    # Convert list to semicolon-separated string
                     tcp_flags_text_string = "; ".join(tcp_flags_text_list) if tcp_flags_text_list else ""
 
-                    # Count sequence number differences
-                    seq_num_diffs = [
-                        d for d in result.differences
-                        if d.diff_type == DiffType.SEQ_NUM
-                    ]
+                    # Build sequence number difference text
+                    seq_num_diffs = group['seq_num_diffs']
                     seq_num_cnt = len(seq_num_diffs)
 
-                    # Build sequence number difference text as string
                     seq_num_text_list = []
                     if seq_num_diffs:
-                        # Show first few examples
                         max_examples = 10
                         for i, diff in enumerate(seq_num_diffs[:max_examples]):
                             seq_num_text_list.append(
@@ -896,17 +967,14 @@ class ComparePlugin(PluginBase):
                         if len(seq_num_diffs) > max_examples:
                             seq_num_text_list.append(f"... and {len(seq_num_diffs) - max_examples} more")
 
-                    # Convert list to semicolon-separated string
                     seq_num_text_string = "; ".join(seq_num_text_list) if seq_num_text_list else ""
 
                     # Insert record
-                    # Use pcap_id from file1 (baseline_file)
-                    # first_time and last_time are extracted from baseline packets (file1)
                     db.insert_flow_hash(
                         pcap_id=pcap_id,
-                        flow_hash=flow_hash,
-                        first_time=first_time,
-                        last_time=last_time,
+                        flow_hash=group['flow_hash'],
+                        first_time=group['first_time'],
+                        last_time=group['last_time'],
                         tcp_flags_different_cnt=tcp_flags_cnt,
                         tcp_flags_different_type=tcp_flags_type,
                         tcp_flags_different_text=tcp_flags_text_string,
@@ -917,7 +985,7 @@ class ComparePlugin(PluginBase):
                 # Commit all inserts
                 db.commit()
 
-                logger.info(f"Successfully wrote {len(results)} records to database")
+                logger.info(f"Successfully wrote {len(baseline_stream_groups)} records to database (from {len(results)} matches)")
 
         except ImportError as e:
             logger.error(f"Database functionality not available: {e}")
