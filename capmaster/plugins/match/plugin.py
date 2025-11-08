@@ -258,7 +258,7 @@ class MatchPlugin(PluginBase):
             return 0
 
         except Exception as e:
-            return handle_error(e, verbose=logger.level <= logging.DEBUG)
+            return handle_error(e, show_traceback=logger.level <= logging.DEBUG)
 
     def _extract_connections(self, pcap_file: Path) -> list:
         """

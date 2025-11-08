@@ -35,147 +35,51 @@ def discover_modules() -> None:
     Discover and import all analysis modules.
 
     This function imports all module files to trigger their registration.
+    Only catches ModuleNotFoundError for missing modules, allowing other
+    import errors to propagate.
     """
-    # Import all modules to trigger registration
-    try:
-        from capmaster.plugins.analyze.modules import protocol_hierarchy  # noqa: F401
-    except ImportError:
-        pass
+    import importlib.util
 
-    try:
-        from capmaster.plugins.analyze.modules import ipv4_conversations  # noqa: F401
-    except ImportError:
-        pass
+    # List of all analysis module names
+    module_names = [
+        "protocol_hierarchy",
+        "ipv4_conversations",
+        "ipv4_source_ttls",
+        "ipv4_destinations",
+        "ipv4_hosts",
+        "tcp_conversations",
+        "tcp_zero_window",
+        "tcp_duration",
+        "tcp_completeness",
+        "udp_conversations",
+        "dns_stats",
+        "dns_qr_stats",
+        "tls_alert",
+        "http_stats",
+        "http_response",
+        "ftp_stats",
+        "icmp_stats",
+        "sip_stats",
+        "rtp_stats",
+        "ssh_stats",
+        "json_stats",
+        "xml_stats",
+        "ftp_data_stats",
+        "mq_stats",
+        "voip_quality",
+        "mgcp_stats",
+        "rtcp_stats",
+        "sdp_stats",
+    ]
 
-    try:
-        from capmaster.plugins.analyze.modules import ipv4_source_ttls  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import ipv4_destinations  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import ipv4_hosts  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import tcp_conversations  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import tcp_zero_window  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import tcp_duration  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import tcp_completeness  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import udp_conversations  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import dns_stats  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import dns_qr_stats  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import tls_alert  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import http_stats  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import http_response  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import ftp_stats  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import icmp_stats  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import sip_stats  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import rtp_stats  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import ssh_stats  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import json_stats  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import xml_stats  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import ftp_data_stats  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import mq_stats  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import voip_quality  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import mgcp_stats  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import rtcp_stats  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        from capmaster.plugins.analyze.modules import sdp_stats  # noqa: F401
-    except ImportError:
-        pass
+    for module_name in module_names:
+        full_module_name = f"capmaster.plugins.analyze.modules.{module_name}"
+        # Check if module exists before importing
+        spec = importlib.util.find_spec(full_module_name)
+        if spec is not None:
+            # Module exists, import it (let any import errors propagate)
+            __import__(full_module_name)
+        # If module doesn't exist, silently skip it
 
 
 __all__ = [

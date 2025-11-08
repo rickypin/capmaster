@@ -1,6 +1,7 @@
 """Base class for all plugins."""
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 import click
 
@@ -30,7 +31,7 @@ class PluginBase(ABC):
         pass
 
     @abstractmethod
-    def execute(self, **kwargs: object) -> int:
+    def execute(self, **kwargs: Any) -> int:
         """
         Execute plugin logic.
 

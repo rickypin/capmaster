@@ -56,7 +56,10 @@ def setup_logger(name: str, verbosity: int = 0) -> logging.Logger:
 
 def get_logger(name: str) -> logging.Logger:
     """
-    Get a logger instance with default configuration.
+    Get a logger instance.
+
+    This function returns a logger without automatically adding handlers.
+    Handlers should be configured once at application startup using setup_logger().
 
     Args:
         name: Logger name (typically __name__)
@@ -64,23 +67,7 @@ def get_logger(name: str) -> logging.Logger:
     Returns:
         Logger instance
     """
-    logger = logging.getLogger(name)
-
-    # If logger has no handlers, set up default handler
-    if not logger.handlers:
-        handler = RichHandler(
-            console=console,
-            show_time=False,
-            show_path=False,
-            markup=True,
-        )
-        handler.setLevel(logging.INFO)
-        formatter = logging.Formatter("%(message)s")
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-
-    return logger
+    return logging.getLogger(name)
 
 
 def print_success(message: str) -> None:

@@ -2,6 +2,7 @@
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any
 
 import click
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
@@ -213,7 +214,7 @@ class AnalyzePlugin(PluginBase):
             )
             ctx.exit(exit_code)
 
-    def execute(self, **kwargs: object) -> int:
+    def execute(self, **kwargs: Any) -> int:
         """
         Execute analyze plugin logic.
 
@@ -393,4 +394,4 @@ class AnalyzePlugin(PluginBase):
             return 0
 
         except Exception as e:
-            return handle_error(e, verbose=logger.level <= 10)  # DEBUG level
+            return handle_error(e, show_traceback=logger.level <= 10)  # DEBUG level

@@ -29,12 +29,12 @@ class CapMasterError(Exception):
             console_err.print(f"[yellow]Suggestion:[/yellow] {self.suggestion}")
 
 
-class FileNotFoundError(CapMasterError):
-    """Error when a required file is not found."""
+class PcapFileNotFoundError(CapMasterError):
+    """Error when a required PCAP file is not found."""
 
     def __init__(self, file_path: Path):
         """
-        Initialize file not found error.
+        Initialize PCAP file not found error.
 
         Args:
             file_path: Path to the missing file
@@ -177,20 +177,20 @@ class ConfigurationError(CapMasterError):
         super().__init__(message, suggestion)
 
 
-def handle_error(error: Exception, verbose: bool = False) -> int:  # noqa: FBT001, FBT002
+def handle_error(error: Exception, *, show_traceback: bool = False) -> int:
     """
     Handle an error and return appropriate exit code.
 
     Args:
         error: The exception to handle
-        verbose: Whether to show verbose error information
+        show_traceback: Whether to show full traceback (keyword-only)
 
     Returns:
         Exit code (non-zero)
     """
     if isinstance(error, CapMasterError):
         error.display()
-        if verbose:
+        if show_traceback:
             import traceback
 
             console_err.print("\n[dim]Traceback:[/dim]")
@@ -198,7 +198,7 @@ def handle_error(error: Exception, verbose: bool = False) -> int:  # noqa: FBT00
         return 1
     else:
         console_err.print(f"[bold red]Unexpected error:[/bold red] {error}")
-        if verbose:
+        if show_traceback:
             import traceback
 
             console_err.print("\n[dim]Traceback:[/dim]")

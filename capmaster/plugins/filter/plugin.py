@@ -391,7 +391,7 @@ class FilterPlugin(PluginBase):
             return 0
 
         except Exception as e:
-            return handle_error(e, verbose=logger.level <= 10)  # DEBUG level
+            return handle_error(e, show_traceback=logger.level <= 10)  # DEBUG level
 
     def _detect_one_way_streams(self, pcap_file: Path, ack_threshold: int) -> list[int]:
         """

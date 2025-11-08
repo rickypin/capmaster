@@ -291,5 +291,5 @@ class CleanPlugin(PluginBase):
             return 0
 
         except Exception as e:
-            return handle_error(e, verbose=logger.level <= 10)  # DEBUG level
+            return handle_error(e, show_traceback=logger.level <= 10)  # DEBUG level
 

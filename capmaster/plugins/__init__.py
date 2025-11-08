@@ -35,33 +35,27 @@ def discover_plugins() -> None:
     Discover and import all plugins.
 
     This function imports all plugin modules to trigger their registration.
+    Only catches ModuleNotFoundError for missing plugins, allowing other
+    import errors to propagate.
     """
-    # Import plugins to trigger registration
-    # This will be populated as we implement each plugin
-    try:
-        import capmaster.plugins.analyze  # noqa: F401
-    except ImportError:
-        pass
+    import importlib.util
 
-    try:
-        import capmaster.plugins.match  # noqa: F401
-    except ImportError:
-        pass
+    # List of plugin module names to discover
+    plugin_modules = [
+        "capmaster.plugins.analyze",
+        "capmaster.plugins.match",
+        "capmaster.plugins.filter",
+        "capmaster.plugins.clean",
+        "capmaster.plugins.compare",
+    ]
 
-    try:
-        import capmaster.plugins.filter  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        import capmaster.plugins.clean  # noqa: F401
-    except ImportError:
-        pass
-
-    try:
-        import capmaster.plugins.compare  # noqa: F401
-    except ImportError:
-        pass
+    for module_name in plugin_modules:
+        # Check if module exists before importing
+        spec = importlib.util.find_spec(module_name)
+        if spec is not None:
+            # Module exists, import it (let any import errors propagate)
+            __import__(module_name)
+        # If module doesn't exist, silently skip it
 
 
 __all__ = ["PluginBase", "register_plugin", "get_all_plugins", "discover_plugins"]
