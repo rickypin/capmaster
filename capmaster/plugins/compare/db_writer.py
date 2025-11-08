@@ -94,7 +94,7 @@ class DatabaseWriter:
         - first_time: bigint (nanosecond timestamp)
         - last_time: bigint (nanosecond timestamp)
         - tcp_flags_different_cnt: bigint
-        - tcp_flags_different_type: text (e.g., "0x0002->0x0010")
+        - tcp_flags_different_type: text (e.g., "SYN (Local Side) -> ACK" or "SYN -> ACK (Local Side)")
         - tcp_flags_different_text: text (string, semicolon-separated)
         - seq_num_different_cnt: bigint
         - seq_num_different_text: text (string, semicolon-separated)
@@ -229,7 +229,7 @@ class DatabaseWriter:
             first_time: First packet timestamp in nanoseconds (optional)
             last_time: Last packet timestamp in nanoseconds (optional)
             tcp_flags_different_cnt: Count of TCP flags differences
-            tcp_flags_different_type: TCP flags change type (e.g., "0x0002->0x0010")
+            tcp_flags_different_type: TCP flags change type (e.g., "SYN (Local Side) -> ACK" or "SYN -> ACK (Local Side)")
             tcp_flags_different_text: String of TCP flags difference descriptions (semicolon-separated)
             seq_num_different_cnt: Count of sequence number differences
             seq_num_different_text: String of sequence number difference descriptions (semicolon-separated)

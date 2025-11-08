@@ -81,6 +81,79 @@ def parse_tcp_flags(flags_hex: str) -> str:
     return f"{flags_hex} [{', '.join(flag_names)}]"
 
 
+def format_tcp_flags_change(flags_baseline: str, flags_compare: str) -> str:
+    """
+    Format TCP flags change in human-readable format.
+
+    Args:
+        flags_baseline: Baseline (local side) flags (hex string like "0x0002")
+        flags_compare: Compare (remote side) flags (hex string like "0x0010")
+
+    Returns:
+        Human-readable change like "SYN (Local Side) -> ACK" or "SYN -> ACK (Local Side)"
+        The Local Side marker is placed on the baseline flags side.
+    """
+    def get_flag_names(flags_hex: str) -> list[str]:
+        """Extract flag names from hex string."""
+        try:
+            flags_int = int(flags_hex, 16)
+        except (ValueError, TypeError):
+            return []
+
+        flag_names = []
+        if flags_int & 0x01:  # FIN
+            flag_names.append("FIN")
+        if flags_int & 0x02:  # SYN
+            flag_names.append("SYN")
+        if flags_int & 0x04:  # RST
+            flag_names.append("RST")
+        if flags_int & 0x08:  # PSH
+            flag_names.append("PSH")
+        if flags_int & 0x10:  # ACK
+            flag_names.append("ACK")
+        if flags_int & 0x20:  # URG
+            flag_names.append("URG")
+        if flags_int & 0x40:  # ECE
+            flag_names.append("ECE")
+        if flags_int & 0x80:  # CWR
+            flag_names.append("CWR")
+
+        return flag_names
+
+    baseline_flags = get_flag_names(flags_baseline)
+    compare_flags = get_flag_names(flags_compare)
+
+    baseline_str = "+".join(baseline_flags) if baseline_flags else "NONE"
+    compare_str = "+".join(compare_flags) if compare_flags else "NONE"
+
+    # Determine which side should have the Local Side marker
+    # We want to keep the natural order based on typical TCP semantics
+    # The logic: compare baseline and compare to determine natural flow direction
+
+    # Define priority for common TCP flag combinations
+    # Lower number = earlier in typical TCP flow
+    flag_priority = {
+        "SYN": 1,
+        "SYN+ACK": 2,
+        "ACK": 3,
+        "PSH+ACK": 4,
+        "FIN": 5,
+        "FIN+ACK": 6,  # FIN+ACK comes after FIN (response)
+        "RST": 7,
+        "RST+ACK": 8,  # RST+ACK comes after RST (response)
+    }
+
+    baseline_priority = flag_priority.get(baseline_str, 999)
+    compare_priority = flag_priority.get(compare_str, 999)
+
+    # If baseline comes before or equal to compare in natural order, keep as is
+    if baseline_priority <= compare_priority:
+        return f"{baseline_str} (Local Side) -> {compare_str}"
+    else:
+        # Swap to maintain natural order, but keep Local Side on baseline
+        return f"{compare_str} -> {baseline_str} (Local Side)"
+
+
 @register_plugin
 class ComparePlugin(PluginBase):
     """
@@ -501,7 +574,7 @@ class ComparePlugin(PluginBase):
             return 0
 
         except Exception as e:
-            return handle_error(e, verbose=logger.level <= logging.DEBUG)
+            return handle_error(e, show_traceback=logger.level <= logging.DEBUG)
 
     def _extract_connections(self, pcap_file: Path):
         """Extract TCP connections from a PCAP file."""
@@ -937,11 +1010,13 @@ class ComparePlugin(PluginBase):
                                 flags_pairs[pair] = []
                             flags_pairs[pair].append((diff.frame_a, diff.frame_b))
 
-                        # Get the most common flags change type (use -> instead of →)
+                        # Get the most common flags change type and format it
                         if flags_pairs:
                             sorted_pairs = sorted(flags_pairs.items(), key=lambda x: len(x[1]), reverse=True)
                             most_common_pair = sorted_pairs[0][0]
-                            tcp_flags_type = most_common_pair.replace('→', '->')
+                            # Parse the pair to get baseline and compare flags
+                            flags_baseline, flags_compare = most_common_pair.split('→')
+                            tcp_flags_type = format_tcp_flags_change(flags_baseline, flags_compare)
 
                         # Format as frame mapping list: Frame 100→101; Frame 101→102; ...
                         # Limit to first 10 pairs, show "... and X more" if there are more
