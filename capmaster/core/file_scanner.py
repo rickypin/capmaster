@@ -1,5 +1,7 @@
 """PCAP file scanner for discovering and validating PCAP files."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 

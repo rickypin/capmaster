@@ -23,6 +23,7 @@ The hash calculation follows this message structure:
 The messages are normalized by comparing ports and swapping if needed.
 """
 
+from __future__ import annotations
 import ipaddress
 import struct
 from enum import IntEnum

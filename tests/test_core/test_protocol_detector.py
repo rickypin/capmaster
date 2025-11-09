@@ -9,6 +9,7 @@ import pytest
 from capmaster.core.protocol_detector import ProtocolDetector
 
 
+@pytest.mark.integration
 class TestProtocolDetector:
     """Test cases for ProtocolDetector."""
 

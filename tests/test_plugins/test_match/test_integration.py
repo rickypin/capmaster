@@ -7,6 +7,7 @@ from typing import List
 import pytest
 
 
+@pytest.mark.integration
 class TestMatchIntegration:
     """Integration tests for the Match plugin using real test cases."""
 

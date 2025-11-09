@@ -277,6 +277,68 @@ except Exception as e:
     return handle_error(e, verbose=verbose)
 ```
 
+### 5.3 ⚠️ 重要约束：必须使用 TsharkWrapper
+
+**禁止直接使用 subprocess.run 调用 tshark！**
+
+❌ **错误示例**:
+```python
+import subprocess
+
+# 不要这样做！
+cmd = ["tshark", "-r", str(pcap_file), "-T", "fields", ...]
+result = subprocess.run(cmd, capture_output=True, text=True)
+```
+
+✅ **正确示例**:
+```python
+from capmaster.core.tshark_wrapper import TsharkWrapper
+
+# 使用 TsharkWrapper
+tshark = TsharkWrapper()
+args = ["-T", "fields", "-e", "tcp.stream", ...]
+result = tshark.execute(args=args, input_file=pcap_file)
+```
+
+**原因**:
+1. **统一错误处理**: TsharkWrapper 自动处理 exit code 2（警告）
+2. **版本检查**: 自动验证 tshark 版本要求
+3. **路径管理**: 自动查找 tshark 可执行文件
+4. **日志记录**: 统一的日志输出
+5. **代码一致性**: 与项目其他部分保持一致
+6. **易于测试**: 可以 mock TsharkWrapper 进行单元测试
+
+**TsharkWrapper 支持的用法**:
+
+```python
+# 文本输出（捕获 stdout）
+result = tshark.execute(
+    args=["-q", "-z", "io,phs"],
+    input_file=pcap_file
+)
+output = result.stdout
+
+# 文本输出（重定向到文件）
+result = tshark.execute(
+    args=["-q", "-z", "conv,tcp"],
+    input_file=pcap_file,
+    output_file=output_txt_file
+)
+
+# PCAP 输出（使用 -w 参数）
+result = tshark.execute(
+    args=["-Y", "tcp.port == 80", "-w", str(output_pcap_file)],
+    input_file=pcap_file
+)
+
+# 超时控制
+result = tshark.execute(
+    args=["-q", "-z", "http,tree"],
+    input_file=pcap_file,
+    timeout=300  # 5 分钟超时
+)
+```
+
 ---
 
 ## 6. 测试模板
@@ -327,6 +389,7 @@ def test_plugin_integration(test_pcap, tmp_path):
 - [ ] 实现 `name`, `setup_cli`, `execute`
 - [ ] 使用 `@register_plugin`
 - [ ] 在 `discover_plugins()` 中导入
+- [ ] **使用 `TsharkWrapper` 而非 `subprocess.run`**
 - [ ] 添加类型提示
 - [ ] 编写测试 (覆盖率 ≥ 80%)
 - [ ] 运行 `mypy` 和 `ruff`
@@ -337,6 +400,7 @@ def test_plugin_integration(test_pcap, tmp_path):
 - [ ] 实现 `name`, `output_suffix`, `required_protocols`, `build_tshark_args`
 - [ ] 使用 `@register_module`
 - [ ] 在 `discover_modules()` 中导入
+- [ ] **`build_tshark_args` 返回参数列表（不包括 tshark 和 -r）**
 - [ ] 添加类型提示
 - [ ] 编写测试 (覆盖率 ≥ 80%)
 - [ ] 运行 `mypy` 和 `ruff`

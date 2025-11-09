@@ -8,6 +8,7 @@ import pytest
 from capmaster.plugins.analyze.plugin import AnalyzePlugin
 
 
+@pytest.mark.integration
 class TestModuleSelection:
     """Tests for the --modules parameter functionality."""
 
@@ -211,6 +212,7 @@ class TestModuleSelection:
         assert exit_code == 0 or exit_code == 1  # May fail due to mocking, but shouldn't crash
 
 
+@pytest.mark.integration
 class TestModuleSelectionCLI:
     """Tests for CLI integration of module selection."""
 

@@ -4,6 +4,7 @@ Filter plugin for removing one-way TCP connections.
 This plugin identifies and removes one-way TCP connections from PCAP files.
 """
 
+from __future__ import annotations
 import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
@@ -36,11 +37,11 @@ def _detect_one_way_streams_helper(pcap_file: Path, ack_threshold: int) -> list[
     Returns:
         List of one-way stream IDs
     """
-    # Extract TCP packet information
-    cmd = [
-        "tshark",
-        "-r",
-        str(pcap_file),
+    # Initialize TsharkWrapper
+    tshark = TsharkWrapper()
+
+    # Build tshark arguments for extracting TCP packet information
+    args = [
         "-T",
         "fields",
         "-e",
@@ -59,13 +60,14 @@ def _detect_one_way_streams_helper(pcap_file: Path, ack_threshold: int) -> list[
         "tcp.len",
         "-E",
         "separator=\t",
+        "-Y",
         "tcp",
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-
-    if result.returncode != 0:
-        logger.error(f"tshark failed: {result.stderr}")
+    try:
+        result = tshark.execute(args=args, input_file=pcap_file)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"tshark failed: {e.stderr}")
         return []
 
     # Parse packets and feed to detector
@@ -135,24 +137,35 @@ def _filter_single_file(
             import shutil
             shutil.copy2(pcap_file, out_file)
         else:
+            # Initialize TsharkWrapper
+            tshark = TsharkWrapper()
+
+            # Build display filter to exclude one-way streams
             stream_filters = [f"tcp.stream != {stream_id}" for stream_id in one_way_streams]
             display_filter = " and ".join(stream_filters)
 
-            cmd = [
-                "tshark",
-                "-r",
-                str(pcap_file),
+            # Build tshark arguments for PCAP output
+            args = [
                 "-Y",
                 display_filter,
                 "-w",
                 str(out_file),
             ]
 
-            subprocess.run(cmd, check=True, capture_output=True)
+            tshark.execute(args=args, input_file=pcap_file)
 
         return (pcap_file, len(one_way_streams))
+    except (OSError, PermissionError) as e:
+        # File system errors (permissions, disk full, etc.)
+        logger.error(f"File system error filtering {pcap_file}: {e}")
+        return (pcap_file, 0)
+    except RuntimeError as e:
+        # Tshark execution errors
+        logger.error(f"Tshark error filtering {pcap_file}: {e}")
+        return (pcap_file, 0)
     except Exception as e:
-        logger.error(f"Error filtering {pcap_file}: {e}")
+        # Unexpected errors - log with more detail
+        logger.exception(f"Unexpected error filtering {pcap_file}: {e}")
         return (pcap_file, 0)
 
 
@@ -390,8 +403,18 @@ class FilterPlugin(PluginBase):
 
             return 0
 
+        except (OSError, PermissionError) as e:
+            # File system errors
+            from capmaster.utils.errors import CapMasterError
+            error = CapMasterError(
+                f"File system error: {e}",
+                "Check file permissions and disk space"
+            )
+            return handle_error(error, show_traceback=logger.level <= 10)
         except Exception as e:
-            return handle_error(e, show_traceback=logger.level <= 10)  # DEBUG level
+            # Unexpected errors - show traceback in debug mode
+            import logging
+            return handle_error(e, show_traceback=logger.level <= logging.DEBUG)
 
     def _detect_one_way_streams(self, pcap_file: Path, ack_threshold: int) -> list[int]:
         """
@@ -498,25 +521,17 @@ class FilterPlugin(PluginBase):
         stream_filters = [f"tcp.stream != {stream_id}" for stream_id in exclude_streams]
         display_filter = " and ".join(stream_filters)
 
-        # Use tshark to filter
-        cmd = [
-            "tshark",
-            "-r",
-            str(input_file),
+        # Use TsharkWrapper to filter
+        tshark = TsharkWrapper()
+
+        # Build tshark arguments for PCAP output
+        args = [
             "-Y",
             display_filter,
             "-w",
             str(output_file),
         ]
 
-        logger.debug(f"Running: {' '.join(cmd)}")
+        logger.debug(f"Filtering with display filter: {display_filter}")
 
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-        if result.returncode != 0:
-            raise RuntimeError(f"tshark failed: {result.stderr}")
+        tshark.execute(args=args, input_file=input_file)

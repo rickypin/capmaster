@@ -1,5 +1,7 @@
 """Analysis modules registration and discovery."""
 
+from __future__ import annotations
+
 from capmaster.plugins.analyze.modules.base import AnalysisModule
 
 # Registry of all available analysis modules

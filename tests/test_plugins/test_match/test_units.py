@@ -1,5 +1,7 @@
 """Unit tests for Match plugin core modules."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import pytest
@@ -12,6 +14,7 @@ from capmaster.plugins.match.sampler import ConnectionSampler
 from capmaster.plugins.match.scorer import ConnectionScorer, MatchScore
 
 
+@pytest.mark.integration
 class TestTcpConnection:
     """Test TcpConnection dataclass."""
 
@@ -47,6 +50,7 @@ class TestTcpConnection:
         assert conn.is_header_only is False
 
 
+@pytest.mark.integration
 class TestTcpPacket:
     """Test TcpPacket dataclass."""
 
@@ -75,6 +79,7 @@ class TestTcpPacket:
         assert packet.flags == "0x002"
 
 
+@pytest.mark.integration
 class TestConnectionSampler:
     """Test ConnectionSampler."""
 
@@ -194,6 +199,7 @@ class TestConnectionSampler:
         assert header_only_in_sample
 
 
+@pytest.mark.integration
 class TestConnectionScorer:
     """Test ConnectionScorer."""
 
@@ -312,6 +318,7 @@ class TestConnectionScorer:
         assert score.raw_score > 0
 
 
+@pytest.mark.integration
 class TestMatchPlugin:
     """Test MatchPlugin integration."""
 
@@ -369,6 +376,7 @@ class TestMatchPlugin:
         assert exit_code != 0, "Should fail with non-existent input"
 
 
+@pytest.mark.integration
 class TestConnectionMatcher:
     """Test ConnectionMatcher."""
 

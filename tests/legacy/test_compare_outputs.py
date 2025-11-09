@@ -5,6 +5,7 @@ This module tests that the new Python implementation produces the same
 output as the original shell scripts.
 """
 
+from __future__ import annotations
 import difflib
 import random
 import subprocess

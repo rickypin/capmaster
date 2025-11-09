@@ -1,10 +1,10 @@
 """Error handling utilities for better user experience."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
-from rich.console import Console
-
-console_err = Console(stderr=True, style="red")
+from capmaster.utils.logger import console_err
 
 
 class CapMasterError(Exception):

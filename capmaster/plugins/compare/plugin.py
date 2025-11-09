@@ -1,5 +1,6 @@
 """Compare plugin for packet-level TCP connection comparison."""
 
+from __future__ import annotations
 import logging
 from pathlib import Path
 
@@ -11,8 +12,7 @@ from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
 from capmaster.plugins.compare.packet_comparator import PacketComparator
 from capmaster.plugins.compare.packet_extractor import PacketExtractor
-from capmaster.plugins.match.connection import ConnectionBuilder
-from capmaster.plugins.match.extractor import TcpFieldExtractor
+from capmaster.plugins.match.connection_extractor import extract_connections_from_pcap
 from capmaster.plugins.match.matcher import BucketStrategy, ConnectionMatcher, MatchMode
 from capmaster.utils.errors import (
     InsufficientFilesError,
@@ -573,22 +573,40 @@ class ComparePlugin(PluginBase):
             logger.info("Comparison complete")
             return 0
 
+        except InsufficientFilesError as e:
+            # Expected business error - handle gracefully
+            return handle_error(e, show_traceback=False)
+        except ImportError as e:
+            # Database dependency missing
+            from capmaster.utils.errors import CapMasterError
+            error = CapMasterError(
+                f"Missing dependency: {e}",
+                "Install database support with: pip install capmaster[database]"
+            )
+            return handle_error(error, show_traceback=False)
+        except (OSError, PermissionError) as e:
+            # File system errors
+            from capmaster.utils.errors import CapMasterError
+            error = CapMasterError(
+                f"File system error: {e}",
+                "Check file permissions and ensure files are accessible"
+            )
+            return handle_error(error, show_traceback=logger.level <= logging.DEBUG)
+        except RuntimeError as e:
+            # Tshark or processing errors
+            from capmaster.utils.errors import CapMasterError
+            error = CapMasterError(
+                f"Processing error: {e}",
+                "Check that PCAP files are valid and tshark is working"
+            )
+            return handle_error(error, show_traceback=logger.level <= logging.DEBUG)
         except Exception as e:
+            # Unexpected errors - show traceback in debug mode
             return handle_error(e, show_traceback=logger.level <= logging.DEBUG)
 
     def _extract_connections(self, pcap_file: Path):
         """Extract TCP connections from a PCAP file."""
-        extractor = TcpFieldExtractor()
-        builder = ConnectionBuilder()
-
-        # Extract packets and build connections
-        for packet in extractor.extract(pcap_file):
-            builder.add_packet(packet)
-
-        # Build connections
-        connections = list(builder.build_connections())
-
-        return connections
+        return extract_connections_from_pcap(pcap_file)
 
     def _output_results(
         self,

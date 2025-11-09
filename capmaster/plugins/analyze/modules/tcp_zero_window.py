@@ -1,5 +1,7 @@
 """TCP zero window statistics module."""
 
+from __future__ import annotations
+
 from collections import Counter
 from pathlib import Path
 

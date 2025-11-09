@@ -41,6 +41,7 @@ def temp_dir():
         yield Path(tmpdir)
 
 
+@pytest.mark.integration
 class TestFilterPlugin:
     """Test FilterPlugin class."""
     
@@ -69,6 +70,7 @@ class TestFilterPlugin:
         assert result.exit_code != 0
 
 
+@pytest.mark.integration
 class TestDetectOneWayStreams:
     """Test _detect_one_way_streams method."""
     
@@ -97,6 +99,7 @@ class TestDetectOneWayStreams:
         assert isinstance(one_way_streams, list)
 
 
+@pytest.mark.integration
 class TestFilterPcap:
     """Test _filter_pcap method."""
     
@@ -134,6 +137,7 @@ class TestFilterPcap:
         assert output_file.exists()
 
 
+@pytest.mark.integration
 class TestExecute:
     """Test execute method."""
     
@@ -202,6 +206,7 @@ class TestExecute:
         assert exit_code == 1
 
 
+@pytest.mark.integration
 class TestCLIIntegration:
     """Test CLI integration."""
     

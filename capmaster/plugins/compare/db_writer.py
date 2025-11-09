@@ -1,5 +1,6 @@
 """Database writer for compare plugin results."""
 
+from __future__ import annotations
 import logging
 from typing import Any
 from urllib.parse import urlparse
@@ -53,8 +54,11 @@ class DatabaseWriter:
             import psycopg2
         except ImportError:
             raise ImportError(
-                "psycopg2 is required for database functionality. "
-                "Install it with: pip install psycopg2-binary"
+                "Database functionality requires psycopg2-binary.\n"
+                "Install with one of the following methods:\n"
+                "  1. pip install capmaster[database]\n"
+                "  2. pip install -r requirements-database.txt\n"
+                "  3. pip install psycopg2-binary"
             )
         
         # Parse connection string

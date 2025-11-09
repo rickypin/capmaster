@@ -7,6 +7,7 @@ import pytest
 from capmaster.plugins.compare.plugin import round_to_microseconds
 
 
+@pytest.mark.integration
 class TestRoundToMicroseconds:
     """Test the round_to_microseconds function."""
 

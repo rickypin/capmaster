@@ -1,5 +1,7 @@
 """Connection sampling strategies for large datasets."""
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 
 from capmaster.plugins.match.connection import TcpConnection

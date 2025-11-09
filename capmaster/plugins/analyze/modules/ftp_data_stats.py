@@ -1,5 +1,7 @@
 """FTP-DATA statistics module."""
 
+from __future__ import annotations
+
 from collections import defaultdict
 from pathlib import Path
 

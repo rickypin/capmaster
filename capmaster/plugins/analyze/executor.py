@@ -1,5 +1,7 @@
 """Executor for running analysis modules."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 from rich.progress import Progress
@@ -32,7 +34,6 @@ class AnalysisExecutor:
         input_file: Path,
         output_dir: Path,
         modules: list[AnalysisModule],
-        sequence: int = 1,
         progress: Progress | None = None,
         output_format: str = "txt",
     ) -> dict[str, Path]:
@@ -43,7 +44,6 @@ class AnalysisExecutor:
             input_file: Path to input PCAP file
             output_dir: Path to output directory
             modules: List of analysis module instances to execute
-            sequence: Sequence number for output files (deprecated, not used)
             progress: Optional Progress instance for progress tracking
             output_format: Output format ("txt" or "md", default: "txt")
 

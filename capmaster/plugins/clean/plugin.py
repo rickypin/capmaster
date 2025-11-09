@@ -5,6 +5,7 @@ This plugin recursively scans directories and removes all 'statistics' folders
 and their contents.
 """
 
+from __future__ import annotations
 import shutil
 from pathlib import Path
 

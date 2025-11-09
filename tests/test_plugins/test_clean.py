@@ -12,6 +12,7 @@ from capmaster.plugins.clean.plugin import (
 )
 
 
+@pytest.mark.integration
 class TestCleanPlugin:
     """Test cases for CleanPlugin."""
 

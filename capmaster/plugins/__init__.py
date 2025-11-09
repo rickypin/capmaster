@@ -1,5 +1,7 @@
 """Plugin registration and discovery."""
 
+from __future__ import annotations
+
 from capmaster.plugins.base import PluginBase
 
 # Registry of all available plugins

@@ -1,5 +1,7 @@
 """IPv4 source TTLs statistics module."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 from capmaster.plugins.analyze.modules import register_module

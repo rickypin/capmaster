@@ -9,6 +9,7 @@ from capmaster.plugins.analyze.modules.rtp_stats import RtpStatsModule
 from capmaster.plugins.analyze.modules.ssh_stats import SshStatsModule
 
 
+@pytest.mark.integration
 class TestSipStatsModule:
     """Tests for SIP statistics module."""
 
@@ -88,6 +89,7 @@ class TestSipStatsModule:
         assert "Total SIP Responses: 2" in result
 
 
+@pytest.mark.integration
 class TestRtpStatsModule:
     """Tests for RTP statistics module."""
 
@@ -151,6 +153,7 @@ class TestRtpStatsModule:
         assert "Quality: Good" in result or "Quality: ✓ GOOD" in result
 
 
+@pytest.mark.integration
 class TestSshStatsModule:
     """Tests for SSH statistics module."""
 
@@ -223,6 +226,7 @@ class TestSshStatsModule:
         assert "Total SSH Packets:" in result
 
 
+@pytest.mark.integration
 class TestVoIPModulesIntegration:
     """Integration tests for VoIP modules with real PCAP file."""
 

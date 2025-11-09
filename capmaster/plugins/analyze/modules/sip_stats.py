@@ -1,5 +1,7 @@
 """SIP statistics module."""
 
+from __future__ import annotations
+
 from collections import Counter, defaultdict
 from pathlib import Path
 

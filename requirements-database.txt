@@ -1,0 +1,10 @@
+# CapMaster - Database Optional Dependencies
+# Generated from pyproject.toml [project.optional-dependencies.database]
+# Install with: pip install -r requirements-database.txt
+
+# Include production dependencies
+-r requirements.txt
+
+# PostgreSQL adapter for database output functionality
+psycopg2-binary==2.9.9
+

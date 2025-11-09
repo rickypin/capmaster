@@ -53,8 +53,15 @@ cd capmaster
 python3.10 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install in development mode
+# Install production dependencies
+pip install -r requirements.txt
+
+# Or install in editable mode with development dependencies
 pip install -e ".[dev]"
+
+# Optional: Install database support (for PostgreSQL output)
+pip install -e ".[database]"
+# Or: pip install -r requirements-database.txt
 
 # Verify installation
 capmaster --version
@@ -63,7 +70,34 @@ capmaster --version
 ### Using pip (when published)
 
 ```bash
+# Basic installation
 pip install capmaster
+
+# With database support
+pip install capmaster[database]
+
+# With development tools
+pip install capmaster[dev]
+```
+
+### Dependency Management
+
+The project uses version-locked dependencies for reproducible builds:
+
+- **requirements.txt** - Production dependencies (locked versions)
+- **requirements-dev.txt** - Development dependencies (testing, linting, type checking)
+- **requirements-database.txt** - Optional database dependencies (PostgreSQL support)
+
+To ensure consistent environments:
+```bash
+# Production environment
+pip install -r requirements.txt
+
+# Development environment
+pip install -r requirements-dev.txt
+
+# With database support
+pip install -r requirements-database.txt
 ```
 
 ## Quick Start

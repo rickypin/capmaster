@@ -1,5 +1,6 @@
 """TCP connection data structures and feature extraction."""
 
+from __future__ import annotations
 import hashlib
 from collections import defaultdict
 from collections.abc import Iterator

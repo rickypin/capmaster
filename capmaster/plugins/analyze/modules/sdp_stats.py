@@ -1,5 +1,7 @@
 """SDP (Session Description Protocol) statistics module."""
 
+from __future__ import annotations
+
 from pathlib import Path
 from collections import Counter, defaultdict
 

@@ -1,0 +1,15 @@
+# CapMaster - Production Dependencies
+# Generated from pyproject.toml [project.dependencies]
+# Install with: pip install -r requirements.txt
+
+# Core dependencies
+click==8.1.8
+markdown-it-py==3.0.0
+mdurl==0.1.2
+Pygments==2.19.1
+PyYAML==6.0
+rich==14.0.0
+
+# Optional dependencies for database functionality
+# Install with: pip install -r requirements-database.txt
+# psycopg2-binary==2.9.9

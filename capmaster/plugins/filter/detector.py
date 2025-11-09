@@ -5,6 +5,8 @@ This module implements the detection logic for identifying one-way TCP connectio
 that are likely caused by packet capture loss.
 """
 
+from __future__ import annotations
+
 from collections.abc import Iterator
 from dataclasses import dataclass
 

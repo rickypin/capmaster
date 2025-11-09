@@ -1,5 +1,7 @@
 """Connection matching scoring algorithm."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from capmaster.plugins.match.connection import TcpConnection

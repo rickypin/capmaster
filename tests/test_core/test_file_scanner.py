@@ -8,6 +8,7 @@ import pytest
 from capmaster.core.file_scanner import PcapScanner
 
 
+@pytest.mark.integration
 class TestPcapScanner:
     """Test cases for PcapScanner."""
 

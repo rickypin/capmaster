@@ -1,5 +1,6 @@
 """Tests for TsharkWrapper."""
 
+from __future__ import annotations
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -9,6 +10,7 @@ import pytest
 from capmaster.core.tshark_wrapper import TsharkWrapper
 
 
+@pytest.mark.integration
 class TestTsharkWrapper:
     """Test cases for TsharkWrapper."""
 

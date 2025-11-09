@@ -23,19 +23,22 @@ classifiers = [
 ]
 
 dependencies = [
-    "click>=8.1.0",      # CLI framework
-    "rich>=13.0.0",      # Terminal beautification
-    "pyyaml>=6.0",       # Configuration parsing
+    "click>=8.1.0,<9.0.0",      # CLI framework
+    "rich>=13.0.0,<15.0.0",     # Terminal beautification
+    "pyyaml>=6.0,<7.0",         # Configuration parsing
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.4.0",
-    "pytest-cov>=4.1.0",
-    "black>=23.0.0",
-    "ruff>=0.1.0",
-    "mypy>=1.5.0",
-    "types-PyYAML>=6.0.0",
+    "pytest>=7.4.0,<9.0.0",
+    "pytest-cov>=4.1.0,<7.0.0",
+    "black>=23.0.0,<26.0.0",
+    "ruff>=0.1.0,<1.0.0",
+    "mypy>=1.5.0,<2.0.0",
+    "types-PyYAML>=6.0.0,<7.0.0",
+]
+database = [
+    "psycopg2-binary>=2.9.0,<3.0.0",  # PostgreSQL adapter for database output
 ]
 
 [project.scripts]
@@ -85,7 +88,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --strict-markers"
+addopts = "-v --strict-markers --ignore=tests/legacy"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",

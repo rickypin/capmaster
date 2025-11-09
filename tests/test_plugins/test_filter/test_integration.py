@@ -45,6 +45,7 @@ def filter_plugin():
 CASES_DIR = Path("cases")
 
 
+@pytest.mark.integration
 class TestFilterIntegration:
     """Integration tests for filter plugin with real PCAP files."""
     
@@ -136,6 +137,7 @@ class TestFilterIntegration:
         assert output_high.stat().st_size > 0
 
 
+@pytest.mark.integration
 class TestFilterCLIIntegration:
     """Integration tests for filter CLI with real PCAP files."""
     
@@ -196,6 +198,7 @@ class TestFilterCLIIntegration:
         assert output_file.exists()
 
 
+@pytest.mark.integration
 class TestFilterOutputValidation:
     """Test that filter output is valid PCAP."""
     

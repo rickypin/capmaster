@@ -7,6 +7,7 @@ import pytest
 from capmaster.core.output_manager import OutputManager
 
 
+@pytest.mark.integration
 class TestOutputManager:
     """Test cases for OutputManager."""
 

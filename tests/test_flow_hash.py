@@ -1,4 +1,8 @@
-"""Tests for flow hash calculation."""
+"""Tests for flow hash calculation.
+
+This module contains basic unit tests for the flow hash functionality.
+For Rust compatibility tests, see test_flow_hash_rust_compatibility.py.
+"""
 
 import pytest
 

@@ -7,6 +7,7 @@ import pytest
 from capmaster.plugins.analyze.plugin import AnalyzePlugin
 
 
+@pytest.mark.integration
 class TestAnalyzeIntegration:
     """Integration tests for the Analyze plugin using real test cases."""
 

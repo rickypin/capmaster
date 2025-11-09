@@ -81,8 +81,15 @@ def main() -> None:
     except KeyboardInterrupt:
         console.print("\n[yellow]Interrupted by user[/yellow]")
         sys.exit(130)
+    except click.ClickException:
+        # Let Click handle its own exceptions (e.g., missing arguments, invalid options)
+        raise
     except Exception as e:
-        console_err.print(f"[red]Error: {e}[/red]")
+        # Unexpected errors during plugin discovery or CLI setup
+        console_err.print(f"[red]Fatal error during initialization: {e}[/red]")
+        console_err.print("[dim]This is likely a bug. Please report it.[/dim]")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 

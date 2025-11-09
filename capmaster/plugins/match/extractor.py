@@ -1,5 +1,6 @@
 """TCP field extraction from PCAP files."""
 
+from __future__ import annotations
 import csv
 import tempfile
 from collections.abc import Iterator

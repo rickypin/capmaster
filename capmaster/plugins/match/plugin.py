@@ -1,5 +1,6 @@
 """Match plugin for TCP connection matching."""
 
+from __future__ import annotations
 import logging
 from pathlib import Path
 
@@ -9,8 +10,7 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 from capmaster.core.file_scanner import PcapScanner
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
-from capmaster.plugins.match.connection import ConnectionBuilder
-from capmaster.plugins.match.extractor import TcpFieldExtractor
+from capmaster.plugins.match.connection_extractor import extract_connections_from_pcap
 from capmaster.plugins.match.matcher import BucketStrategy, ConnectionMatcher, MatchMode
 from capmaster.plugins.match.sampler import ConnectionSampler
 from capmaster.utils.errors import (
@@ -257,7 +257,27 @@ class MatchPlugin(PluginBase):
             logger.info("Matching complete")
             return 0
 
+        except InsufficientFilesError as e:
+            # Expected business error - handle gracefully
+            return handle_error(e, show_traceback=False)
+        except (OSError, PermissionError) as e:
+            # File system errors
+            from capmaster.utils.errors import CapMasterError
+            error = CapMasterError(
+                f"File system error: {e}",
+                "Check file permissions and ensure files are accessible"
+            )
+            return handle_error(error, show_traceback=logger.level <= logging.DEBUG)
+        except RuntimeError as e:
+            # Tshark or processing errors
+            from capmaster.utils.errors import CapMasterError
+            error = CapMasterError(
+                f"Processing error: {e}",
+                "Check that PCAP files are valid and tshark is working"
+            )
+            return handle_error(error, show_traceback=logger.level <= logging.DEBUG)
         except Exception as e:
+            # Unexpected errors - show traceback in debug mode
             return handle_error(e, show_traceback=logger.level <= logging.DEBUG)
 
     def _extract_connections(self, pcap_file: Path) -> list:
@@ -270,17 +290,7 @@ class MatchPlugin(PluginBase):
         Returns:
             List of TcpConnection objects
         """
-        extractor = TcpFieldExtractor()
-        builder = ConnectionBuilder()
-
-        # Extract packets and build connections
-        for packet in extractor.extract(pcap_file):
-            builder.add_packet(packet)
-
-        # Build connections
-        connections = list(builder.build_connections())
-
-        return connections
+        return extract_connections_from_pcap(pcap_file)
 
     def _output_results(
         self, matches: list, stats: dict, output_file: Path | None

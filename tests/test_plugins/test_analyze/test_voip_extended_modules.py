@@ -13,6 +13,7 @@ from capmaster.plugins.analyze.modules.sdp_stats import SdpStatsModule
 discover_modules()
 
 
+@pytest.mark.integration
 class TestMgcpStatsModule:
     """Tests for MGCP statistics module."""
 
@@ -94,6 +95,7 @@ class TestMgcpStatsModule:
         assert "MGCP Connections" in result
 
 
+@pytest.mark.integration
 class TestRtcpStatsModule:
     """Tests for RTCP statistics module."""
 
@@ -162,6 +164,7 @@ class TestRtcpStatsModule:
         assert "Quality Monitoring:" in result
 
 
+@pytest.mark.integration
 class TestSdpStatsModule:
     """Tests for SDP statistics module."""
 
@@ -255,6 +258,7 @@ class TestSdpStatsModule:
         assert "udptl" in result or "Fax" in result
 
 
+@pytest.mark.integration
 class TestVoIPExtendedModulesIntegration:
     """Integration tests for extended VoIP modules."""
 

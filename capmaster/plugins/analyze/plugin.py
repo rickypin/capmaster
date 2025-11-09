@@ -1,5 +1,7 @@
 """Analyze plugin for PCAP file analysis."""
 
+from __future__ import annotations
+
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -34,6 +36,10 @@ def _process_single_file(
     """
     Process a single PCAP file (used for multiprocessing).
 
+    This function is called in worker processes. Module discovery is done once
+    in the main process, but may need to be repeated in worker processes depending
+    on the multiprocessing start method (fork vs spawn).
+
     Args:
         pcap_file: Path to PCAP file
         output_dir: Optional output directory
@@ -45,13 +51,18 @@ def _process_single_file(
     """
     try:
         # Initialize components (each worker needs its own instances)
+        # These are lightweight and necessary for thread safety
         tshark = TsharkWrapper()
         protocol_detector = ProtocolDetector(tshark)
         executor = AnalysisExecutor(tshark, protocol_detector)
 
-        # Discover and instantiate modules
-        discover_modules()
+        # Get module classes from registry
+        # If registry is empty (spawn mode), discover modules
         module_classes = get_all_modules()
+        if not module_classes:
+            discover_modules()
+            module_classes = get_all_modules()
+
         modules = [module_class() for module_class in module_classes]
 
         # Filter modules if specific modules are requested
@@ -71,8 +82,17 @@ def _process_single_file(
         )
 
         return (pcap_file, len(results))
+    except (OSError, PermissionError) as e:
+        # File system errors (permissions, disk full, etc.)
+        logger.error(f"File system error processing {pcap_file}: {e}")
+        return (pcap_file, 0)
+    except RuntimeError as e:
+        # Tshark execution errors or other runtime issues
+        logger.error(f"Runtime error processing {pcap_file}: {e}")
+        return (pcap_file, 0)
     except Exception as e:
-        logger.error(f"Error processing {pcap_file}: {e}")
+        # Unexpected errors - log with more detail for debugging
+        logger.exception(f"Unexpected error processing {pcap_file}: {e}")
         return (pcap_file, 0)
 
 
@@ -393,5 +413,18 @@ class AnalyzePlugin(PluginBase):
             logger.info(f"Analysis complete. Total outputs: {total_outputs}")
             return 0
 
+        except (TsharkNotFoundError, NoPcapFilesError, OutputDirectoryError) as e:
+            # Expected business errors - handle gracefully
+            return handle_error(e, show_traceback=False)
+        except (OSError, PermissionError) as e:
+            # File system errors
+            from capmaster.utils.errors import CapMasterError
+            error = CapMasterError(
+                f"File system error: {e}",
+                "Check file permissions and disk space"
+            )
+            return handle_error(error, show_traceback=logger.level <= 10)
         except Exception as e:
-            return handle_error(e, show_traceback=logger.level <= 10)  # DEBUG level
+            # Unexpected errors - show traceback in debug mode
+            import logging
+            return handle_error(e, show_traceback=logger.level <= logging.DEBUG)

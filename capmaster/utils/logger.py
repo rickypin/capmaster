@@ -7,7 +7,7 @@ from rich.logging import RichHandler
 
 # Global console instances
 console = Console()
-console_err = Console(stderr=True)
+console_err = Console(stderr=True, style="red")
 
 
 def setup_logger(name: str, verbosity: int = 0) -> logging.Logger:

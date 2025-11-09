@@ -1,5 +1,7 @@
 """Connection matching logic with bucketing strategies."""
 
+from __future__ import annotations
+
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
