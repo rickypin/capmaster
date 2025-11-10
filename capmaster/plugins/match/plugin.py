@@ -11,8 +11,14 @@ from capmaster.core.file_scanner import PcapScanner
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
 from capmaster.plugins.match.connection_extractor import extract_connections_from_pcap
+from capmaster.plugins.match.endpoint_stats import (
+    EndpointStatsCollector,
+    format_endpoint_stats,
+    format_endpoint_stats_table,
+)
 from capmaster.plugins.match.matcher import BucketStrategy, ConnectionMatcher, MatchMode
 from capmaster.plugins.match.sampler import ConnectionSampler
+from capmaster.plugins.match.server_detector import ServerDetector
 from capmaster.utils.errors import (
     InsufficientFilesError,
     handle_error,
@@ -85,6 +91,17 @@ class MatchPlugin(PluginBase):
             help="Matching mode (one-to-one: each connection matches at most once, "
             "one-to-many: allow one connection to match multiple connections based on time overlap)",
         )
+        @click.option(
+            "--endpoint-stats",
+            is_flag=True,
+            default=False,
+            help="Generate endpoint statistics (client IP, server IP, server port) for matched connections",
+        )
+        @click.option(
+            "--endpoint-stats-output",
+            type=click.Path(path_type=Path),
+            help="Output file for endpoint statistics (default: stdout)",
+        )
         @click.pass_context
         def match_command(
             ctx: click.Context,
@@ -94,6 +111,8 @@ class MatchPlugin(PluginBase):
             bucket: str,
             threshold: float,
             match_mode: str,
+            endpoint_stats: bool,
+            endpoint_stats_output: Path | None,
         ) -> None:
             """
             Match TCP connections between PCAP files.
@@ -145,6 +164,8 @@ class MatchPlugin(PluginBase):
                 bucket_strategy=bucket,
                 score_threshold=threshold,
                 match_mode=match_mode,
+                endpoint_stats=endpoint_stats,
+                endpoint_stats_output=endpoint_stats_output,
             )
             ctx.exit(exit_code)
 
@@ -156,6 +177,8 @@ class MatchPlugin(PluginBase):
         bucket_strategy: str = "auto",
         score_threshold: float = 0.60,
         match_mode: str = "one-to-one",
+        endpoint_stats: bool = False,
+        endpoint_stats_output: Path | None = None,
     ) -> int:
         """
         Execute the match plugin.
@@ -167,6 +190,8 @@ class MatchPlugin(PluginBase):
             bucket_strategy: Bucketing strategy
             score_threshold: Minimum score threshold
             match_mode: Matching mode (one-to-one or one-to-many)
+            endpoint_stats: Generate endpoint statistics
+            endpoint_stats_output: Output file for endpoint statistics
 
         Returns:
             Exit code (0 for success, non-zero for failure)
@@ -253,6 +278,17 @@ class MatchPlugin(PluginBase):
                 output_task = progress.add_task("[green]Writing results...", total=1)
                 self._output_results(matches, stats, output_file)
                 progress.update(output_task, advance=1)
+
+                # Generate endpoint statistics if requested
+                if endpoint_stats:
+                    endpoint_task = progress.add_task("[green]Generating endpoint statistics...", total=1)
+                    self._output_endpoint_stats(
+                        matches,
+                        pcap_files[0],
+                        pcap_files[1],
+                        endpoint_stats_output,
+                    )
+                    progress.update(endpoint_task, advance=1)
 
             logger.info("Matching complete")
             return 0
@@ -347,5 +383,47 @@ class MatchPlugin(PluginBase):
         if output_file:
             output_file.write_text(output_text)
             logger.info(f"Results written to: {output_file}")
+        else:
+            print(output_text)
+
+
+    def _output_endpoint_stats(
+        self,
+        matches: list,
+        file1: Path,
+        file2: Path,
+        output_file: Path | None,
+    ) -> None:
+        """
+        Output endpoint statistics for matched connections.
+
+        Args:
+            matches: List of ConnectionMatch objects
+            file1: Path to first PCAP file
+            file2: Path to second PCAP file
+            output_file: Output file for statistics (None for stdout)
+        """
+        # Create detector and collector
+        detector = ServerDetector()
+        collector = EndpointStatsCollector(detector)
+
+        # Collect statistics from matches
+        for match in matches:
+            collector.add_match(match)
+
+        # Get aggregated statistics
+        stats = collector.get_stats()
+
+        # Format output (use detailed format)
+        output_text = format_endpoint_stats(
+            stats,
+            file1_name=file1.name,
+            file2_name=file2.name,
+        )
+
+        # Write output
+        if output_file:
+            output_file.write_text(output_text)
+            logger.info(f"Endpoint statistics written to: {output_file}")
         else:
             print(output_text)
