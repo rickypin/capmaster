@@ -18,7 +18,11 @@ from capmaster.plugins.match.endpoint_stats import (
 from capmaster.plugins.match.matcher import BucketStrategy, ConnectionMatcher, MatchMode
 from capmaster.plugins.match.sampler import ConnectionSampler
 from capmaster.plugins.match.server_detector import ServerDetector
-from capmaster.utils.cli_options import dual_file_input_options, validate_dual_file_input
+from capmaster.utils.cli_options import (
+    dual_file_input_options,
+    validate_database_params,
+    validate_dual_file_input,
+)
 from capmaster.utils.errors import (
     InsufficientFilesError,
     handle_error,
@@ -225,12 +229,9 @@ class MatchPlugin(PluginBase):
             validate_dual_file_input(ctx, input_path, file1, file2, file1_pcapid, file2_pcapid)
 
             # Validate database parameters
-            if db_connection and not kase_id:
-                ctx.fail("--kase-id is required when --db-connection is provided")
-            if kase_id and not db_connection:
-                ctx.fail("--db-connection is required when --kase-id is provided")
-            if db_connection and not endpoint_stats:
-                ctx.fail("--endpoint-stats is required when using database output")
+            validate_database_params(
+                ctx, db_connection, kase_id, "endpoint-stats", endpoint_stats
+            )
 
             exit_code = self.execute(
                 input_path=input_path,

@@ -14,6 +14,7 @@ from capmaster.plugins.compare.packet_comparator import PacketComparator
 from capmaster.plugins.compare.packet_extractor import PacketExtractor
 from capmaster.plugins.match.connection_extractor import extract_connections_from_pcap
 from capmaster.plugins.match.matcher import BucketStrategy, ConnectionMatcher, MatchMode
+from capmaster.utils.cli_options import validate_database_params, validate_dual_file_input
 from capmaster.utils.errors import (
     InsufficientFilesError,
     handle_error,
@@ -348,31 +349,13 @@ class ComparePlugin(PluginBase):
               When --db-connection and --kase-id are provided, flow hash results will
               also be written to the database table public.kase_{kase_id}_tcp_stream_extra.
             """
-            # Validate input parameters - must use either -i or (--file1 and --file2)
-            if input_path and (file1 or file2):
-                ctx.fail("Cannot use both -i/--input and --file1/--file2 at the same time")
-
-            if not input_path and not (file1 and file2):
-                ctx.fail("Must provide either -i/--input or both --file1 and --file2")
-
-            # Validate file1/file2 parameters
-            if file1 or file2 or file1_pcapid is not None or file2_pcapid is not None:
-                if not (file1 and file2):
-                    ctx.fail("Both --file1 and --file2 must be provided together")
-                if file1_pcapid is None or file2_pcapid is None:
-                    ctx.fail("Both --file1-pcapid and --file2-pcapid must be provided when using --file1/--file2")
-                if file1_pcapid not in (0, 1):
-                    ctx.fail("--file1-pcapid must be 0 or 1")
-                if file2_pcapid not in (0, 1):
-                    ctx.fail("--file2-pcapid must be 0 or 1")
+            # Validate input parameters
+            validate_dual_file_input(ctx, input_path, file1, file2, file1_pcapid, file2_pcapid)
 
             # Validate database parameters
-            if db_connection and not kase_id:
-                ctx.fail("--kase-id is required when --db-connection is provided")
-            if kase_id and not db_connection:
-                ctx.fail("--db-connection is required when --kase-id is provided")
-            if db_connection and not show_flow_hash:
-                ctx.fail("--show-flow-hash is required when using database output")
+            validate_database_params(
+                ctx, db_connection, kase_id, "show-flow-hash", show_flow_hash
+            )
 
             exit_code = self.execute(
                 input_path=input_path,

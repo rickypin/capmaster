@@ -118,3 +118,54 @@ def validate_dual_file_input(
         if file2_pcapid not in (0, 1):
             ctx.fail("--file2-pcapid must be 0 or 1")
 
+
+def validate_database_params(
+    ctx: click.Context,
+    db_connection: str | None,
+    kase_id: int | None,
+    required_flag: str | None = None,
+    required_flag_value: bool = False,
+) -> None:
+    """
+    Validate database connection parameters.
+
+    Validation rules:
+    1. If db_connection is provided, kase_id must also be provided
+    2. If kase_id is provided, db_connection must also be provided
+    3. If required_flag is specified, it must be True when using database output
+
+    Args:
+        ctx: Click context
+        db_connection: Database connection string
+        kase_id: Case ID for table name
+        required_flag: Name of required flag (e.g., "endpoint-stats", "show-flow-hash")
+        required_flag_value: Value of the required flag
+
+    Raises:
+        click.ClickException: If validation fails
+
+    Examples:
+        # Match plugin
+        validate_database_params(
+            ctx, db_connection, kase_id,
+            required_flag="endpoint-stats",
+            required_flag_value=endpoint_stats
+        )
+
+        # Compare plugin
+        validate_database_params(
+            ctx, db_connection, kase_id,
+            required_flag="show-flow-hash",
+            required_flag_value=show_flow_hash
+        )
+    """
+    # Check db_connection and kase_id mutual dependency
+    if db_connection and not kase_id:
+        ctx.fail("--kase-id is required when --db-connection is provided")
+    if kase_id and not db_connection:
+        ctx.fail("--db-connection is required when --kase-id is provided")
+
+    # Check required flag if specified
+    if db_connection and required_flag and not required_flag_value:
+        ctx.fail(f"--{required_flag} is required when using database output")
+
