@@ -207,16 +207,20 @@ class TestFtpDataStatsModule:
         )
         
         result = module.post_process(sample_output)
-        
+
         # Check summary
+        assert "FTP-DATA Transfer Statistics" in result
+        assert "Summary:" in result
         assert "Total FTP-DATA Streams:" in result
-        assert "2" in result
-        
-        # Check transfer details
-        assert "Transfer Details:" in result
-        assert "Stream" in result
-        assert "Packets" in result
-        assert "Payload" in result
+
+        # Check highlighted transfers
+        assert "Highlighted Transfers:" in result
+        assert "Stream,Packets,Payload" in result
+        assert "Severity" in result
+
+        # Check size distribution section
+        assert "Transfer Size Distribution:" in result
+        assert "Size Range" in result
 
 
 class TestMqStatsModule:

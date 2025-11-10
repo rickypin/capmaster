@@ -123,14 +123,43 @@ class TcpCompletenessModule(AnalysisModule):
             key = (status_label, comp)
             categories[key].append(direction)
 
-        # Generate output
-        lines = []
-        for (status_label, flags), connections in sorted(categories.items()):
-            count = len(connections)
-            lines.append(f"[Status: {status_label}] [Flags: {flags}] [Count: {count} connections]")
-            for conn in connections:
-                lines.append(conn)
-            lines.append("")  # Empty line between categories
+        def classify_severity(label: str) -> str:
+            if "Half-open" in label or "Unknown" in label:
+                return "High"
+            if "Established" in label or "NO_DATA" in label:
+                return "Medium"
+            return "Low"
+
+        summary_rows: list[tuple[str, str, int, str]] = []
+        for (status_label, flags), connections in categories.items():
+            severity = classify_severity(status_label)
+            summary_rows.append((status_label, flags, len(connections), severity))
+
+        summary_rows.sort(key=lambda row: (-row[2], row[0], row[1]))
+
+        lines: list[str] = []
+        lines.append("Status,Flags,Count,Severity")
+        for status_label, flags, count, severity in summary_rows:
+            lines.append(f"{status_label},{flags},{count},{severity}")
+
+        highlighted = [row for row in summary_rows if row[3] == "High"]
+        if len(highlighted) < 3:
+            highlighted.extend(row for row in summary_rows if row[3] == "Medium" and row not in highlighted)
+        highlighted = highlighted[:3]
+
+        if highlighted:
+            lines.append("")
+            lines.append("Highlighted TCP Streams (sampled)")
+            for status_label, flags, count, severity in highlighted:
+                key = (status_label, flags)
+                connections = categories[key]
+                samples = self.sample_items(connections, limit=3)
+                lines.append(f"{status_label} [{severity}] flags={flags} total={count}")
+                for conn in samples:
+                    lines.append(f"  sample: {conn}")
+                remaining = count - len(samples)
+                if remaining > 0:
+                    lines.append(f"  ... {remaining} more")
 
         return '\n'.join(lines)
 

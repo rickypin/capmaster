@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from capmaster.plugins.analyze.modules import register_module
@@ -155,6 +155,31 @@ class FtpDataStatsModule(AnalysisModule):
             except ValueError:
                 pass
         
+        def classify_transfer(payload: int, duration: float | None, rate: float | None) -> str:
+            if payload < 10_240:
+                return "Low"
+            if duration is None or rate is None or duration <= 0:
+                return "Medium"
+            if rate < 50 * 1024:
+                return "High"
+            if rate < 200 * 1024:
+                return "Medium"
+            return "Low"
+
+        severity_rank = {"High": 0, "Medium": 1, "Low": 2}
+        stream_summaries: list[tuple[str, dict, str, float | None, float | None]] = []
+        severity_counts: Counter[str] = Counter()
+        for stream_id, info in streams.items():
+            duration = None
+            rate = None
+            if info['start_time'] is not None and info['end_time'] is not None:
+                duration = info['end_time'] - info['start_time']
+                if duration > 0:
+                    rate = info['total_payload'] / duration
+            severity = classify_transfer(info['total_payload'], duration, rate)
+            severity_counts[severity] += 1
+            stream_summaries.append((stream_id, info, severity, duration, rate))
+
         # Generate output
         lines = []
         lines.append("=" * 90)
@@ -176,56 +201,52 @@ class FtpDataStatsModule(AnalysisModule):
         lines.append(f"  Total Payload:           {total_payload:,} bytes ({total_payload / 1024:.2f} KB)")
         if total_streams > 0:
             lines.append(f"  Average per Stream:      {total_payload / total_streams:.2f} bytes")
+            lines.append(f"  High Severity Streams:   {severity_counts['High']}")
+            lines.append(f"  Medium Severity Streams: {severity_counts['Medium']}")
+            lines.append(f"  Low Severity Streams:    {severity_counts['Low']}")
         lines.append("")
         
-        # Detailed stream information
-        lines.append("Transfer Details:")
-        lines.append("-" * 90)
-        lines.append(f"{'Stream':<8} {'Packets':<10} {'Payload':<15} {'Duration':<12} {'Rate':<15} {'Endpoints':<30}")
-        lines.append("-" * 90)
-        
-        # Sort streams by stream ID numerically
-        sorted_streams = sorted(streams.items(), key=lambda x: int(x[0]) if x[0].isdigit() else 0)
-        
-        for stream_id, info in sorted_streams:
-            packets = info['packet_count']
-            payload = info['total_payload']
-            
-            # Calculate duration and rate
-            if info['start_time'] is not None and info['end_time'] is not None:
-                duration = info['end_time'] - info['start_time']
-                if duration > 0:
-                    rate = payload / duration  # bytes per second
-                    rate_str = f"{rate:.2f} B/s"
-                    if rate > 1024:
-                        rate_str = f"{rate / 1024:.2f} KB/s"
-                    if rate > 1048576:
-                        rate_str = f"{rate / 1048576:.2f} MB/s"
-                    duration_str = f"{duration:.3f} s"
-                else:
-                    rate_str = "N/A"
-                    duration_str = "0.000 s"
-            else:
-                duration_str = "N/A"
-                rate_str = "N/A"
-            
-            # Format payload size
-            if payload < 1024:
-                payload_str = f"{payload} B"
-            elif payload < 1048576:
-                payload_str = f"{payload / 1024:.2f} KB"
-            else:
-                payload_str = f"{payload / 1048576:.2f} MB"
-            
-            # Format endpoints
-            src = info['src'] if info['src'] else "Unknown"
-            dst = info['dst'] if info['dst'] else "Unknown"
-            endpoints = f"{src} -> {dst}"
-            endpoints_display = endpoints[:29] if len(endpoints) <= 29 else endpoints[:26] + "..."
-            
-            lines.append(f"{stream_id:<8} {packets:<10} {payload_str:<15} {duration_str:<12} {rate_str:<15} {endpoints_display:<30}")
-        
-        lines.append("")
+        if stream_summaries:
+            def format_size(value: int) -> str:
+                if value < 1024:
+                    return f"{value} B"
+                if value < 1_048_576:
+                    return f"{value / 1024:.2f} KB"
+                return f"{value / 1_048_576:.2f} MB"
+
+            def format_rate(rate: float | None) -> str:
+                if rate is None or rate <= 0:
+                    return "N/A"
+                if rate < 1024:
+                    return f"{rate:.2f} B/s"
+                if rate < 1_048_576:
+                    return f"{rate / 1024:.2f} KB/s"
+                return f"{rate / 1_048_576:.2f} MB/s"
+
+            lines.append("Highlighted Transfers:")
+            lines.append("-" * 90)
+            lines.append("Stream,Packets,Payload,Duration(s),Rate,Severity,Endpoints")
+            stream_summaries.sort(
+                key=lambda item: (
+                    severity_rank[item[2]],
+                    -item[1]['total_payload'],
+                )
+            )
+            for stream_id, info, severity, duration, rate in stream_summaries[:5]:
+                packets = info['packet_count']
+                payload_str = format_size(info['total_payload'])
+                duration_str = f"{duration:.3f}" if duration is not None else "N/A"
+                rate_str = format_rate(rate)
+                src = info['src'] or "Unknown"
+                dst = info['dst'] or "Unknown"
+                endpoints = f"{src}->{dst}"
+                lines.append(
+                    f"{stream_id},{packets},{payload_str},{duration_str},{rate_str},{severity},{endpoints}"
+                )
+            remaining = total_streams - min(5, total_streams)
+            if remaining > 0:
+                lines.append(f"... {remaining} additional transfer(s) hidden")
+            lines.append("")
         
         # Size distribution
         lines.append("Transfer Size Distribution:")
@@ -264,32 +285,6 @@ class FtpDataStatsModule(AnalysisModule):
             lines.append(f"{size_range:<20} {count:>10} {pct:>11.1f}%")
         
         lines.append("")
-        
-        # Detailed stream breakdown
-        lines.append("Detailed Stream Information:")
-        lines.append("-" * 90)
-        
-        for stream_id, info in sorted_streams:
-            lines.append(f"\nStream {stream_id}:")
-            lines.append(f"  Source:      {info['src'] if info['src'] else 'Unknown'}")
-            lines.append(f"  Destination: {info['dst'] if info['dst'] else 'Unknown'}")
-            lines.append(f"  Packets:     {info['packet_count']}")
-            lines.append(f"  Payload:     {info['total_payload']:,} bytes ({info['total_payload'] / 1024:.2f} KB)")
-            lines.append(f"  Total Size:  {info['total_bytes']:,} bytes ({info['total_bytes'] / 1024:.2f} KB)")
-            
-            if info['start_time'] is not None and info['end_time'] is not None:
-                duration = info['end_time'] - info['start_time']
-                lines.append(f"  Duration:    {duration:.3f} seconds")
-                if duration > 0:
-                    rate = info['total_payload'] / duration
-                    lines.append(f"  Avg Rate:    {rate:.2f} bytes/sec ({rate / 1024:.2f} KB/s)")
-            
-            # Show sample frame numbers
-            if info['frames']:
-                frame_sample = ', '.join(info['frames'][:10])
-                if len(info['frames']) > 10:
-                    frame_sample += f", ... ({len(info['frames']) - 10} more)"
-                lines.append(f"  Frames:      {frame_sample}")
         
         lines.append("")
         lines.append("=" * 90)

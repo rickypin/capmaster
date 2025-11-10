@@ -174,18 +174,21 @@ class MgcpStatsModule(AnalysisModule):
             for command, count in sorted(command_counter.items(), key=lambda x: -x[1]):
                 lines.append(f"{command:<20} {count:>10}")
 
-            lines.append("")
-            lines.append("Command Details:")
-            lines.append("-" * 80)
-            for command in sorted(command_counter.keys()):
-                lines.append(f"\n{command} ({command_counter[command]} occurrences):")
-                # Show first 5 connections for each command
-                unique_conns = list(dict.fromkeys(command_connections[command]))  # Remove duplicates while preserving order
-                for conn in unique_conns[:5]:
-                    lines.append(f"  {conn}")
-                if len(unique_conns) > 5:
-                    lines.append(f"  ... and {len(unique_conns) - 5} more")
-            lines.append("")
+            top_commands = sorted(command_counter.items(), key=lambda x: -x[1])[:3]
+            if top_commands:
+                lines.append("")
+                lines.append("Command Samples:")
+                lines.append("-" * 80)
+                for command, count in top_commands:
+                    unique_conns = list(dict.fromkeys(command_connections[command]))
+                    lines.append(f"{command} total={count}")
+                    samples = self.sample_items(unique_conns, limit=3)
+                    for conn in samples:
+                        lines.append(f"  sample: {conn}")
+                    remaining = len(unique_conns) - len(samples)
+                    if remaining > 0:
+                        lines.append(f"  ... {remaining} more")
+                lines.append("")
 
         # MGCP Response Codes section
         if response_code_counter:
@@ -211,18 +214,23 @@ class MgcpStatsModule(AnalysisModule):
 
                 lines.append(f"{code:<20} {count:>10} {status:<20}")
 
-            lines.append("")
-            lines.append("Response Code Details:")
-            lines.append("-" * 80)
-            for code in sorted_codes:
-                lines.append(f"\nResponse {code} ({response_code_counter[code]} occurrences):")
-                # Show first 5 connections for each response code
-                unique_conns = list(dict.fromkeys(response_code_connections[code]))  # Remove duplicates while preserving order
-                for conn in unique_conns[:5]:
-                    lines.append(f"  {conn}")
-                if len(unique_conns) > 5:
-                    lines.append(f"  ... and {len(unique_conns) - 5} more")
-            lines.append("")
+            highlights = [code for code in sorted_codes if code.startswith(('4', '5'))]
+            highlights = highlights[:3]
+            if highlights:
+                lines.append("")
+                lines.append("Response Code Samples:")
+                lines.append("-" * 80)
+                for code in highlights:
+                    unique_conns = list(dict.fromkeys(response_code_connections[code]))
+                    total = response_code_counter[code]
+                    lines.append(f"Code {code} total={total}")
+                    samples = self.sample_items(unique_conns, limit=3)
+                    for conn in samples:
+                        lines.append(f"  sample: {conn}")
+                    remaining = len(unique_conns) - len(samples)
+                    if remaining > 0:
+                        lines.append(f"  ... {remaining} more")
+                lines.append("")
 
         # Message type distribution
         if requests:
@@ -301,45 +309,8 @@ class MgcpStatsModule(AnalysisModule):
                 lines.append(f"  {range_name:<20} {count:>6} ({percentage:>5.1f}%)")
             
             lines.append("")
-        
+
         lines.append("=" * 80)
-        lines.append("")
-        lines.append("MGCP Protocol Notes:")
-        lines.append("  - MGCP is a master/slave protocol for controlling media gateways")
-        lines.append("  - Call agents send commands (CRCX, MDCX, DLCX, etc.)")
-        lines.append("  - Gateways respond with status codes")
-        lines.append("")
-        lines.append("  Common Commands:")
-        lines.append("    * CRCX - Create Connection")
-        lines.append("    * MDCX - Modify Connection")
-        lines.append("    * DLCX - Delete Connection")
-        lines.append("    * RQNT - Request Notification")
-        lines.append("    * NTFY - Notify")
-        lines.append("    * AUEP - Audit Endpoint")
-        lines.append("    * AUCX - Audit Connection")
-        lines.append("    * RSIP - Restart In Progress")
-        lines.append("")
-        lines.append("  Common Response Codes:")
-        lines.append("    * 200 - Success (transaction executed normally)")
-        lines.append("    * 250 - Delete Connection (connection was deleted)")
-        lines.append("    * 400 - Transient Error (transaction could not be executed)")
-        lines.append("    * 401 - Phone Off Hook")
-        lines.append("    * 402 - Phone On Hook")
-        lines.append("    * 500 - Endpoint Unknown")
-        lines.append("    * 501 - Endpoint Not Ready")
-        lines.append("    * 502 - Endpoint Insufficient Resources")
-        lines.append("    * 510 - Protocol Error")
-        lines.append("    * 511 - Unrecognized Command")
-        lines.append("    * 512 - Unsupported Command")
-        lines.append("    * 513 - Unsupported Parameter")
-        lines.append("    * 515 - Invalid Parameter Value")
-        lines.append("    * 516 - Unknown Connection ID")
-        lines.append("    * 517 - Unsupported Mode")
-        lines.append("    * 518 - Unsupported Package")
-        lines.append("    * 520 - Endpoint Restarting")
-        lines.append("    * 521 - Endpoint Redirected")
-        lines.append("")
-        lines.append("=" * 80)
-        
+
         return '\n'.join(lines) + '\n'
 
