@@ -1,0 +1,313 @@
+"""Unit tests for packet extractor."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+from collections import namedtuple
+
+import pytest
+
+from capmaster.plugins.compare.packet_extractor import PacketExtractor, TcpPacket
+from capmaster.core.tshark_wrapper import TsharkWrapper
+
+# Create a simple result object for mocking tshark results
+TsharkResult = namedtuple('TsharkResult', ['returncode', 'stdout', 'stderr'])
+
+
+@pytest.mark.integration
+class TestPacketExtractor:
+    """Test PacketExtractor class."""
+
+    @pytest.fixture
+    def extractor(self) -> PacketExtractor:
+        """Create a PacketExtractor instance."""
+        return PacketExtractor()
+
+    @pytest.fixture
+    def mock_tshark(self) -> MagicMock:
+        """Create a mock TsharkWrapper."""
+        mock = MagicMock(spec=TsharkWrapper)
+        return mock
+
+    @pytest.fixture
+    def sample_pcap(self, tmp_path: Path, pcap_builder) -> Path:
+        """Create a sample PCAP file with TCP packets."""
+        return pcap_builder().add_tcp_packet(
+            "192.168.1.100", "10.0.0.1", 54321, 80,
+            flags=0x02, seq=1000000, timestamp_sec=1000
+        ).add_tcp_packet(
+            "10.0.0.1", "192.168.1.100", 80, 54321,
+            flags=0x12, seq=2000000, ack=1000001, timestamp_sec=1000, timestamp_usec=10000
+        ).add_tcp_packet(
+            "192.168.1.100", "10.0.0.1", 54321, 80,
+            flags=0x10, seq=1000001, ack=2000001, timestamp_sec=1000, timestamp_usec=20000
+        ).build(tmp_path / "sample.pcap")
+
+    def test_extractor_initialization(self):
+        """Test PacketExtractor initialization."""
+        extractor = PacketExtractor()
+        assert extractor.tshark is not None
+        assert isinstance(extractor.tshark, TsharkWrapper)
+
+    def test_extractor_with_custom_tshark(self, mock_tshark: MagicMock):
+        """Test PacketExtractor with custom TsharkWrapper."""
+        extractor = PacketExtractor(tshark=mock_tshark)
+        assert extractor.tshark is mock_tshark
+
+    def test_extract_packets_builds_correct_filter(
+        self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
+    ):
+        """Test that extract_packets builds correct display filter."""
+        extractor.tshark = mock_tshark
+        mock_tshark.execute.return_value = TsharkResult(
+            returncode=0,
+            stdout="",
+            stderr=""
+        )
+
+        extractor.extract_packets(
+            sample_pcap,
+            src_ip="192.168.1.100",
+            src_port=54321,
+            dst_ip="10.0.0.1",
+            dst_port=80
+        )
+
+        # Verify tshark was called
+        assert mock_tshark.execute.called
+
+        # Get the arguments passed to tshark
+        call_args = mock_tshark.execute.call_args[0][0]
+
+        # Should include display filter for bidirectional traffic
+        assert "-Y" in call_args
+        filter_idx = call_args.index("-Y") + 1
+        filter_expr = call_args[filter_idx]
+
+        # Filter should match both directions
+        assert "192.168.1.100" in filter_expr
+        assert "10.0.0.1" in filter_expr
+        assert "54321" in filter_expr
+        assert "80" in filter_expr
+
+    def test_extract_packets_uses_absolute_seq_numbers(
+        self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
+    ):
+        """Test that extract_packets uses absolute sequence numbers."""
+        extractor.tshark = mock_tshark
+        mock_tshark.execute.return_value = TsharkResult(
+            returncode=0,
+            stdout="",
+            stderr=""
+        )
+
+        extractor.extract_packets(
+            sample_pcap,
+            src_ip="192.168.1.100",
+            src_port=54321,
+            dst_ip="10.0.0.1",
+            dst_port=80
+        )
+
+        call_args = mock_tshark.execute.call_args[0][0]
+
+        # Should disable relative sequence numbers
+        assert "-o" in call_args
+        assert "tcp.relative_sequence_numbers:false" in call_args
+
+    def test_extract_packets_parses_output(
+        self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
+    ):
+        """Test that extract_packets correctly parses tshark output."""
+        extractor.tshark = mock_tshark
+
+        # Mock tshark output (tab-separated fields)
+        # Note: IP ID is in hex format, will be parsed to decimal
+        mock_output = (
+            "1\t64\t0x002\t1000000\t0\t1234567890.123456\n"
+            "2\t65\t0x012\t2000000\t1000001\t1234567890.234567\n"
+            "3\t66\t0x010\t1000001\t2000001\t1234567890.345678\n"
+        )
+
+        mock_tshark.execute.return_value = TsharkResult(
+            returncode=0,
+            stdout=mock_output,
+            stderr=""
+        )
+
+        packets = extractor.extract_packets(
+            sample_pcap,
+            src_ip="192.168.1.100",
+            src_port=54321,
+            dst_ip="10.0.0.1",
+            dst_port=80
+        )
+
+        assert len(packets) == 3
+
+        # Check first packet
+        # IP ID "64" (hex) = 100 (decimal)
+        assert packets[0].frame_number == 1
+        assert packets[0].ip_id == 100
+        assert packets[0].tcp_flags == "0x002"
+        assert packets[0].seq == 1000000
+        assert packets[0].ack == 0
+        assert packets[0].timestamp == 1234567890.123456
+
+        # Check second packet
+        # IP ID "65" (hex) = 101 (decimal)
+        assert packets[1].frame_number == 2
+        assert packets[1].ip_id == 101
+        assert packets[1].tcp_flags == "0x012"
+        assert packets[1].seq == 2000000
+        assert packets[1].ack == 1000001
+
+    def test_extract_packets_handles_empty_output(
+        self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
+    ):
+        """Test that extract_packets handles empty tshark output."""
+        extractor.tshark = mock_tshark
+        mock_tshark.execute.return_value = TsharkResult(
+            returncode=0,
+            stdout="",
+            stderr=""
+        )
+
+        packets = extractor.extract_packets(
+            sample_pcap,
+            src_ip="192.168.1.100",
+            src_port=54321,
+            dst_ip="10.0.0.1",
+            dst_port=80
+        )
+
+        assert len(packets) == 0
+
+    def test_extract_packets_handles_tshark_error(
+        self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
+    ):
+        """Test that extract_packets handles tshark errors."""
+        extractor.tshark = mock_tshark
+        mock_tshark.execute.return_value = TsharkResult(
+            returncode=1,
+            stdout="",
+            stderr="tshark: error message"
+        )
+
+        with pytest.raises(RuntimeError) as exc_info:
+            extractor.extract_packets(
+                sample_pcap,
+                src_ip="192.168.1.100",
+                src_port=54321,
+                dst_ip="10.0.0.1",
+                dst_port=80
+            )
+
+        assert "tshark extraction failed" in str(exc_info.value)
+
+    def test_extract_by_stream_id_builds_correct_filter(
+        self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
+    ):
+        """Test that extract_by_stream_id builds correct filter."""
+        extractor.tshark = mock_tshark
+        mock_tshark.execute.return_value = TsharkResult(
+            returncode=0,
+            stdout="",
+            stderr=""
+        )
+
+        extractor.extract_by_stream_id(sample_pcap, stream_id=5)
+
+        call_args = mock_tshark.execute.call_args[0][0]
+
+        # Should include stream filter
+        assert "-Y" in call_args
+        filter_idx = call_args.index("-Y") + 1
+        filter_expr = call_args[filter_idx]
+
+        assert "tcp.stream==5" in filter_expr
+
+    def test_extract_by_stream_id_parses_output(
+        self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
+    ):
+        """Test that extract_by_stream_id correctly parses output."""
+        extractor.tshark = mock_tshark
+
+        mock_output = (
+            "1\t100\t0x002\t1000000\t0\t1234567890.123456\n"
+            "2\t101\t0x012\t2000000\t1000001\t1234567890.234567\n"
+        )
+
+        mock_tshark.execute.return_value = TsharkResult(
+            returncode=0,
+            stdout=mock_output,
+            stderr=""
+        )
+
+        packets = extractor.extract_by_stream_id(sample_pcap, stream_id=5)
+
+        assert len(packets) == 2
+        assert packets[0].frame_number == 1
+        assert packets[1].frame_number == 2
+
+    def test_extract_packets_skips_malformed_lines(
+        self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
+    ):
+        """Test that extract_packets skips malformed lines."""
+        extractor.tshark = mock_tshark
+
+        # Include a malformed line (missing fields)
+        mock_output = (
+            "1\t100\t0x002\t1000000\t0\t1234567890.123456\n"
+            "2\t101\t0x012\n"  # Malformed: missing fields
+            "3\t102\t0x010\t1000001\t2000001\t1234567890.345678\n"
+        )
+
+        mock_tshark.execute.return_value = TsharkResult(
+            returncode=0,
+            stdout=mock_output,
+            stderr=""
+        )
+
+        packets = extractor.extract_packets(
+            sample_pcap,
+            src_ip="192.168.1.100",
+            src_port=54321,
+            dst_ip="10.0.0.1",
+            dst_port=80
+        )
+
+        # Should skip malformed line and return 2 packets
+        assert len(packets) == 2
+        assert packets[0].frame_number == 1
+        assert packets[1].frame_number == 3
+
+    def test_extract_packets_handles_none_values(
+        self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
+    ):
+        """Test that extract_packets handles None/empty values."""
+        extractor.tshark = mock_tshark
+
+        # Empty IPID and ACK fields - these are converted to 0, not None
+        mock_output = "1\t\t0x002\t1000000\t\t1234567890.123456\n"
+
+        mock_tshark.execute.return_value = TsharkResult(
+            returncode=0,
+            stdout=mock_output,
+            stderr=""
+        )
+
+        packets = extractor.extract_packets(
+            sample_pcap,
+            src_ip="192.168.1.100",
+            src_port=54321,
+            dst_ip="10.0.0.1",
+            dst_port=80
+        )
+
+        assert len(packets) == 1
+        # Empty values are converted to 0, not None
+        assert packets[0].ip_id == 0
+        assert packets[0].ack == 0
+
