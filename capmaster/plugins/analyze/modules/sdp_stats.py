@@ -223,64 +223,45 @@ class SdpStatsModule(AnalysisModule):
             
             lines.append("")
         
-        # Media capability analysis
-        lines.append("Media Capability Analysis:")
-        lines.append("-" * 80)
-        
         audio_count = media_types.get('audio', 0)
         video_count = media_types.get('video', 0)
         image_count = media_types.get('image', 0)
-        
-        if audio_count > 0:
-            lines.append(f"  ✓ Audio support: {audio_count} session(s)")
-        if video_count > 0:
-            lines.append(f"  ✓ Video support: {video_count} session(s)")
-        if image_count > 0:
-            lines.append(f"  ✓ Image/Fax support: {image_count} session(s)")
-        
-        # Check for secure protocols
         secure_count = sum(count for proto, count in protocols.items() if 'SAVP' in proto)
-        if secure_count > 0:
-            lines.append(f"  ✓ Secure RTP (SRTP): {secure_count} session(s)")
-        
+        insecure_sessions = total_messages - secure_count
+        security_severity = (
+            "High" if insecure_sessions and secure_count == 0 else ("Medium" if insecure_sessions else "Low")
+        )
+
+        lines.append("Media Capability Highlights:")
+        lines.append("-" * 80)
+        lines.append("Observation,Detail")
+        if audio_count:
+            lines.append(f"Audio sessions,{audio_count}")
+        if video_count:
+            lines.append(f"Video sessions,{video_count}")
+        if image_count:
+            lines.append(f"Image/Fax sessions,{image_count}")
+        lines.append(f"Secure RTP sessions,{secure_count}")
+        lines.append(f"Unsecured RTP sessions,{insecure_sessions} (Severity: {security_severity})")
         lines.append("")
-        
-        # Session details
-        lines.append("Session Details:")
-        lines.append("-" * 80)
-        lines.append(f"{'Frame':<8} {'Size':<8} {'Source IP':<18} {'Dest IP':<18} {'Media Types':<20}")
-        lines.append("-" * 80)
-        
-        for msg in messages[:10]:  # Show first 10
-            media_str = ', '.join(msg['media'][:3])  # Show first 3 media types
-            lines.append(f"{msg['frame']:<8} {msg['size']:<8} {msg['src']:<18} "
-                        f"{msg['dst']:<18} {media_str:<20}")
-        
-        if len(messages) > 10:
-            lines.append(f"... and {len(messages) - 10} more session(s)")
-        
+
+        if messages:
+            lines.append("Session Samples:")
+            lines.append("-" * 80)
+            lines.append("Frame,Source,Destination,Media,Protocols")
+            sampled = self.sample_items(messages, limit=5)
+            for msg in sampled:
+                media_str = '/'.join(msg['media'][:3]) if msg['media'] else 'n/a'
+                proto_str = '/'.join(msg['protocols'][:2]) if msg['protocols'] else 'n/a'
+                lines.append(
+                    f"{msg['frame']},{msg['src']}->{msg['dst']},{media_str},{proto_str}"
+                )
+            remaining = total_messages - len(sampled)
+            if remaining > 0:
+                lines.append(f"... {remaining} additional session(s) hidden")
+
         lines.append("")
         lines.append("=" * 80)
-        lines.append("")
-        lines.append("SDP Protocol Notes:")
-        lines.append("  - SDP describes multimedia sessions for VoIP calls")
-        lines.append("  - Typically carried in SIP INVITE and 200 OK messages")
-        lines.append("  - Media Types:")
-        lines.append("    * audio - Voice communication")
-        lines.append("    * video - Video communication")
-        lines.append("    * image - Fax and image transmission")
-        lines.append("    * application - Application data")
-        lines.append("  - Common Protocols:")
-        lines.append("    * RTP/AVP - RTP Audio/Video Profile (standard)")
-        lines.append("    * RTP/SAVP - Secure RTP (encrypted)")
-        lines.append("    * udptl - Fax over IP (T.38)")
-        lines.append("  - Common Audio Codecs:")
-        lines.append("    * G.711 (PCMU/PCMA) - Standard quality, high bandwidth")
-        lines.append("    * G.729 - Good quality, low bandwidth")
-        lines.append("    * G.722 - Wideband audio")
-        lines.append("    * Opus - Modern adaptive codec")
-        lines.append("")
-        lines.append("=" * 80)
-        
+
         return '\n'.join(lines) + '\n'
 

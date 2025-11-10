@@ -11,6 +11,9 @@ from capmaster.utils.logger import console, console_err, setup_logger
 __version__ = "1.0.0"
 
 
+_PLUGINS_REGISTERED = False
+
+
 @click.group()
 @click.version_option(version=__version__, prog_name="capmaster")
 @click.option(
@@ -65,16 +68,28 @@ def cli(ctx: click.Context, verbose: int) -> None:
     ctx.obj["logger"] = logger
 
 
+def register_cli_plugins() -> None:
+    """Discover plugins and register their CLI commands once."""
+    global _PLUGINS_REGISTERED
+    if _PLUGINS_REGISTERED:
+        return
+
+    discover_plugins()
+    for plugin_class in get_all_plugins():
+        plugin = plugin_class()
+        plugin.setup_cli(cli)
+
+    _PLUGINS_REGISTERED = True
+
+
+# Ensure commands are available upon import for test invocation.
+register_cli_plugins()
+
+
 def main() -> None:
     """Main entry point for the CLI."""
     try:
-        # Discover and register all plugins
-        discover_plugins()
-
-        # Register plugin commands
-        for plugin_class in get_all_plugins():
-            plugin = plugin_class()
-            plugin.setup_cli(cli)
+        register_cli_plugins()
 
         # Run CLI
         cli(obj={})

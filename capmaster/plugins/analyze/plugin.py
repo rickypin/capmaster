@@ -277,7 +277,15 @@ class AnalyzePlugin(PluginBase):
             selected_modules = selected_modules_raw
 
         # Validate and parse input_path
-        if input_path_raw is None or not isinstance(input_path_raw, str):
+        if input_path_raw is None:
+            logger.error("Input path is required and must be a string")
+            return 1
+
+        if isinstance(input_path_raw, Path):
+            input_path = str(input_path_raw)
+        elif isinstance(input_path_raw, str):
+            input_path = input_path_raw
+        else:
             logger.error("Input path is required and must be a string")
             return 1
 
@@ -332,13 +340,13 @@ class AnalyzePlugin(PluginBase):
                 logger.info(f"Loaded {len(modules)} analysis modules")
 
             # Parse input path (supports comma-separated file list)
-            input_paths = PcapScanner.parse_input(input_path_raw)
+            input_paths = PcapScanner.parse_input(input_path)
 
             # Scan for PCAP files
             pcap_files = PcapScanner.scan(input_paths, recursive=recursive)
 
             if not pcap_files:
-                raise NoPcapFilesError(Path(input_path_raw))
+                raise NoPcapFilesError(Path(input_path))
 
             logger.info(f"Found {len(pcap_files)} PCAP file(s)")
 

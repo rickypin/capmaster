@@ -228,7 +228,7 @@ class MqStatsModule(AnalysisModule):
         if completion_codes:
             lines.append("Completion Code Statistics:")
             lines.append("-" * 90)
-            lines.append(f"{'Code':<10} {'Count':>10} {'Description':<30} {'Sample Connections':<40}")
+            lines.append(f"{'Code':<10} {'Count':>10} {'Severity':<10} {'Description':<30} {'Sample Connection':<40}")
             lines.append("-" * 90)
 
             # Sort by code (numerically if possible)
@@ -246,36 +246,33 @@ class MqStatsModule(AnalysisModule):
                 conns = completion_codes[code]
                 count = len(conns)
                 desc = code_descriptions.get(code, "Unknown")
+                severity = "High" if code == "2" else ("Medium" if code == "1" else "Low")
 
-                # Show first connection as sample
                 sample = conns[0] if conns else ""
                 sample_display = sample[:39] if len(sample) <= 39 else sample[:36] + "..."
 
-                lines.append(f"{code:<10} {count:>10} {desc:<30} {sample_display:<40}")
+                lines.append(f"{code:<10} {count:>10} {severity:<10} {desc:<30} {sample_display:<40}")
 
             lines.append("")
 
         # Reason Code Statistics (Detailed Error Information)
         if reason_codes:
-            lines.append("Reason Code Statistics (Top 10):")
+            lines.append("Reason Code Statistics (Top 5):")
             lines.append("-" * 90)
-            lines.append(f"{'Code':<10} {'Count':>10} {'Sample Connection':<70}")
+            lines.append(f"{'Code':<10} {'Count':>10} {'Severity':<10} {'Sample Connection':<60}")
             lines.append("-" * 90)
 
-            # Sort by frequency (most common first)
-            sorted_reasons = sorted(reason_codes.items(),
-                                  key=lambda x: -len(x[1]))[:10]
+            sorted_reasons = sorted(reason_codes.items(), key=lambda x: -len(x[1]))[:5]
 
             for code, conns in sorted_reasons:
-                if not code:  # Skip empty codes
+                if not code:
                     continue
                 count = len(conns)
-
-                # Show first connection as sample
+                severity = "High" if code != "0" else "Low"
                 sample = conns[0] if conns else ""
-                sample_display = sample[:69] if len(sample) <= 69 else sample[:66] + "..."
+                sample_display = sample[:59] if len(sample) <= 59 else sample[:56] + "..."
 
-                lines.append(f"{code:<10} {count:>10} {sample_display:<70}")
+                lines.append(f"{code:<10} {count:>10} {severity:<10} {sample_display:<60}")
 
             lines.append("")
 
@@ -295,34 +292,34 @@ class MqStatsModule(AnalysisModule):
         if streams:
             lines.append("MQ Streams (by TCP stream):")
             lines.append("-" * 90)
-            lines.append(f"{'Stream':<10} {'Messages':>10} {'Total Size':<15} {'Endpoints':<55}")
+            lines.append(f"{'Stream':<10} {'Messages':>10} {'Total Size':<15} {'Errors':<8} {'Severity':<10} {'Endpoints':<45}")
             lines.append("-" * 90)
-            
-            # Sort streams by stream ID numerically
+
             sorted_streams = sorted(streams.items(), key=lambda x: int(x[0]) if x[0].isdigit() else 0)
-            
-            for stream_id, info in sorted_streams[:20]:  # Show top 20 streams
+
+            for stream_id, info in sorted_streams[:10]:
                 count = info['count']
                 total = info['total_size']
-                
-                # Format size
+
                 if total < 1024:
                     size_str = f"{total} B"
                 elif total < 1048576:
                     size_str = f"{total / 1024:.2f} KB"
                 else:
                     size_str = f"{total / 1048576:.2f} MB"
-                
-                # Format endpoints
+
                 src = info['src'] if info['src'] else "Unknown"
                 dst = info['dst'] if info['dst'] else "Unknown"
                 endpoints = f"{src} -> {dst}"
-                endpoints_display = endpoints[:54] if len(endpoints) <= 54 else endpoints[:51] + "..."
-                
-                lines.append(f"{stream_id:<10} {count:>10} {size_str:<15} {endpoints_display:<55}")
-            
-            if len(sorted_streams) > 20:
-                lines.append(f"... and {len(sorted_streams) - 20} more streams")
+                endpoints_display = endpoints[:44] if len(endpoints) <= 44 else endpoints[:41] + "..."
+                severity = "High" if info['errors'] else "Low"
+
+                lines.append(
+                    f"{stream_id:<10} {count:>10} {size_str:<15} {info['errors']:<8} {severity:<10} {endpoints_display:<45}"
+                )
+
+            if len(sorted_streams) > 10:
+                lines.append(f"... and {len(sorted_streams) - 10} more streams")
             lines.append("")
         
         # Top Connections

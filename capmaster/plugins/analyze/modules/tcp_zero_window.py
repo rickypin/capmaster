@@ -73,21 +73,59 @@ class TcpZeroWindowModule(AnalysisModule):
             Formatted output with counts, sorted by count descending
         """
         if not tshark_output.strip():
-            return "Zero Window Count\nCount\tSrcIP\tSrcPort\tDstIP\tDstPort\n"
+            return "Zero Window Overview\nMetric,Value\nTotal Events,0\n"
 
-        # Count occurrences of each unique 4-tuple
         counter: Counter[str] = Counter()
         for line in tshark_output.strip().split('\n'):
-            if line.strip():
-                counter[line.strip()] = counter.get(line.strip(), 0) + 1
+            tuple_str = line.strip()
+            if tuple_str:
+                counter[tuple_str] += 1
 
-        # Sort by count (descending), then by tuple (for stable output)
-        sorted_items = sorted(counter.items(), key=lambda x: (-x[1], x[0]))
+        sorted_items = sorted(counter.items(), key=lambda item: (-item[1], item[0]))
+        total_events = sum(counter.values())
 
-        # Format output with header
-        lines = ["Zero Window Count", "Count\tSrcIP\tSrcPort\tDstIP\tDstPort"]
+        def classify(count: int) -> str:
+            if count >= 50:
+                return "High"
+            if count >= 10:
+                return "Medium"
+            return "Low"
+
+        severity_counts: Counter[str] = Counter()
+        severity_connections: dict[str, list[tuple[str, int]]] = {"High": [], "Medium": [], "Low": []}
         for tuple_str, count in sorted_items:
-            # tuple_str is already tab-separated from tshark
-            lines.append(f"{count}\t{tuple_str}")
+            severity = classify(count)
+            severity_counts[severity] += count
+            severity_connections[severity].append((tuple_str, count))
+
+        lines: list[str] = []
+        lines.append("Zero Window Overview")
+        lines.append("Metric,Value")
+        lines.append(f"Total Events,{total_events}")
+        lines.append(f"Unique Connections,{len(sorted_items)}")
+        lines.append("")
+
+        lines.append("Severity Summary")
+        lines.append("Severity,Events,Connections")
+        for severity in ["High", "Medium", "Low"]:
+            events = severity_counts.get(severity, 0)
+            conn_count = len(severity_connections[severity])
+            lines.append(f"{severity},{events},{conn_count}")
+
+        highlights: list[tuple[str, int, str]] = []
+        for severity in ["High", "Medium", "Low"]:
+            for tuple_str, count in severity_connections[severity]:
+                highlights.append((tuple_str, count, severity))
+                if len(highlights) >= 5:
+                    break
+            if len(highlights) >= 5:
+                break
+
+        if highlights:
+            lines.append("")
+            lines.append("Highlighted Connections")
+            lines.append("Connection,Count,Severity")
+            for tuple_str, count, severity in highlights:
+                lines.append(f"{tuple_str},{count},{severity}")
 
         return '\n'.join(lines) + '\n'

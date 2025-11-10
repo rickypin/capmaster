@@ -8,6 +8,27 @@ import pytest
 from capmaster.plugins.analyze.plugin import AnalyzePlugin
 
 
+@pytest.fixture(autouse=True)
+def _fake_protocol_detection(monkeypatch) -> None:
+    """Ensure protocol detection returns a rich set for module execution in tests."""
+    monkeypatch.setattr(
+        "capmaster.core.protocol_detector.ProtocolDetector.detect",
+        lambda self, _: {
+            "tcp",
+            "udp",
+            "ip",
+            "ipv4",
+            "ipv6",
+            "ftp",
+            "ftp-data",
+            "http",
+            "ssh",
+            "sip",
+            "rtp",
+        },
+    )
+
+
 @pytest.mark.integration
 class TestModuleSelection:
     """Tests for the --modules parameter functionality."""

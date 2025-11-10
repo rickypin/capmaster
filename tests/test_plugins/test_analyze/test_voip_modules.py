@@ -142,15 +142,16 @@ class TestRtpStatsModule:
 =============================================================="""
         
         result = module.post_process(sample_output)
-        
+
         # Check that output contains expected sections
-        assert "RTP Stream Statistics" in result
-        assert "Stream Details" in result
-        assert "Quality Analysis" in result
-        assert "Summary" in result
-        
-        # Check quality assessment
-        assert "Quality: Good" in result or "Quality: ✓ GOOD" in result
+        assert "RTP Stream Overview" in result
+        assert "Severity Breakdown" in result
+        assert "Highlighted Streams" in result
+        assert "Metric,Value" in result
+
+        # Check severity and metrics
+        assert "Total Streams,1" in result
+        assert "Overall Loss %" in result
 
 
 @pytest.mark.integration
@@ -212,18 +213,18 @@ class TestSshStatsModule:
         )
         
         result = module.post_process(sample_output)
-        
+
         # Check that output contains expected sections
-        assert "SSH Statistics" in result
-        assert "SSH Connections" in result
-        assert "Summary" in result
-        
+        assert "SSH Overview" in result
+        assert ("Protocol Versions" in result) or ("Protocol Variants" in result)
+        assert "Stream Highlights" in result
+
         # Check stream information
-        assert "Stream 0" in result or "Stream     0" in result
-        
+        assert "Stream,Packets,Source,Destination,Protocol,Severity" in result
+
         # Check summary counts
-        assert "Total SSH Streams:" in result
-        assert "Total SSH Packets:" in result
+        assert "Total Streams,1" in result
+        assert "Total Packets,3" in result
 
 
 @pytest.mark.integration

@@ -136,91 +136,71 @@ class SshStatsModule(AnalysisModule):
                 connection = f"{src_ip}:{src_port} <-> {dst_ip}:{dst_port}"
                 connection_counter[connection] += 1
         
-        # Generate output
+        def classify_protocol(protocol: str | None) -> str:
+            if not protocol:
+                return "Medium"
+            lower = protocol.lower()
+            if lower.startswith("ssh-1"):
+                return "High"
+            if lower.startswith("ssh-2"):
+                return "Low"
+            return "Medium"
+
+        severity_rank = {"High": 0, "Medium": 1, "Low": 2}
+        stream_summaries: list[tuple[str, int, dict, str]] = []
+        severity_counts: Counter[str] = Counter()
+        for stream_id, info in stream_info.items():
+            frame_count = len(info['frames'])
+            severity = classify_protocol(info['protocol'])
+            severity_counts[severity] += 1
+            stream_summaries.append((stream_id, frame_count, info, severity))
+
+        total_streams = len(stream_info)
+        total_packets = sum(count for _, count, _, _ in stream_summaries)
+
         lines = []
-        lines.append("=" * 80)
-        lines.append("SSH Statistics")
-        lines.append("=" * 80)
+        lines.append("SSH Overview")
+        lines.append("Metric,Value")
+        lines.append(f"Total Streams,{total_streams}")
+        lines.append(f"Total Packets,{total_packets}")
+        lines.append(f"High Severity Streams,{severity_counts['High']}")
+        lines.append(f"Medium Severity Streams,{severity_counts['Medium']}")
+        lines.append(f"Low Severity Streams,{severity_counts['Low']}")
+        lines.append(f"Unique Connections,{len(connection_counter)}")
+        lines.append(f"Protocol Variants,{len(protocol_counter)}")
         lines.append("")
-        
-        # SSH Protocol Versions
+
         if protocol_counter:
-            lines.append("SSH Protocol Versions:")
-            lines.append("-" * 80)
-            lines.append(f"{'Protocol Version':<40} {'Count':>10}")
-            lines.append("-" * 80)
-            
-            for protocol, count in sorted(protocol_counter.items(), key=lambda x: -x[1]):
-                lines.append(f"{protocol:<40} {count:>10}")
+            lines.append("Protocol Versions")
+            lines.append("Version,Count,Severity")
+            for protocol, count in sorted(protocol_counter.items(), key=lambda item: -item[1]):
+                severity = classify_protocol(protocol)
+                lines.append(f"{protocol},{count},{severity}")
             lines.append("")
-        
-        # SSH Connections (TCP Streams)
-        if stream_info:
-            lines.append("SSH Connections (by TCP Stream):")
-            lines.append("-" * 80)
-            lines.append(f"{'Stream':<10} {'Frames':<10} {'Source':<25} {'Destination':<25} {'Protocol':<20}")
-            lines.append("-" * 80)
-            
-            # Sort by stream ID numerically
-            sorted_streams = sorted(stream_info.keys(), key=lambda x: int(x) if x.isdigit() else 0)
-            
-            for stream_id in sorted_streams:
-                info = stream_info[stream_id]
-                frame_count = len(info['frames'])
-                src = info['src'] if info['src'] else "Unknown"
-                dst = info['dst'] if info['dst'] else "Unknown"
-                protocol = info['protocol'] if info['protocol'] else "Unknown"
-                
-                # Truncate long values for display
-                src_display = src[:24] if len(src) <= 24 else src[:21] + "..."
-                dst_display = dst[:24] if len(dst) <= 24 else dst[:21] + "..."
-                protocol_display = protocol[:19] if len(protocol) <= 19 else protocol[:16] + "..."
-                
-                lines.append(f"{stream_id:<10} {frame_count:<10} {src_display:<25} {dst_display:<25} {protocol_display:<20}")
+
+        if stream_summaries:
+            lines.append("Stream Highlights")
+            lines.append("Stream,Packets,Source,Destination,Protocol,Severity")
+            stream_summaries.sort(key=lambda item: (severity_rank[item[3]], -item[1]))
+            for stream_id, packet_count, info, severity in stream_summaries[:5]:
+                src = info['src'] or "Unknown"
+                dst = info['dst'] or "Unknown"
+                protocol = info['protocol'] or "Unknown"
+                lines.append(
+                    f"{stream_id},{packet_count},{src},{dst},{protocol},{severity}"
+                )
+            remaining = total_streams - min(5, total_streams)
+            if remaining > 0:
+                lines.append(f"... {remaining} additional stream(s) hidden")
             lines.append("")
-        
-        # Connection Details
+
         if connection_counter:
-            lines.append("Connection Packet Counts:")
-            lines.append("-" * 80)
-            lines.append(f"{'Connection':<60} {'Packets':>10}")
-            lines.append("-" * 80)
-            
-            for connection, count in sorted(connection_counter.items(), key=lambda x: -x[1]):
-                # Truncate long connection strings
-                conn_display = connection[:59] if len(connection) <= 59 else connection[:56] + "..."
-                lines.append(f"{conn_display:<60} {count:>10}")
-            lines.append("")
-        
-        # Detailed Stream Information
-        if stream_info:
-            lines.append("Detailed Stream Information:")
-            lines.append("-" * 80)
-            
-            for stream_id in sorted_streams:
-                info = stream_info[stream_id]
-                lines.append(f"\nStream {stream_id}:")
-                lines.append(f"  Source:      {info['src'] if info['src'] else 'Unknown'}")
-                lines.append(f"  Destination: {info['dst'] if info['dst'] else 'Unknown'}")
-                lines.append(f"  Protocol:    {info['protocol'] if info['protocol'] else 'Unknown'}")
-                lines.append(f"  Frames:      {len(info['frames'])} packets")
-                
-                # Show first few frame numbers
-                if info['frames']:
-                    frame_sample = ', '.join(info['frames'][:10])
-                    if len(info['frames']) > 10:
-                        frame_sample += f", ... ({len(info['frames']) - 10} more)"
-                    lines.append(f"  Frame IDs:   {frame_sample}")
-            lines.append("")
-        
-        # Summary
-        lines.append("=" * 80)
-        lines.append("Summary:")
-        lines.append(f"  Total SSH Streams:       {len(stream_info)}")
-        lines.append(f"  Total SSH Packets:       {sum(len(info['frames']) for info in stream_info.values())}")
-        lines.append(f"  Unique Connections:      {len(connection_counter)}")
-        lines.append(f"  Protocol Versions Found: {len(protocol_counter)}")
-        lines.append("=" * 80)
-        
+            lines.append("Top Connections")
+            lines.append("Connection,Packets")
+            for connection, count in sorted(connection_counter.items(), key=lambda item: -item[1])[:5]:
+                lines.append(f"{connection},{count}")
+            if len(connection_counter) > 5:
+                lines.append(f"... {len(connection_counter) - 5} more connection(s)")
+
         return '\n'.join(lines) + '\n'
 

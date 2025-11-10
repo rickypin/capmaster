@@ -256,18 +256,24 @@ class XmlStatsModule(AnalysisModule):
         
         # Error Analysis
         if error_responses:
-            lines.append("Error Responses (4xx/5xx):")
+            lines.append("Error Responses (sampled):")
             lines.append("-" * 80)
-            lines.append(f"{'Frame':<10} {'Status':<10} {'Connection':<60}")
-            lines.append("-" * 80)
-            
-            # Show first 20 errors
-            for code, conn, frame in error_responses[:20]:
-                conn_display = conn[:59] if len(conn) <= 59 else conn[:56] + "..."
-                lines.append(f"{frame:<10} {code:<10} {conn_display:<60}")
-            
-            if len(error_responses) > 20:
-                lines.append(f"... and {len(error_responses) - 20} more errors")
+            lines.append("Status,Severity,Total,Sample Connections")
+
+            grouped_errors: dict[str, list[tuple[str, str]]] = defaultdict(list)
+            for code, conn, frame in error_responses:
+                grouped_errors[code].append((frame, conn))
+
+            sorted_errors = sorted(grouped_errors.items(), key=lambda item: -len(item[1]))
+            for code, entries in sorted_errors:
+                severity = "High" if code.startswith('5') else "Medium"
+                samples = self.sample_items(entries, limit=2)
+                sample_text = "; ".join(
+                    f"{frame}@{conn[:55] + '...' if len(conn) > 55 else conn}"
+                    for frame, conn in samples
+                )
+                lines.append(f"{code},{severity},{len(entries)},{sample_text}")
+
             lines.append("")
         
         # Message Size Distribution
