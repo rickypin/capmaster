@@ -262,6 +262,16 @@ class ConnectionMatcher:
 
         for i, conn1 in enumerate(bucket1):
             for j, conn2 in enumerate(bucket2):
+                # OPTIMIZATION: Pre-filter invalid matches before expensive scoring
+                # Check 3-tuple (port pair) requirement first - fast check
+                if conn1.get_normalized_3tuple() != conn2.get_normalized_3tuple():
+                    continue
+
+                # Check IPID requirement - fast set intersection check
+                if not (conn1.ipid_set & conn2.ipid_set):
+                    continue
+
+                # Only score if pre-checks pass
                 score = self.scorer.score(conn1, conn2)
 
                 if score.is_valid_match(self.score_threshold):
@@ -308,6 +318,16 @@ class ConnectionMatcher:
         # Score all pairs and accept all valid matches
         for conn1 in bucket1:
             for conn2 in bucket2:
+                # OPTIMIZATION: Pre-filter invalid matches before expensive scoring
+                # Check 3-tuple (port pair) requirement first - fast check
+                if conn1.get_normalized_3tuple() != conn2.get_normalized_3tuple():
+                    continue
+
+                # Check IPID requirement - fast set intersection check
+                if not (conn1.ipid_set & conn2.ipid_set):
+                    continue
+
+                # Only score if pre-checks pass
                 score = self.scorer.score(conn1, conn2)
 
                 if score.is_valid_match(self.score_threshold):

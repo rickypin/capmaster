@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 
-@dataclass
+@dataclass(slots=True)
 class TcpConnection:
     """
     TCP connection feature representation.
@@ -153,7 +153,7 @@ class TcpConnection:
             return (port2, port1)
 
 
-@dataclass
+@dataclass(slots=True)
 class TcpPacket:
     """
     Individual TCP packet data.
@@ -348,10 +348,16 @@ class ConnectionBuilder:
         # Check if header-only (all packets have zero payload)
         is_header_only = all(p.length == 0 for p in packets)
 
-        # Compute payload hashes (client and server separately)
-        client_payload_md5, server_payload_md5 = self._compute_payload_hashes(
-            packets, client_ip, server_ip
-        )
+        # OPTIMIZATION: Skip payload hash computation for header-only connections
+        # This avoids expensive MD5 calculations when there's no payload data
+        if is_header_only:
+            client_payload_md5 = ""
+            server_payload_md5 = ""
+        else:
+            # Compute payload hashes (client and server separately)
+            client_payload_md5, server_payload_md5 = self._compute_payload_hashes(
+                packets, client_ip, server_ip
+            )
 
         # Compute length signature (with direction)
         length_signature = self._compute_length_signature(packets, client_ip, server_ip)

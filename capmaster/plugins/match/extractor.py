@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 import csv
-import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -58,59 +57,81 @@ class TcpFieldExtractor:
         Raises:
             RuntimeError: If tshark extraction fails
         """
-        # Create temporary file for tshark output
-        with tempfile.NamedTemporaryFile(mode="w+", suffix=".tsv", delete=False) as tmp_file:
-            tmp_path = Path(tmp_file.name)
+        # Build tshark command
+        args = [
+            "-r",
+            str(pcap_file),
+            "-Y",
+            "tcp",  # Filter for TCP packets only
+            # NOTE: Use relative sequence numbers to match original script behavior
+            # Original script uses tcp.seq which defaults to relative sequence numbers
+            # This means SYN packets have seq=0, making ISN matching work correctly
+            "-o",
+            "tcp.desegment_tcp_streams:false",  # Disable TCP reassembly
+            "-T",
+            "fields",
+            "-E",
+            "separator=\t",
+            "-E",
+            "quote=d",
+            "-E",
+            "occurrence=f",  # First occurrence only
+        ]
 
-        try:
-            # Build tshark command
-            args = [
-                "-r",
-                str(pcap_file),
-                "-Y",
-                "tcp",  # Filter for TCP packets only
-                # NOTE: Use relative sequence numbers to match original script behavior
-                # Original script uses tcp.seq which defaults to relative sequence numbers
-                # This means SYN packets have seq=0, making ISN matching work correctly
-                "-o",
-                "tcp.desegment_tcp_streams:false",  # Disable TCP reassembly
-                "-T",
-                "fields",
-                "-E",
-                "separator=\t",
-                "-E",
-                "quote=d",
-                "-E",
-                "occurrence=f",  # First occurrence only
-            ]
+        # Add field extraction arguments
+        for field in self.FIELDS:
+            args.extend(["-e", field])
 
-            # Add field extraction arguments
-            for field in self.FIELDS:
-                args.extend(["-e", field])
+        # OPTIMIZATION: Use pipe to read tshark output directly
+        # This avoids temporary file I/O overhead
+        result = self.tshark.execute(args)
 
-            # Execute tshark
-            result = self.tshark.execute(args, output_file=tmp_path)
+        if result.returncode != 0:
+            raise RuntimeError(f"tshark extraction failed: {result.stderr}")
 
-            if result.returncode != 0:
-                raise RuntimeError(f"tshark extraction failed: {result.stderr}")
+        # Parse the TSV output from stdout
+        yield from self._parse_tsv_string(result.stdout)
 
-            # Parse the TSV output
-            yield from self._parse_tsv(tmp_path)
+    def _parse_tsv_string(self, tsv_content: str) -> Iterator[TcpPacket]:
+        """
+        Parse TSV output from tshark (from string).
 
-        finally:
-            # Clean up temporary file
-            if tmp_path.exists():
-                tmp_path.unlink()
+        Args:
+            tsv_content: TSV content as string
+
+        Yields:
+            TcpPacket objects
+        """
+        # Split into lines and parse as CSV
+        lines = tsv_content.strip().split('\n')
+        reader = csv.reader(lines, delimiter="\t")
+
+        for row in reader:
+            if len(row) < len(self.FIELDS):
+                # Skip incomplete rows
+                continue
+
+            try:
+                packet = self._parse_row(row)
+                if packet:
+                    yield packet
+            except (ValueError, IndexError):
+                # Skip malformed rows
+                continue
 
     def _parse_tsv(self, tsv_file: Path) -> Iterator[TcpPacket]:
         """
-        Parse TSV output from tshark.
+        Parse TSV output from tshark (from file).
 
         Args:
             tsv_file: Path to the TSV file
 
         Yields:
             TcpPacket objects
+
+        Note:
+            This method is kept for backward compatibility but is no longer
+            used by the extract() method which now uses _parse_tsv_string().
         """
         with open(tsv_file, encoding="utf-8", errors="replace") as f:
             reader = csv.reader(f, delimiter="\t")
