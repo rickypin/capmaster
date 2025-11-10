@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from capmaster.plugins.match.matcher import ConnectionMatch
 from capmaster.plugins.match.server_detector import ServerDetector, ServerInfo
+from capmaster.plugins.match.ttl_utils import most_common_hops
 
 
 @dataclass(frozen=True)
@@ -63,13 +64,27 @@ class EndpointPairStats:
     server_ttl_b: int = 0
     """Most common server TTL from file B"""
 
+    client_hops_a: int = 0
+    """Number of network hops for client in file A (calculated from TTL)"""
+
+    server_hops_a: int = 0
+    """Number of network hops for server in file A (calculated from TTL)"""
+
+    client_hops_b: int = 0
+    """Number of network hops for client in file B (calculated from TTL)"""
+
+    server_hops_b: int = 0
+    """Number of network hops for server in file B (calculated from TTL)"""
+
     def __str__(self) -> str:
         """String representation."""
         ttl_info = ""
         if self.client_ttl_a or self.server_ttl_a or self.client_ttl_b or self.server_ttl_b:
             ttl_info = (
-                f"\n  TTL A: Client={self.client_ttl_a}, Server={self.server_ttl_a}"
-                f"\n  TTL B: Client={self.client_ttl_b}, Server={self.server_ttl_b}"
+                f"\n  TTL A: Client={self.client_ttl_a} (hops={self.client_hops_a}), "
+                f"Server={self.server_ttl_a} (hops={self.server_hops_a})"
+                f"\n  TTL B: Client={self.client_ttl_b} (hops={self.client_hops_b}), "
+                f"Server={self.server_ttl_b} (hops={self.server_hops_b})"
             )
         return (
             f"Count: {self.count} | Confidence: {self.confidence}\n"
@@ -241,6 +256,12 @@ class EndpointStatsCollector:
             client_ttl_b = self._most_common_ttl(self.client_ttls_b[(tuple_a, tuple_b)])
             server_ttl_b = self._most_common_ttl(self.server_ttls_b[(tuple_a, tuple_b)])
 
+            # Calculate network hops from TTL values
+            client_hops_a = most_common_hops(self.client_ttls_a[(tuple_a, tuple_b)])
+            server_hops_a = most_common_hops(self.server_ttls_a[(tuple_a, tuple_b)])
+            client_hops_b = most_common_hops(self.client_ttls_b[(tuple_a, tuple_b)])
+            server_hops_b = most_common_hops(self.server_ttls_b[(tuple_a, tuple_b)])
+
             results.append(
                 EndpointPairStats(
                     tuple_a=tuple_a,
@@ -251,6 +272,10 @@ class EndpointStatsCollector:
                     server_ttl_a=server_ttl_a,
                     client_ttl_b=client_ttl_b,
                     server_ttl_b=server_ttl_b,
+                    client_hops_a=client_hops_a,
+                    server_hops_a=server_hops_a,
+                    client_hops_b=client_hops_b,
+                    server_hops_b=server_hops_b,
                 )
             )
 
@@ -371,15 +396,21 @@ def format_endpoint_stats(
         lines.append(f"[{i}] Count: {stat.count} | Confidence: {stat.confidence}")
         lines.append(f"    File A: {stat.tuple_a}")
 
-        # Add TTL info for File A if available
+        # Add TTL and hops info for File A if available
         if stat.client_ttl_a or stat.server_ttl_a:
-            lines.append(f"            TTL: Client={stat.client_ttl_a}, Server={stat.server_ttl_a}")
+            lines.append(
+                f"            TTL: Client={stat.client_ttl_a} (hops={stat.client_hops_a}), "
+                f"Server={stat.server_ttl_a} (hops={stat.server_hops_a})"
+            )
 
         lines.append(f"    File B: {stat.tuple_b}")
 
-        # Add TTL info for File B if available
+        # Add TTL and hops info for File B if available
         if stat.client_ttl_b or stat.server_ttl_b:
-            lines.append(f"            TTL: Client={stat.client_ttl_b}, Server={stat.server_ttl_b}")
+            lines.append(
+                f"            TTL: Client={stat.client_ttl_b} (hops={stat.client_hops_b}), "
+                f"Server={stat.server_ttl_b} (hops={stat.server_hops_b})"
+            )
 
         lines.append("")
 
@@ -407,9 +438,9 @@ def format_endpoint_stats_table(
     lines = []
 
     # Header
-    lines.append("=" * 180)
+    lines.append("=" * 210)
     lines.append("Endpoint Statistics Summary")
-    lines.append("=" * 180)
+    lines.append("=" * 210)
     lines.append("")
     lines.append(f"File A: {file1_name}")
     lines.append(f"File B: {file2_name}")
@@ -417,26 +448,28 @@ def format_endpoint_stats_table(
 
     # Table header
     header = (
-        f"{'Client IP (A)':<15} | {'Server IP (A)':<15} | {'Port (A)':<8} | {'TTL A (C/S)':<12} | "
-        f"{'Client IP (B)':<15} | {'Server IP (B)':<15} | {'Port (B)':<8} | {'TTL B (C/S)':<12} | "
+        f"{'Client IP (A)':<15} | {'Server IP (A)':<15} | {'Port (A)':<8} | {'TTL A (C/S)':<12} | {'Hops A (C/S)':<13} | "
+        f"{'Client IP (B)':<15} | {'Server IP (B)':<15} | {'Port (B)':<8} | {'TTL B (C/S)':<12} | {'Hops B (C/S)':<13} | "
         f"{'Count':<6} | {'Conf':<8}"
     )
     lines.append(header)
-    lines.append("-" * 180)
+    lines.append("-" * 210)
 
     # Table rows
     for stat in stats:
         ttl_a = f"{stat.client_ttl_a}/{stat.server_ttl_a}"
         ttl_b = f"{stat.client_ttl_b}/{stat.server_ttl_b}"
+        hops_a = f"{stat.client_hops_a}/{stat.server_hops_a}"
+        hops_b = f"{stat.client_hops_b}/{stat.server_hops_b}"
         row = (
-            f"{stat.tuple_a.client_ip:<15} | {stat.tuple_a.server_ip:<15} | {stat.tuple_a.server_port:<8} | {ttl_a:<12} | "
-            f"{stat.tuple_b.client_ip:<15} | {stat.tuple_b.server_ip:<15} | {stat.tuple_b.server_port:<8} | {ttl_b:<12} | "
+            f"{stat.tuple_a.client_ip:<15} | {stat.tuple_a.server_ip:<15} | {stat.tuple_a.server_port:<8} | {ttl_a:<12} | {hops_a:<13} | "
+            f"{stat.tuple_b.client_ip:<15} | {stat.tuple_b.server_ip:<15} | {stat.tuple_b.server_port:<8} | {ttl_b:<12} | {hops_b:<13} | "
             f"{stat.count:<6} | {stat.confidence:<8}"
         )
         lines.append(row)
 
     lines.append("")
-    lines.append("=" * 180)
+    lines.append("=" * 210)
 
     return "\n".join(lines)
 

@@ -32,35 +32,82 @@ def test_endpoint_stats_write():
     logger.info("=" * 80)
     
     try:
-        # Create test endpoint statistics (simulating the output from your example)
+        # Create test endpoint statistics with network hops
         endpoint_stats = [
+            # Scenario 1: Both client and server have intermediate devices
             EndpointPairStats(
                 tuple_a=EndpointTuple(
-                    client_ip="8.42.96.45",
-                    server_ip="8.67.2.125",
-                    server_port=26302,
+                    client_ip="192.168.1.100",
+                    server_ip="10.0.0.50",
+                    server_port=80,
+                    protocol=6,  # TCP
                 ),
                 tuple_b=EndpointTuple(
-                    client_ip="8.42.96.45",
-                    server_ip="8.67.2.125",
-                    server_port=26302,
+                    client_ip="172.16.0.200",
+                    server_ip="10.0.0.51",
+                    server_port=80,
+                    protocol=6,  # TCP
                 ),
-                count=1,
-                confidence="VERY_LOW",
+                count=5,
+                confidence="HIGH",
+                client_ttl_a=64,
+                server_ttl_a=60,
+                client_ttl_b=128,
+                server_ttl_b=120,
+                client_hops_a=0,   # Direct connection
+                server_hops_a=4,   # 4 hops to server
+                client_hops_b=0,   # Direct connection
+                server_hops_b=8,   # 8 hops to server
             ),
+            # Scenario 2: Only server has intermediate devices
             EndpointPairStats(
                 tuple_a=EndpointTuple(
-                    client_ip="8.67.2.125",
-                    server_ip="8.42.96.45",
-                    server_port=35101,
+                    client_ip="192.168.1.101",
+                    server_ip="10.0.0.52",
+                    server_port=443,
+                    protocol=6,  # TCP
                 ),
                 tuple_b=EndpointTuple(
-                    client_ip="8.67.2.125",
-                    server_ip="8.42.96.45",
-                    server_port=35101,
+                    client_ip="172.16.0.201",
+                    server_ip="10.0.0.53",
+                    server_port=443,
+                    protocol=6,  # TCP
                 ),
-                count=1,
-                confidence="VERY_LOW",
+                count=3,
+                confidence="MEDIUM",
+                client_ttl_a=128,
+                server_ttl_a=118,
+                client_ttl_b=64,
+                server_ttl_b=62,
+                client_hops_a=0,   # Direct connection
+                server_hops_a=10,  # 10 hops to server
+                client_hops_b=0,   # Direct connection
+                server_hops_b=2,   # 2 hops to server
+            ),
+            # Scenario 3: Both client and server have intermediate devices
+            EndpointPairStats(
+                tuple_a=EndpointTuple(
+                    client_ip="192.168.1.102",
+                    server_ip="10.0.0.54",
+                    server_port=22,
+                    protocol=6,  # TCP
+                ),
+                tuple_b=EndpointTuple(
+                    client_ip="172.16.0.202",
+                    server_ip="10.0.0.55",
+                    server_port=22,
+                    protocol=6,  # TCP
+                ),
+                count=2,
+                confidence="HIGH",
+                client_ttl_a=61,
+                server_ttl_a=58,
+                client_ttl_b=125,
+                server_ttl_b=115,
+                client_hops_a=3,   # 3 hops from client
+                server_hops_a=6,   # 6 hops to server
+                client_hops_b=3,   # 3 hops from client
+                server_hops_b=13,  # 13 hops to server
             ),
         ]
         
@@ -98,35 +145,56 @@ def test_endpoint_stats_write():
             db._cursor.execute(f"""
                 SELECT id, pcap_id, group_id, ip, port, proto, type, display_name
                 FROM {db.full_table_name}
-                WHERE group_id IN (1, 2)
+                WHERE group_id IN (1, 2, 3)
                 ORDER BY group_id, pcap_id, type;
             """)
             
             records = db._cursor.fetchall()
-            logger.info(f"\nFound {len(records)} records with group_id IN (1, 2):")
+            logger.info(f"\nFound {len(records)} records with group_id IN (1, 2, 3):")
             logger.info("-" * 80)
-            
+
             current_group = None
             for record in records:
                 id_, pcap_id, group_id, ip, port, proto, node_type, display_name = record
-                
+
                 if current_group != group_id:
                     if current_group is not None:
                         logger.info("-" * 80)
                     logger.info(f"\nGroup {group_id}:")
                     current_group = group_id
-                
-                node_type_str = "Client" if node_type == 1 else "Server" if node_type == 2 else f"Type{node_type}"
+
+                # Format node type
+                if node_type == 1:
+                    node_type_str = "Client"
+                elif node_type == 2:
+                    node_type_str = "Server"
+                elif node_type == 1001:
+                    node_type_str = "NetDevice(Client-Capture)"
+                elif node_type == 1002:
+                    node_type_str = "NetDevice(Capture-Server)"
+                else:
+                    node_type_str = f"Type{node_type}"
+
                 port_str = f":{port}" if port else ""
-                logger.info(f"  [{node_type_str}] pcap_id={pcap_id}, ip={ip}{port_str}, proto={proto}")
-            
+                ip_str = ip if ip else "N/A"
+                display_str = f" ({display_name})" if display_name else ""
+                logger.info(f"  [{node_type_str}] pcap_id={pcap_id}, ip={ip_str}{port_str}, proto={proto}{display_str}")
+
             logger.info("-" * 80)
-            
+
+            # Count network device nodes
+            db._cursor.execute(f"""
+                SELECT COUNT(*) FROM {db.full_table_name}
+                WHERE group_id IN (1, 2, 3) AND type IN (1001, 1002);
+            """)
+            net_device_count = db._cursor.fetchone()[0]
+            logger.info(f"\n✓ Network device nodes inserted: {net_device_count}")
+
             # Clean up test records
             logger.info("\nCleaning up test records...")
             db._cursor.execute(f"""
                 DELETE FROM {db.full_table_name}
-                WHERE group_id IN (1, 2);
+                WHERE group_id IN (1, 2, 3);
             """)
             db.commit()
             logger.info("✓ Test records cleaned up")
