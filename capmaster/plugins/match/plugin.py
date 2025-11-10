@@ -114,6 +114,16 @@ class MatchPlugin(PluginBase):
             default=0.5,
             help="Fraction of connections to keep when sampling (0.0-1.0, default: 0.5)",
         )
+        @click.option(
+            "--db-connection",
+            type=str,
+            help='Database connection string (e.g., "postgresql://user:pass@host:port/db"). When provided, endpoint statistics will be written to database.',
+        )
+        @click.option(
+            "--kase-id",
+            type=int,
+            help="Case ID for database table name (e.g., 137 -> kase_137_topological_graph). Required when --db-connection is used.",
+        )
         @click.pass_context
         def match_command(
             ctx: click.Context,
@@ -132,6 +142,8 @@ class MatchPlugin(PluginBase):
             no_sampling: bool,
             sampling_threshold: int,
             sampling_rate: float,
+            db_connection: str | None,
+            kase_id: int | None,
         ) -> None:
             """
             Match TCP connections between PCAP files.
@@ -197,9 +209,28 @@ class MatchPlugin(PluginBase):
             Output:
               Match results are printed to stdout by default, or saved to a file
               if -o is specified. Results include match statistics and details.
+
+              When --db-connection and --kase-id are provided, endpoint statistics
+              will also be written to the database table public.kase_{kase_id}_topological_graph.
+
+            \b
+            Database Output:
+              # Write endpoint statistics to database
+              capmaster match --file1 a.pcap --file1-pcapid 0 --file2 b.pcap --file2-pcapid 1 \\
+                --endpoint-stats \\
+                --db-connection "postgresql://postgres:password@host:port/db" \\
+                --kase-id 137
             """
             # Validate input parameters
             validate_dual_file_input(ctx, input_path, file1, file2, file1_pcapid, file2_pcapid)
+
+            # Validate database parameters
+            if db_connection and not kase_id:
+                ctx.fail("--kase-id is required when --db-connection is provided")
+            if kase_id and not db_connection:
+                ctx.fail("--db-connection is required when --kase-id is provided")
+            if db_connection and not endpoint_stats:
+                ctx.fail("--endpoint-stats is required when using database output")
 
             exit_code = self.execute(
                 input_path=input_path,
@@ -217,6 +248,8 @@ class MatchPlugin(PluginBase):
                 no_sampling=no_sampling,
                 sampling_threshold=sampling_threshold,
                 sampling_rate=sampling_rate,
+                db_connection=db_connection,
+                kase_id=kase_id,
             )
             ctx.exit(exit_code)
 
@@ -237,6 +270,8 @@ class MatchPlugin(PluginBase):
         no_sampling: bool = False,
         sampling_threshold: int = 1000,
         sampling_rate: float = 0.5,
+        db_connection: str | None = None,
+        kase_id: int | None = None,
     ) -> int:
         """
         Execute the match plugin.
@@ -373,13 +408,26 @@ class MatchPlugin(PluginBase):
                 # Generate endpoint statistics if requested
                 if endpoint_stats:
                     endpoint_task = progress.add_task("[green]Generating endpoint statistics...", total=1)
-                    self._output_endpoint_stats(
+                    endpoint_stats_list = self._output_endpoint_stats(
                         matches,
                         match_file1,
                         match_file2,
                         endpoint_stats_output,
                     )
                     progress.update(endpoint_task, advance=1)
+
+                    # Write to database if connection parameters provided
+                    if db_connection and kase_id is not None:
+                        db_task = progress.add_task("[green]Writing to database...", total=1)
+                        self._write_to_database(
+                            db_connection,
+                            kase_id,
+                            endpoint_stats_list,
+                            match_file1,
+                            match_file2,
+                            pcap_id_mapping,
+                        )
+                        progress.update(db_task, advance=1)
 
             logger.info("Matching complete")
             return 0
@@ -484,7 +532,7 @@ class MatchPlugin(PluginBase):
         file1: Path,
         file2: Path,
         output_file: Path | None,
-    ) -> None:
+    ) -> list:
         """
         Output endpoint statistics for matched connections.
 
@@ -493,6 +541,9 @@ class MatchPlugin(PluginBase):
             file1: Path to first PCAP file
             file2: Path to second PCAP file
             output_file: Output file for statistics (None for stdout)
+
+        Returns:
+            List of EndpointPairStats objects
         """
         # Create detector and collector
         detector = ServerDetector()
@@ -521,3 +572,55 @@ class MatchPlugin(PluginBase):
             logger.info(f"Endpoint statistics written to: {output_file}")
         else:
             print(output_text)
+
+        # Return stats for database writing
+        return stats
+
+    def _write_to_database(
+        self,
+        db_connection: str,
+        kase_id: int,
+        endpoint_stats: list,
+        file1: Path,
+        file2: Path,
+        pcap_id_mapping: dict[str, int] | None = None,
+    ) -> None:
+        """
+        Write endpoint statistics to database.
+
+        Args:
+            db_connection: Database connection string
+            kase_id: Case ID for table name
+            endpoint_stats: List of EndpointPairStats objects
+            file1: Path to first PCAP file
+            file2: Path to second PCAP file
+            pcap_id_mapping: Mapping from file path to pcap_id (optional)
+        """
+        from capmaster.plugins.match.db_writer import MatchDatabaseWriter
+
+        logger.info(f"Writing endpoint statistics to database (kase_id={kase_id})...")
+
+        try:
+            with MatchDatabaseWriter(db_connection, kase_id) as db:
+                # Ensure table exists
+                db.ensure_table_exists()
+
+                # Write endpoint statistics
+                records_inserted = db.write_endpoint_stats(
+                    endpoint_stats=endpoint_stats,
+                    pcap_id_mapping=pcap_id_mapping or {},
+                    file1_path=str(file1),
+                    file2_path=str(file2),
+                )
+
+                # Commit all inserts
+                db.commit()
+
+                logger.info(f"Successfully wrote {records_inserted} records to database")
+
+        except ImportError as e:
+            logger.error(f"Database functionality not available: {e}")
+            logger.error("Install psycopg2-binary to enable database output: pip install psycopg2-binary")
+        except Exception as e:
+            logger.error(f"Failed to write to database: {e}")
+            raise
