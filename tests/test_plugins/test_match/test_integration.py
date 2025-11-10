@@ -214,6 +214,15 @@ class TestMatchIntegration:
             text=True,
         )
 
+        # Check that the command succeeded
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+
+        # Check that output file was created
+        assert output_file.exists(), "Output file was not created"
+
+        # Verbose output should be in stderr
+        assert len(result.stderr) > 0, "No verbose output in stderr"
+
     def test_match_with_no_sampling(self, tc_001_1: Path, tmp_path: Path):
         """Test match with sampling disabled."""
         if not tc_001_1.exists():
@@ -325,9 +334,4 @@ class TestMatchIntegration:
 
         assert result.returncode == 0, f"Command failed: {result.stderr}"
         assert output_file.exists(), "Output file was not created"
-        
-        assert result.returncode == 0, f"Command failed: {result.stderr}"
-        assert output_file.exists(), "Output file was not created"
-        # Verbose output should be in stderr
-        assert len(result.stderr) > 0 or len(result.stdout) > 0, "No verbose output"
 

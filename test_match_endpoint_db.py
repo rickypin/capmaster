@@ -2,6 +2,7 @@
 """Test script for match plugin endpoint statistics database writer."""
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -22,15 +23,21 @@ logger = logging.getLogger(__name__)
 
 def test_endpoint_stats_write():
     """Test writing endpoint statistics to database."""
-    
-    # Database connection parameters
-    db_connection = "postgresql://postgres:password@172.16.200.156:5433/r2"
-    kase_id = 137
+
+    # Database connection parameters from environment variables
+    db_connection = os.getenv(
+        "TEST_DB_CONNECTION",
+        "postgresql://postgres:password@172.16.200.156:5433/r2"
+    )
+    kase_id = int(os.getenv("TEST_KASE_ID", "137"))
     
     logger.info("=" * 80)
     logger.info("Testing Endpoint Statistics Database Writer")
     logger.info("=" * 80)
-    
+
+    # Test group IDs for cleanup
+    test_group_ids = [1, 2, 3]
+
     try:
         # Create test endpoint statistics with network hops
         endpoint_stats = [
@@ -120,84 +127,89 @@ def test_endpoint_stats_write():
         # Create database writer
         with MatchDatabaseWriter(db_connection, kase_id) as db:
             logger.info(f"Connected to database for kase_id={kase_id}")
-            
+
             # Ensure table exists
             db.ensure_table_exists()
+
+            try:
+                # Write endpoint statistics
+                logger.info("\nWriting endpoint statistics...")
+                records_inserted = db.write_endpoint_stats(
+                    endpoint_stats=endpoint_stats,
+                    pcap_id_mapping=pcap_id_mapping,
+                    file1_path="A_processed.pcap",
+                    file2_path="B_processed.pcap",
+                )
+
+                # Commit
+                db.commit()
+
+                logger.info("\n" + "=" * 80)
+                logger.info(f"✓ Successfully wrote {records_inserted} records to database")
+                logger.info("=" * 80)
             
-            # Write endpoint statistics
-            logger.info("\nWriting endpoint statistics...")
-            records_inserted = db.write_endpoint_stats(
-                endpoint_stats=endpoint_stats,
-                pcap_id_mapping=pcap_id_mapping,
-                file1_path="A_processed.pcap",
-                file2_path="B_processed.pcap",
-            )
-            
-            # Commit
-            db.commit()
-            
-            logger.info("\n" + "=" * 80)
-            logger.info(f"✓ Successfully wrote {records_inserted} records to database")
-            logger.info("=" * 80)
-            
-            # Verify the records were inserted
-            logger.info("\nVerifying inserted records...")
-            db._cursor.execute(f"""
-                SELECT id, pcap_id, group_id, ip, port, proto, type, display_name
-                FROM {db.full_table_name}
-                WHERE group_id IN (1, 2, 3)
-                ORDER BY group_id, pcap_id, type;
-            """)
-            
-            records = db._cursor.fetchall()
-            logger.info(f"\nFound {len(records)} records with group_id IN (1, 2, 3):")
-            logger.info("-" * 80)
+                # Verify the records were inserted
+                logger.info("\nVerifying inserted records...")
+                db._cursor.execute(f"""
+                    SELECT id, pcap_id, group_id, ip, port, proto, type, display_name
+                    FROM {db.full_table_name}
+                    WHERE group_id IN ({','.join(map(str, test_group_ids))})
+                    ORDER BY group_id, pcap_id, type;
+                """)
 
-            current_group = None
-            for record in records:
-                id_, pcap_id, group_id, ip, port, proto, node_type, display_name = record
+                records = db._cursor.fetchall()
+                logger.info(f"\nFound {len(records)} records with group_id IN ({test_group_ids}):")
+                logger.info("-" * 80)
 
-                if current_group != group_id:
-                    if current_group is not None:
-                        logger.info("-" * 80)
-                    logger.info(f"\nGroup {group_id}:")
-                    current_group = group_id
+                current_group = None
+                for record in records:
+                    id_, pcap_id, group_id, ip, port, proto, node_type, display_name = record
 
-                # Format node type
-                if node_type == 1:
-                    node_type_str = "Client"
-                elif node_type == 2:
-                    node_type_str = "Server"
-                elif node_type == 1001:
-                    node_type_str = "NetDevice(Client-Capture)"
-                elif node_type == 1002:
-                    node_type_str = "NetDevice(Capture-Server)"
-                else:
-                    node_type_str = f"Type{node_type}"
+                    if current_group != group_id:
+                        if current_group is not None:
+                            logger.info("-" * 80)
+                        logger.info(f"\nGroup {group_id}:")
+                        current_group = group_id
 
-                port_str = f":{port}" if port else ""
-                ip_str = ip if ip else "N/A"
-                display_str = f" ({display_name})" if display_name else ""
-                logger.info(f"  [{node_type_str}] pcap_id={pcap_id}, ip={ip_str}{port_str}, proto={proto}{display_str}")
+                    # Format node type
+                    if node_type == 1:
+                        node_type_str = "Client"
+                    elif node_type == 2:
+                        node_type_str = "Server"
+                    elif node_type == 1001:
+                        node_type_str = "NetDevice(Client-Capture)"
+                    elif node_type == 1002:
+                        node_type_str = "NetDevice(Capture-Server)"
+                    else:
+                        node_type_str = f"Type{node_type}"
 
-            logger.info("-" * 80)
+                    port_str = f":{port}" if port else ""
+                    ip_str = ip if ip else "N/A"
+                    display_str = f" ({display_name})" if display_name else ""
+                    logger.info(f"  [{node_type_str}] pcap_id={pcap_id}, ip={ip_str}{port_str}, proto={proto}{display_str}")
 
-            # Count network device nodes
-            db._cursor.execute(f"""
-                SELECT COUNT(*) FROM {db.full_table_name}
-                WHERE group_id IN (1, 2, 3) AND type IN (1001, 1002);
-            """)
-            net_device_count = db._cursor.fetchone()[0]
-            logger.info(f"\n✓ Network device nodes inserted: {net_device_count}")
+                logger.info("-" * 80)
 
-            # Clean up test records
-            logger.info("\nCleaning up test records...")
-            db._cursor.execute(f"""
-                DELETE FROM {db.full_table_name}
-                WHERE group_id IN (1, 2, 3);
-            """)
-            db.commit()
-            logger.info("✓ Test records cleaned up")
+                # Count network device nodes
+                db._cursor.execute(f"""
+                    SELECT COUNT(*) FROM {db.full_table_name}
+                    WHERE group_id IN ({','.join(map(str, test_group_ids))}) AND type IN (1001, 1002);
+                """)
+                net_device_count = db._cursor.fetchone()[0]
+                logger.info(f"\n✓ Network device nodes inserted: {net_device_count}")
+
+            finally:
+                # Always clean up test records, even if test fails
+                logger.info("\nCleaning up test records...")
+                try:
+                    db._cursor.execute(f"""
+                        DELETE FROM {db.full_table_name}
+                        WHERE group_id IN ({','.join(map(str, test_group_ids))});
+                    """)
+                    db.commit()
+                    logger.info("✓ Test records cleaned up")
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to clean up test records: {cleanup_error}")
             
         logger.info("\n✓ Test completed successfully!")
         return 0

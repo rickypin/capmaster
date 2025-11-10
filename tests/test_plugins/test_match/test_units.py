@@ -14,7 +14,40 @@ from capmaster.plugins.match.sampler import ConnectionSampler
 from capmaster.plugins.match.scorer import ConnectionScorer, MatchScore
 
 
-@pytest.mark.integration
+def create_test_connection(**kwargs) -> TcpConnection:
+    """
+    Helper function to create a TcpConnection with default values.
+
+    This simplifies test code by providing sensible defaults for all required fields.
+    """
+    defaults = {
+        "stream_id": 0,
+        "protocol": 6,  # TCP
+        "client_ip": "192.168.1.1",
+        "client_port": 12345,
+        "server_ip": "10.0.0.1",
+        "server_port": 80,
+        "syn_timestamp": 1234567890.0,
+        "syn_options": "",
+        "client_isn": 0,
+        "server_isn": 0,
+        "tcp_timestamp_tsval": "",
+        "tcp_timestamp_tsecr": "",
+        "client_payload_md5": "",
+        "server_payload_md5": "",
+        "length_signature": "",
+        "is_header_only": False,
+        "ipid_first": 0,
+        "ipid_set": set(),
+        "first_packet_time": 1234567890.0,
+        "last_packet_time": 1234567890.0,
+        "packet_count": 1,
+    }
+    defaults.update(kwargs)
+    return TcpConnection(**defaults)
+
+
+@pytest.mark.unit
 class TestTcpConnection:
     """Test TcpConnection dataclass."""
 
@@ -22,6 +55,7 @@ class TestTcpConnection:
         """Test creating a TcpConnection instance."""
         conn = TcpConnection(
             stream_id=1,
+            protocol=6,  # TCP
             client_ip="192.168.1.1",
             client_port=12345,
             server_ip="10.0.0.1",
@@ -37,9 +71,14 @@ class TestTcpConnection:
             length_signature="C:100 S:200 C:50",
             is_header_only=False,
             ipid_first=54321,
+            ipid_set={54321, 54322, 54323},
+            first_packet_time=1234567890.0,
+            last_packet_time=1234567900.0,
+            packet_count=10,
         )
-        
+
         assert conn.stream_id == 1
+        assert conn.protocol == 6
         assert conn.client_ip == "192.168.1.1"
         assert conn.client_port == 12345
         assert conn.server_ip == "10.0.0.1"
@@ -48,9 +87,10 @@ class TestTcpConnection:
         assert conn.client_isn == 1000000
         assert conn.server_isn == 2000000
         assert conn.is_header_only is False
+        assert conn.packet_count == 10
 
 
-@pytest.mark.integration
+@pytest.mark.unit
 class TestTcpPacket:
     """Test TcpPacket dataclass."""
 
@@ -59,6 +99,7 @@ class TestTcpPacket:
         packet = TcpPacket(
             frame_number=1,
             stream_id=0,
+            protocol=6,  # TCP
             src_ip="192.168.1.1",
             dst_ip="10.0.0.1",
             src_port=12345,
@@ -71,15 +112,16 @@ class TestTcpPacket:
             ip_id=54321,
             timestamp=1234567890.0,
         )
-        
+
         assert packet.frame_number == 1
         assert packet.stream_id == 0
+        assert packet.protocol == 6
         assert packet.src_ip == "192.168.1.1"
         assert packet.dst_ip == "10.0.0.1"
         assert packet.flags == "0x002"
 
 
-@pytest.mark.integration
+@pytest.mark.unit
 class TestConnectionSampler:
     """Test ConnectionSampler."""
 
@@ -93,11 +135,10 @@ class TestConnectionSampler:
         """Create sample connections for testing."""
         connections = []
         for i in range(20):
-            conn = TcpConnection(
+            conn = create_test_connection(
                 stream_id=i,
                 client_ip=f"192.168.1.{i}",
                 client_port=10000 + i,
-                server_ip="10.0.0.1",
                 server_port=80,
                 syn_timestamp=1234567890.0 + i * 10,
                 syn_options="mss=1460",
@@ -108,33 +149,15 @@ class TestConnectionSampler:
                 client_payload_md5=f"hash{i}",
                 server_payload_md5=f"hash{i}",
                 length_signature=f"C:{i*10}",
-                is_header_only=False,
                 ipid_first=i,
+                ipid_set={i},
             )
             connections.append(conn)
         return connections
 
     def test_should_sample_below_threshold(self, sampler: ConnectionSampler):
         """Test that sampling is not triggered below threshold."""
-        connections = [TcpConnection(
-            stream_id=i,
-            client_ip="192.168.1.1",
-            client_port=10000,
-            server_ip="10.0.0.1",
-            server_port=80,
-            syn_timestamp=1234567890.0,
-            syn_options="",
-            client_isn=0,
-            server_isn=0,
-            tcp_timestamp_tsval="",
-            tcp_timestamp_tsecr="",
-            client_payload_md5="",
-            server_payload_md5="",
-            length_signature="",
-            is_header_only=False,
-            ipid_first=0,
-        ) for i in range(5)]
-        
+        connections = [create_test_connection(stream_id=i) for i in range(5)]
         assert not sampler.should_sample(connections)
 
     def test_should_sample_above_threshold(self, sampler: ConnectionSampler, sample_connections: list[TcpConnection]):
@@ -146,11 +169,10 @@ class TestConnectionSampler:
         # Create connections with non-special ports to ensure they can be sampled
         connections = []
         for i in range(20):
-            conn = TcpConnection(
+            conn = create_test_connection(
                 stream_id=i,
                 client_ip=f"192.168.1.{i}",
                 client_port=10000 + i,
-                server_ip="10.0.0.1",
                 server_port=8000 + i,  # Non-special ports
                 syn_timestamp=1234567890.0 + i * 10,
                 syn_options="mss=1460",
@@ -161,8 +183,8 @@ class TestConnectionSampler:
                 client_payload_md5=f"hash{i}",
                 server_payload_md5=f"hash{i}",
                 length_signature=f"C:{i*10}",
-                is_header_only=False,
                 ipid_first=i,
+                ipid_set={i},
             )
             connections.append(conn)
 
@@ -173,33 +195,23 @@ class TestConnectionSampler:
         """Test that header-only connections are preserved."""
         connections = []
         for i in range(20):
-            conn = TcpConnection(
+            conn = create_test_connection(
                 stream_id=i,
                 client_ip=f"192.168.1.{i}",
                 client_port=10000 + i,
-                server_ip="10.0.0.1",
                 server_port=80,
                 syn_timestamp=1234567890.0 + i * 10,
-                syn_options="",
-                client_isn=0,
-                server_isn=0,
-                tcp_timestamp_tsval="",
-                tcp_timestamp_tsecr="",
-                client_payload_md5="",
-                server_payload_md5="",
-                length_signature="",
                 is_header_only=(i == 5),  # One header-only connection
-                ipid_first=0,
             )
             connections.append(conn)
-        
+
         sampled = sampler.sample(connections)
         # Header-only connection should be preserved
         header_only_in_sample = any(c.is_header_only for c in sampled)
         assert header_only_in_sample
 
 
-@pytest.mark.integration
+@pytest.mark.unit
 class TestConnectionScorer:
     """Test ConnectionScorer."""
 
@@ -211,7 +223,7 @@ class TestConnectionScorer:
     @pytest.fixture
     def conn1(self) -> TcpConnection:
         """Create first test connection."""
-        return TcpConnection(
+        return create_test_connection(
             stream_id=1,
             client_ip="192.168.1.1",
             client_port=12345,
@@ -226,19 +238,19 @@ class TestConnectionScorer:
             client_payload_md5="abc123",
             server_payload_md5="def456",
             length_signature="C:100 S:200 C:50",
-            is_header_only=False,
             ipid_first=54321,
+            ipid_set={54321},
         )
 
     @pytest.fixture
     def conn2_identical(self, conn1: TcpConnection) -> TcpConnection:
-        """Create identical connection (different IPs/ports)."""
-        return TcpConnection(
+        """Create identical connection (different IPs, same ports for 3-tuple match)."""
+        return create_test_connection(
             stream_id=2,
             client_ip="172.16.0.1",  # Different IP (NAT scenario)
-            client_port=54321,  # Different port
+            client_port=conn1.client_port,  # Same port for 3-tuple match
             server_ip="10.0.0.2",  # Different server IP
-            server_port=80,
+            server_port=conn1.server_port,  # Same port for 3-tuple match
             syn_timestamp=1234567891.0,
             syn_options=conn1.syn_options,  # Same fingerprint
             client_isn=conn1.client_isn,
@@ -248,8 +260,8 @@ class TestConnectionScorer:
             client_payload_md5=conn1.client_payload_md5,
             server_payload_md5=conn1.server_payload_md5,
             length_signature=conn1.length_signature,
-            is_header_only=False,
             ipid_first=conn1.ipid_first,
+            ipid_set=conn1.ipid_set,
         )
 
     def test_score_identical_connections(self, scorer: ConnectionScorer, conn1: TcpConnection, conn2_identical: TcpConnection):
@@ -264,12 +276,12 @@ class TestConnectionScorer:
 
     def test_score_no_ipid_match(self, scorer: ConnectionScorer, conn1: TcpConnection):
         """Test scoring when IPID doesn't match."""
-        conn2 = TcpConnection(
+        conn2 = create_test_connection(
             stream_id=2,
             client_ip="172.16.0.1",
-            client_port=54321,
+            client_port=conn1.client_port,  # Same port for 3-tuple match
             server_ip="10.0.0.2",
-            server_port=80,
+            server_port=conn1.server_port,  # Same port for 3-tuple match
             syn_timestamp=1234567891.0,
             syn_options=conn1.syn_options,
             client_isn=conn1.client_isn,
@@ -279,8 +291,8 @@ class TestConnectionScorer:
             client_payload_md5=conn1.client_payload_md5,
             server_payload_md5=conn1.server_payload_md5,
             length_signature=conn1.length_signature,
-            is_header_only=False,
             ipid_first=99999,  # Different IPID
+            ipid_set={99999},  # No overlap with conn1
         )
         
         score = scorer.score(conn1, conn2)
@@ -292,12 +304,12 @@ class TestConnectionScorer:
 
     def test_score_partial_match(self, scorer: ConnectionScorer, conn1: TcpConnection):
         """Test scoring with partial feature match."""
-        conn2 = TcpConnection(
+        conn2 = create_test_connection(
             stream_id=2,
             client_ip="172.16.0.1",
-            client_port=54321,
+            client_port=conn1.client_port,  # Same port for 3-tuple match
             server_ip="10.0.0.2",
-            server_port=80,
+            server_port=conn1.server_port,  # Same port for 3-tuple match
             syn_timestamp=1234567891.0,
             syn_options=conn1.syn_options,  # Match
             client_isn=conn1.client_isn,  # Match
@@ -307,8 +319,8 @@ class TestConnectionScorer:
             client_payload_md5="",  # Different
             server_payload_md5="",
             length_signature="",  # Different
-            is_header_only=False,
             ipid_first=conn1.ipid_first,  # Match
+            ipid_set=conn1.ipid_set,  # Match
         )
         
         score = scorer.score(conn1, conn2)
@@ -431,7 +443,7 @@ class TestConnectionMatcher:
     def connections_a(self) -> list[TcpConnection]:
         """Create connections for side A."""
         return [
-            TcpConnection(
+            create_test_connection(
                 stream_id=1,
                 client_ip="192.168.1.1",
                 client_port=12345,
@@ -446,8 +458,8 @@ class TestConnectionMatcher:
                 client_payload_md5="abc123",
                 server_payload_md5="def456",
                 length_signature="C:100 S:200 C:50",
-                is_header_only=False,
                 ipid_first=54321,
+                ipid_set={54321},
             ),
         ]
 
@@ -455,12 +467,12 @@ class TestConnectionMatcher:
     def connections_b(self) -> list[TcpConnection]:
         """Create connections for side B (matching)."""
         return [
-            TcpConnection(
+            create_test_connection(
                 stream_id=1,
                 client_ip="172.16.0.1",  # Different IP (NAT)
-                client_port=54321,  # Different port
+                client_port=12345,  # Same port for 3-tuple match
                 server_ip="10.0.0.2",  # Different server IP
-                server_port=80,
+                server_port=80,  # Same port for 3-tuple match
                 syn_timestamp=1234567891.0,
                 syn_options="mss=1460;ws=7;sack=1;ts=1",  # Same fingerprint
                 client_isn=1000000,
@@ -470,8 +482,8 @@ class TestConnectionMatcher:
                 client_payload_md5="abc123",
                 server_payload_md5="def456",
                 length_signature="C:100 S:200 C:50",
-                is_header_only=False,
                 ipid_first=54321,
+                ipid_set={54321},
             ),
         ]
 
