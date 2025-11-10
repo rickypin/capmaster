@@ -14,32 +14,37 @@ logger = logging.getLogger(__name__)
 class TcpPacket:
     """
     TCP packet information for comparison.
-    
+
     Contains the fields needed for packet-level comparison:
     - IP ID (ipid)
     - TCP flags
     - Sequence number
     - Acknowledgment number
+
+    OPTIMIZATION: Uses __slots__ to reduce memory overhead per instance.
+    With large numbers of packets, this can save 20-30% memory.
     """
-    
+
+    __slots__ = ('frame_number', 'ip_id', 'tcp_flags', 'seq', 'ack', 'timestamp')
+
     frame_number: int
     """Frame number in the PCAP file"""
-    
+
     ip_id: int
     """IP identification field"""
-    
+
     tcp_flags: str
     """TCP flags (hex string)"""
-    
+
     seq: int
     """TCP sequence number (absolute)"""
-    
+
     ack: int
     """TCP acknowledgment number (absolute)"""
-    
+
     timestamp: float
     """Packet timestamp"""
-    
+
     def __str__(self) -> str:
         """String representation for display."""
         return (
@@ -239,4 +244,108 @@ class PacketExtractor:
 
         logger.debug(f"Extracted {len(packets)} packets for stream {stream_id}")
         return packets
+
+    def extract_multiple_streams(
+        self,
+        pcap_file: Path,
+        stream_ids: list[int],
+    ) -> dict[int, list[TcpPacket]]:
+        """
+        Extract TCP packets for multiple stream IDs in a single tshark call.
+
+        OPTIMIZATION: This method reduces the number of tshark process invocations
+        from N (one per stream) to 1 (single call for all streams), significantly
+        improving performance for large numbers of matched connections.
+
+        Args:
+            pcap_file: Path to the PCAP file
+            stream_ids: List of TCP stream IDs from tshark
+
+        Returns:
+            Dictionary mapping stream_id to list of TcpPacket objects
+        """
+        if not stream_ids:
+            return {}
+
+        # Build display filter for multiple TCP streams
+        # Format: tcp.stream==1 or tcp.stream==2 or tcp.stream==3 ...
+        filter_parts = [f"tcp.stream=={sid}" for sid in stream_ids]
+        filter_expr = " or ".join(filter_parts)
+
+        # Build tshark command
+        # Note: We need to add tcp.stream to FIELDS to identify which stream each packet belongs to
+        args = [
+            "-r", str(pcap_file),
+            "-Y", filter_expr,
+            "-o", "tcp.relative_sequence_numbers:false",  # Use absolute sequence numbers
+            "-T", "fields",
+            "-E", "separator=\t",
+            "-E", "quote=d",
+            "-E", "occurrence=f",  # First occurrence only
+        ]
+
+        # Add tcp.stream field first to identify packets
+        args.extend(["-e", "tcp.stream"])
+
+        # Add standard field extraction arguments
+        for field in self.FIELDS:
+            args.extend(["-e", field])
+
+        # Execute tshark
+        result = self.tshark.execute(args)
+
+        if result.returncode != 0:
+            raise RuntimeError(f"tshark extraction failed: {result.stderr}")
+
+        # Parse output and group by stream_id
+        packets_by_stream: dict[int, list[TcpPacket]] = {sid: [] for sid in stream_ids}
+
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+
+            fields = line.split("\t")
+            # Expected: tcp.stream + len(self.FIELDS) fields
+            expected_field_count = 1 + len(self.FIELDS)
+            if len(fields) != expected_field_count:
+                logger.warning(f"Skipping malformed line: {line}")
+                continue
+
+            try:
+                # First field is tcp.stream
+                stream_id = int(fields[0].strip('"'))
+
+                # Skip if this stream_id is not in our requested list
+                if stream_id not in packets_by_stream:
+                    continue
+
+                # Remaining fields are the standard packet fields
+                frame_number = int(fields[1].strip('"'))
+                ip_id_str = fields[2].strip('"')
+                tcp_flags = fields[3].strip('"') if fields[3] else "0x000"
+                seq_str = fields[4].strip('"')
+                ack_str = fields[5].strip('"')
+                timestamp_str = fields[6].strip('"')
+
+                packet = TcpPacket(
+                    frame_number=frame_number,
+                    ip_id=int(ip_id_str, 16) if ip_id_str else 0,  # Parse hex
+                    tcp_flags=tcp_flags,
+                    seq=int(seq_str) if seq_str else 0,
+                    ack=int(ack_str) if ack_str else 0,
+                    timestamp=float(timestamp_str) if timestamp_str else 0.0,
+                )
+                packets_by_stream[stream_id].append(packet)
+            except (ValueError, IndexError) as e:
+                logger.warning(f"Error parsing packet: {line}, error: {e}")
+                continue
+
+        # Log extraction summary
+        total_packets = sum(len(pkts) for pkts in packets_by_stream.values())
+        logger.debug(
+            f"Extracted {total_packets} packets for {len(stream_ids)} streams "
+            f"from {pcap_file.name} in single tshark call"
+        )
+
+        return packets_by_stream
 

@@ -311,3 +311,135 @@ class TestPacketExtractor:
         assert packets[0].ip_id == 0
         assert packets[0].ack == 0
 
+    def test_extract_multiple_streams_empty_list(
+        self, extractor: PacketExtractor, sample_pcap: Path
+    ):
+        """Test extract_multiple_streams with empty stream ID list."""
+        result = extractor.extract_multiple_streams(sample_pcap, [])
+        assert result == {}
+
+    def test_extract_multiple_streams_single_stream(
+        self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
+    ):
+        """Test extract_multiple_streams with single stream."""
+        extractor.tshark = mock_tshark
+
+        # Mock output with tcp.stream field first
+        mock_output = (
+            "0\t1\t0x0001\t0x002\t1000000\t0\t1234567890.123456\n"
+            "0\t2\t0x0002\t0x012\t2000000\t1000001\t1234567890.234567\n"
+        )
+
+        mock_tshark.execute.return_value = TsharkResult(
+            returncode=0,
+            stdout=mock_output,
+            stderr=""
+        )
+
+        result = extractor.extract_multiple_streams(sample_pcap, [0])
+
+        # Verify tshark was called with correct filter
+        args = mock_tshark.execute.call_args[0][0]
+        assert "-Y" in args
+        filter_idx = args.index("-Y") + 1
+        assert args[filter_idx] == "tcp.stream==0"
+
+        # Verify tcp.stream field was added
+        assert "-e" in args
+        assert "tcp.stream" in args
+
+        # Verify results
+        assert 0 in result
+        assert len(result[0]) == 2
+        assert result[0][0].frame_number == 1
+        assert result[0][1].frame_number == 2
+
+    def test_extract_multiple_streams_multiple_streams(
+        self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
+    ):
+        """Test extract_multiple_streams with multiple streams."""
+        extractor.tshark = mock_tshark
+
+        # Mock output with packets from different streams
+        mock_output = (
+            "0\t1\t0x0001\t0x002\t1000000\t0\t1234567890.123456\n"
+            "1\t2\t0x0002\t0x012\t2000000\t1000001\t1234567890.234567\n"
+            "0\t3\t0x0003\t0x010\t1000001\t2000001\t1234567890.345678\n"
+            "2\t4\t0x0004\t0x002\t3000000\t0\t1234567890.456789\n"
+        )
+
+        mock_tshark.execute.return_value = TsharkResult(
+            returncode=0,
+            stdout=mock_output,
+            stderr=""
+        )
+
+        result = extractor.extract_multiple_streams(sample_pcap, [0, 1, 2])
+
+        # Verify tshark was called with correct filter (OR of all streams)
+        args = mock_tshark.execute.call_args[0][0]
+        assert "-Y" in args
+        filter_idx = args.index("-Y") + 1
+        assert "tcp.stream==0 or tcp.stream==1 or tcp.stream==2" == args[filter_idx]
+
+        # Verify results are grouped by stream
+        assert len(result) == 3
+        assert 0 in result
+        assert 1 in result
+        assert 2 in result
+
+        # Stream 0 has 2 packets
+        assert len(result[0]) == 2
+        assert result[0][0].frame_number == 1
+        assert result[0][1].frame_number == 3
+
+        # Stream 1 has 1 packet
+        assert len(result[1]) == 1
+        assert result[1][0].frame_number == 2
+
+        # Stream 2 has 1 packet
+        assert len(result[2]) == 1
+        assert result[2][0].frame_number == 4
+
+    def test_extract_multiple_streams_handles_tshark_error(
+        self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
+    ):
+        """Test extract_multiple_streams handles tshark errors."""
+        extractor.tshark = mock_tshark
+
+        mock_tshark.execute.return_value = TsharkResult(
+            returncode=1,
+            stdout="",
+            stderr="tshark: error message"
+        )
+
+        with pytest.raises(RuntimeError, match="tshark extraction failed"):
+            extractor.extract_multiple_streams(sample_pcap, [0, 1])
+
+    def test_extract_multiple_streams_skips_unknown_streams(
+        self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
+    ):
+        """Test extract_multiple_streams skips packets from unrequested streams."""
+        extractor.tshark = mock_tshark
+
+        # Mock output includes stream 99 which is not requested
+        mock_output = (
+            "0\t1\t0x0001\t0x002\t1000000\t0\t1234567890.123456\n"
+            "99\t2\t0x0002\t0x012\t2000000\t1000001\t1234567890.234567\n"
+            "1\t3\t0x0003\t0x010\t1000001\t2000001\t1234567890.345678\n"
+        )
+
+        mock_tshark.execute.return_value = TsharkResult(
+            returncode=0,
+            stdout=mock_output,
+            stderr=""
+        )
+
+        result = extractor.extract_multiple_streams(sample_pcap, [0, 1])
+
+        # Stream 99 should be skipped
+        assert 99 not in result
+        assert len(result) == 2
+        assert len(result[0]) == 1
+        assert len(result[1]) == 1
+
