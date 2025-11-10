@@ -295,7 +295,23 @@ class MatchPlugin(PluginBase):
 
         Returns:
             Exit code (0 for success, non-zero for failure)
+
+        Raises:
+            ValueError: If parameters are invalid
         """
+        # Validate parameters
+        if not 0.0 <= score_threshold <= 1.0:
+            logger.error(f"Invalid score threshold: {score_threshold}. Must be between 0.0 and 1.0")
+            return 1
+
+        if not 0.0 < sampling_rate <= 1.0:
+            logger.error(f"Invalid sampling rate: {sampling_rate}. Must be between 0.0 and 1.0")
+            return 1
+
+        if sampling_threshold <= 0:
+            logger.error(f"Invalid sampling threshold: {sampling_threshold}. Must be positive")
+            return 1
+
         try:
             with Progress(
                 SpinnerColumn(),

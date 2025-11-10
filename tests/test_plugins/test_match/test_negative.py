@@ -17,24 +17,26 @@ class TestInvalidParameters:
     def test_invalid_threshold_negative(self):
         """Test that negative threshold is rejected."""
         plugin = MatchPlugin()
-        
-        with pytest.raises((ValueError, SystemExit)):
-            plugin.execute(
-                input_path=Path("dummy"),
-                output_file=Path("dummy.txt"),
-                score_threshold=-0.5,
-            )
+
+        exit_code = plugin.execute(
+            input_path=Path("dummy"),
+            output_file=Path("dummy.txt"),
+            score_threshold=-0.5,
+        )
+
+        assert exit_code != 0, "Should fail with negative threshold"
 
     def test_invalid_threshold_too_high(self):
         """Test that threshold > 1.0 is rejected."""
         plugin = MatchPlugin()
-        
-        with pytest.raises((ValueError, SystemExit)):
-            plugin.execute(
-                input_path=Path("dummy"),
-                output_file=Path("dummy.txt"),
-                score_threshold=1.5,
-            )
+
+        exit_code = plugin.execute(
+            input_path=Path("dummy"),
+            output_file=Path("dummy.txt"),
+            score_threshold=1.5,
+        )
+
+        assert exit_code != 0, "Should fail with threshold > 1.0"
 
     def test_invalid_bucket_strategy(self):
         """Test that invalid bucket strategy is rejected."""

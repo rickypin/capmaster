@@ -82,7 +82,9 @@ class DualFileInputParser:
             # Method 2: Using -i/--input
             input_paths = PcapScanner.parse_input(input_path)
             # Preserve order only for comma-separated file lists
-            preserve_order = "," in input_path
+            # Convert Path to string if needed for comma check
+            input_str = str(input_path) if isinstance(input_path, Path) else input_path
+            preserve_order = "," in input_str
             pcap_files = PcapScanner.scan(
                 input_paths, recursive=False, preserve_order=preserve_order
             )

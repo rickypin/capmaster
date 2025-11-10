@@ -11,21 +11,25 @@ class PcapScanner:
     VALID_EXTENSIONS: set[str] = {".pcap", ".pcapng"}
 
     @classmethod
-    def parse_input(cls, input_str: str) -> list[str]:
+    def parse_input(cls, input_str: str | Path) -> list[str]:
         """
-        Parse input string to extract file/directory paths.
+        Parse input string or Path to extract file/directory paths.
 
         Supports:
-        - Single file path: "/path/to/file.pcap"
-        - Single directory path: "/path/to/dir"
+        - Single file path: "/path/to/file.pcap" or Path("/path/to/file.pcap")
+        - Single directory path: "/path/to/dir" or Path("/path/to/dir")
         - Comma-separated file list: "/path/to/file1.pcap,/path/to/file2.pcap"
 
         Args:
-            input_str: Input string containing path(s)
+            input_str: Input string or Path object containing path(s)
 
         Returns:
             List of path strings
         """
+        # Convert Path to string if needed
+        if isinstance(input_str, Path):
+            input_str = str(input_str)
+
         # Check if input contains comma (file list)
         if "," in input_str:
             # Split by comma and strip whitespace
