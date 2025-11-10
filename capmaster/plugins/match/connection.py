@@ -29,6 +29,9 @@ class TcpConnection:
     stream_id: int
     """TCP stream ID from tshark"""
 
+    protocol: int
+    """IP protocol number (6=TCP, 17=UDP, etc.)"""
+
     client_ip: str
     """Client IP address"""
 
@@ -85,6 +88,12 @@ class TcpConnection:
 
     packet_count: int
     """Total number of packets in the stream"""
+
+    client_ttl: int = 0
+    """Most common TTL value from client packets (0 if not available)"""
+
+    server_ttl: int = 0
+    """Most common TTL value from server packets (0 if not available)"""
 
     def __str__(self) -> str:
         """String representation for debugging."""
@@ -158,6 +167,9 @@ class TcpPacket:
     stream_id: int
     """TCP stream ID"""
 
+    protocol: int
+    """IP protocol number (6=TCP, 17=UDP, etc.)"""
+
     src_ip: str
     """Source IP address"""
 
@@ -199,6 +211,9 @@ class TcpPacket:
 
     payload_data: str = ""
     """Payload data (hex string)"""
+
+    ttl: int = 0
+    """IP Time To Live"""
 
     def is_syn(self) -> bool:
         """Check if this is a SYN packet (SYN=1, ACK=0)."""
@@ -359,8 +374,15 @@ class ConnectionBuilder:
         if not ipid_set and ipid_first is not None:
             ipid_set = {ipid_first}
 
+        # Get protocol number from first packet (all packets in a stream should have same protocol)
+        protocol = packets[0].protocol if packets else 6  # Default to TCP (6)
+
+        # Compute TTL values (client and server separately)
+        client_ttl, server_ttl = self._compute_ttl_values(packets, client_ip, server_ip)
+
         return TcpConnection(
             stream_id=stream_id,
+            protocol=protocol,
             client_ip=client_ip,
             client_port=client_port,
             server_ip=server_ip,
@@ -380,6 +402,8 @@ class ConnectionBuilder:
             first_packet_time=first_packet_time,
             last_packet_time=last_packet_time,
             packet_count=packet_count,
+            client_ttl=client_ttl,
+            server_ttl=server_ttl,
         )
 
     def _compute_payload_hashes(
@@ -464,3 +488,41 @@ class ConnectionBuilder:
                 signature_parts.append(f"{direction}:{packet.length}")
 
         return " ".join(signature_parts)
+
+    def _compute_ttl_values(
+        self, packets: list[TcpPacket], client_ip: str, server_ip: str
+    ) -> tuple[int, int]:
+        """
+        Compute most common TTL values for client and server.
+
+        Args:
+            packets: List of packets
+            client_ip: Client IP address
+            server_ip: Server IP address
+
+        Returns:
+            Tuple of (client_ttl, server_ttl)
+        """
+        from collections import Counter
+
+        client_ttls = []
+        server_ttls = []
+
+        for packet in packets:
+            if packet.ttl > 0:  # Only consider valid TTL values
+                if packet.src_ip == client_ip:
+                    client_ttls.append(packet.ttl)
+                elif packet.src_ip == server_ip:
+                    server_ttls.append(packet.ttl)
+
+        # Get most common TTL value for each direction
+        client_ttl = 0
+        server_ttl = 0
+
+        if client_ttls:
+            client_ttl = Counter(client_ttls).most_common(1)[0][0]
+
+        if server_ttls:
+            server_ttl = Counter(server_ttls).most_common(1)[0][0]
+
+        return client_ttl, server_ttl

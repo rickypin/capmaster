@@ -24,6 +24,7 @@ class TcpFieldExtractor:
         "frame.number",
         "frame.time_epoch",
         "tcp.stream",
+        "ip.proto",  # IP protocol number (6=TCP, 17=UDP, etc.)
         "ip.src",
         "ip.dst",
         "tcp.srcport",
@@ -37,6 +38,7 @@ class TcpFieldExtractor:
         "tcp.options.timestamp.tsval",  # TCP timestamp TSval
         "tcp.options.timestamp.tsecr",  # TCP timestamp TSecr
         "data.data",  # Payload data (hex)
+        "ip.ttl",  # IP Time To Live
     ]
 
     def __init__(self) -> None:
@@ -141,23 +143,26 @@ class TcpFieldExtractor:
             frame_number = int(row[0]) if row[0] else 0
             timestamp = float(row[1]) if row[1] else 0.0
             stream_id = int(row[2]) if row[2] else 0
-            src_ip = row[3] or ""
-            dst_ip = row[4] or ""
-            src_port = int(row[5]) if row[5] else 0
-            dst_port = int(row[6]) if row[6] else 0
-            flags = row[7] or "0x0000"
-            seq = int(row[8]) if row[8] else 0
-            ack = int(row[9]) if row[9] else 0
-            options = row[10] or ""
-            length = int(row[11]) if row[11] else 0
-            ip_id = int(row[12], 16) if row[12] else 0  # IP ID is in hex
-            tcp_timestamp_tsval = row[13] if len(row) > 13 else ""
-            tcp_timestamp_tsecr = row[14] if len(row) > 14 else ""
-            payload_data = row[15] if len(row) > 15 else ""
+            protocol = int(row[3]) if row[3] else 6  # Default to TCP (6)
+            src_ip = row[4] or ""
+            dst_ip = row[5] or ""
+            src_port = int(row[6]) if row[6] else 0
+            dst_port = int(row[7]) if row[7] else 0
+            flags = row[8] or "0x0000"
+            seq = int(row[9]) if row[9] else 0
+            ack = int(row[10]) if row[10] else 0
+            options = row[11] or ""
+            length = int(row[12]) if row[12] else 0
+            ip_id = int(row[13], 16) if row[13] else 0  # IP ID is in hex
+            tcp_timestamp_tsval = row[14] if len(row) > 14 else ""
+            tcp_timestamp_tsecr = row[15] if len(row) > 15 else ""
+            payload_data = row[16] if len(row) > 16 else ""
+            ttl = int(row[17]) if len(row) > 17 and row[17] else 0
 
             return TcpPacket(
                 frame_number=frame_number,
                 stream_id=stream_id,
+                protocol=protocol,
                 src_ip=src_ip,
                 dst_ip=dst_ip,
                 src_port=src_port,
@@ -172,6 +177,7 @@ class TcpFieldExtractor:
                 tcp_timestamp_tsval=tcp_timestamp_tsval,
                 tcp_timestamp_tsecr=tcp_timestamp_tsecr,
                 payload_data=payload_data,
+                ttl=ttl,
             )
         except (ValueError, IndexError):
             return None
