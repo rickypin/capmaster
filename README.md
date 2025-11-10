@@ -201,6 +201,7 @@ Options:
   -w, --workers INTEGER  Number of worker processes for concurrent processing
                          (default: 1)
   -f, --format [txt|md]  Output file format: txt or md (default: txt)
+  --sidecar              Generate a JSON sidecar (*.meta.json) for each module output
   --help                 Show this message and exit
 ```
 
@@ -334,6 +335,12 @@ capmaster analyze -i captures/ -r -o analysis_results/
 
 # View the generated statistics
 ls analysis_results/
+
+# Analyze with Markdown format and sidecar metadata
+capmaster analyze -i captures/ -r -f md --sidecar
+
+# View generated metadata files
+ls analysis_results/statistics/*.meta.json
 ```
 
 ### Example 2: Match Client and Server Captures
@@ -361,7 +368,28 @@ capmaster filter -i noisy.pcap -o clean.pcap
 capmaster analyze -i clean.pcap
 ```
 
-### Example 4: Clean Up Statistics Directories
+### Example 4: Analyze with Sidecar Metadata and Markdown Format
+
+```bash
+# Analyze with metadata sidecar files in Markdown format
+capmaster analyze -i sample.pcap -f md --sidecar
+
+# View generated files
+ls -la sample_statistics/
+
+# View a sample metadata file
+cat sample_statistics/sample-1-protocol-hierarchy.meta.json
+
+# View a Markdown analysis file
+cat sample_statistics/sample-1-protocol-hierarchy.md
+```
+
+This generates both analysis output and metadata for each module, useful for:
+- Tracking analysis provenance (which tshark args, protocols were used)
+- Building pipelines that consume analysis results
+- Auditing and reproducibility
+
+### Example 5: Clean Up Statistics Directories
 
 ```bash
 # Preview what will be deleted
@@ -377,7 +405,7 @@ capmaster clean -i /path/to/data -y
 capmaster clean -i /path/to/data -r -y
 ```
 
-### Example 5: Complete Workflow with Cleanup
+### Example 6: Complete Workflow with Cleanup
 
 ```bash
 # 1. Analyze PCAP files
@@ -390,7 +418,7 @@ ls captures/statistics/
 capmaster clean -i captures/ -y
 ```
 
-### Example 6: Verbose Output for Debugging
+### Example 7: Verbose Output for Debugging
 
 ```bash
 # Use -v for INFO level logging

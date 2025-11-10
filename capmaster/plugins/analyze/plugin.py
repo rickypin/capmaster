@@ -32,6 +32,7 @@ def _process_single_file(
     output_dir: Path | None,
     output_format: str = "txt",
     selected_modules: tuple[str, ...] | None = None,
+    generate_sidecar: bool = False,
 ) -> tuple[Path, int]:
     """
     Process a single PCAP file (used for multiprocessing).
@@ -45,6 +46,7 @@ def _process_single_file(
         output_dir: Optional output directory
         output_format: Output format ("txt" or "md", default: "txt")
         selected_modules: Optional tuple of module names to run
+    generate_sidecar: Whether to write sidecar metadata files alongside outputs
 
     Returns:
         Tuple of (pcap_file, number of outputs generated)
@@ -79,6 +81,7 @@ def _process_single_file(
             output_dir=output_path,
             modules=modules,
             output_format=output_format,
+            generate_sidecar=generate_sidecar,
         )
 
         return (pcap_file, len(results))
@@ -158,6 +161,12 @@ class AnalyzePlugin(PluginBase):
             type=str,
             help="Specific modules to run (e.g., -m protocol_hierarchy -m dns_stats). If not specified, run all modules.",
         )
+        @click.option(
+            "--sidecar",
+            "generate_sidecar",
+            is_flag=True,
+            help="Generate a JSON sidecar (*.meta.json) for each module output.",
+        )
         @click.pass_context
         def analyze_command(
             ctx: click.Context,
@@ -167,6 +176,7 @@ class AnalyzePlugin(PluginBase):
             workers: int,
             output_format: str,
             selected_modules: tuple[str, ...],
+            generate_sidecar: bool,
         ) -> None:
             """
             Analyze PCAP files and generate statistics.
@@ -231,6 +241,7 @@ class AnalyzePlugin(PluginBase):
                 workers=workers,
                 output_format=output_format,
                 selected_modules=selected_modules if selected_modules else None,
+                generate_sidecar=generate_sidecar,
             )
             ctx.exit(exit_code)
 
@@ -246,6 +257,7 @@ class AnalyzePlugin(PluginBase):
                 - workers: Number of worker processes for concurrent processing
                 - output_format: Output format ("txt" or "md", default: "txt")
                 - selected_modules: Optional tuple of module names to run
+                - generate_sidecar: Whether to emit metadata sidecar files
 
         Returns:
             Exit code (0 for success, non-zero for failure)
@@ -257,6 +269,7 @@ class AnalyzePlugin(PluginBase):
         workers = kwargs.get("workers", 1)
         output_format = kwargs.get("output_format", "txt")
         selected_modules_raw = kwargs.get("selected_modules")
+        generate_sidecar = bool(kwargs.get("generate_sidecar", False))
 
         # Type narrowing for selected_modules
         selected_modules: tuple[str, ...] | None = None
@@ -325,7 +338,7 @@ class AnalyzePlugin(PluginBase):
             pcap_files = PcapScanner.scan(input_paths, recursive=recursive)
 
             if not pcap_files:
-                raise NoPcapFilesError(input_path_raw)
+                raise NoPcapFilesError(Path(input_path_raw))
 
             logger.info(f"Found {len(pcap_files)} PCAP file(s)")
 
@@ -355,7 +368,8 @@ class AnalyzePlugin(PluginBase):
                                 pcap_file,
                                 output_dir,
                                 output_format,
-                                selected_modules
+                                selected_modules,
+                                generate_sidecar,
                             ): pcap_file
                             for pcap_file in pcap_files
                         }
@@ -398,6 +412,7 @@ class AnalyzePlugin(PluginBase):
                             modules=modules,
                             progress=progress,
                             output_format=output_format,
+                            generate_sidecar=generate_sidecar,
                         )
 
                         total_outputs += len(results)
