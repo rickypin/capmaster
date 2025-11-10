@@ -411,6 +411,9 @@ class MatchPlugin(PluginBase):
         for match in matches:
             collector.add_match(match)
 
+        # Finalize collection (performs cardinality analysis)
+        collector.finalize()
+
         # Get aggregated statistics
         stats = collector.get_stats()
 

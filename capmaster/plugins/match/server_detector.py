@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 
 from capmaster.plugins.match.connection import TcpConnection
@@ -37,8 +38,9 @@ class ServerDetector:
     Uses multiple heuristics to determine which side is the server:
     1. SYN packet direction (most reliable)
     2. Port number heuristics (well-known ports)
-    3. Traffic pattern analysis (packet/byte statistics)
-    4. Port number comparison (fallback)
+    3. Cardinality-based detection (one IP:Port serves multiple clients)
+    4. Traffic pattern analysis (packet/byte statistics)
+    5. Port number comparison (fallback)
     """
 
     # Well-known ports (IANA registered 0-1023 + common services)
@@ -76,6 +78,68 @@ class ServerDetector:
         50000,       # DB2
     }
 
+    def __init__(self):
+        """Initialize the detector with cardinality tracking."""
+        # Track unique client IPs for each IP:Port combination
+        # Key: (ip, port), Value: set of client IPs
+        self._endpoint_clients: dict[tuple[str, int], set[str]] = defaultdict(set)
+
+        # Track unique server IP:Port combinations for each client IP
+        # Key: client_ip, Value: set of (server_ip, server_port) tuples
+        self._client_servers: dict[str, set[tuple[str, int]]] = defaultdict(set)
+
+        # Track unique server IPs for each port number
+        # Key: port, Value: set of IPs using this port as server
+        self._port_server_ips: dict[int, set[str]] = defaultdict(set)
+
+        # Track unique client IPs for each port number
+        # Key: port, Value: set of IPs using this port as client
+        self._port_client_ips: dict[int, set[str]] = defaultdict(set)
+
+        # Flag to indicate if cardinality analysis is available
+        self._cardinality_ready = False
+
+    def collect_connection(self, connection: TcpConnection) -> None:
+        """
+        Collect connection information for cardinality analysis.
+
+        This should be called for all connections before detection to build
+        the cardinality statistics.
+
+        Args:
+            connection: TCP connection to collect
+        """
+        # Track both directions to handle cases where we don't know which is server yet
+        # Direction 1: server_ip:server_port -> client_ip
+        self._endpoint_clients[(connection.server_ip, connection.server_port)].add(
+            connection.client_ip
+        )
+        self._client_servers[connection.client_ip].add(
+            (connection.server_ip, connection.server_port)
+        )
+        # Track port usage pattern
+        self._port_server_ips[connection.server_port].add(connection.server_ip)
+        self._port_client_ips[connection.server_port].add(connection.client_ip)
+
+        # Direction 2: client_ip:client_port -> server_ip
+        self._endpoint_clients[(connection.client_ip, connection.client_port)].add(
+            connection.server_ip
+        )
+        self._client_servers[connection.server_ip].add(
+            (connection.client_ip, connection.client_port)
+        )
+        # Track port usage pattern
+        self._port_server_ips[connection.client_port].add(connection.client_ip)
+        self._port_client_ips[connection.client_port].add(connection.server_ip)
+
+    def finalize_cardinality(self) -> None:
+        """
+        Finalize cardinality analysis after all connections are collected.
+
+        This should be called after all collect_connection() calls are done.
+        """
+        self._cardinality_ready = True
+
     def detect(self, connection: TcpConnection) -> ServerInfo:
         """
         Detect server using multi-layer approach.
@@ -95,12 +159,150 @@ class ServerDetector:
         if info.confidence in ["HIGH", "MEDIUM"]:
             return info
 
-        # Priority 3: Traffic pattern analysis
+        # Priority 3: Cardinality-based detection (new!)
+        if self._cardinality_ready:
+            info = self._detect_by_cardinality(connection)
+            if info.confidence in ["HIGH", "MEDIUM"]:
+                return info
+
+        # Priority 4: Traffic pattern analysis
         # Note: This requires packet-level data which is not available in TcpConnection
         # We skip this for now and go to fallback
 
-        # Priority 4: Fallback - use original detection
+        # Priority 5: Fallback - use original detection
         return self._detect_fallback(connection)
+
+    def _detect_by_cardinality(self, connection: TcpConnection) -> ServerInfo:
+        """
+        Detect server by cardinality analysis.
+
+        Uses two key characteristics:
+        1. A server IP:Port typically serves multiple client IPs (high cardinality)
+        2. Multiple server IPs often use the same port to provide services (port reuse pattern)
+
+        Args:
+            connection: TCP connection to analyze
+
+        Returns:
+            ServerInfo with confidence based on cardinality difference
+        """
+        # Get cardinality for both endpoints
+        endpoint1 = (connection.server_ip, connection.server_port)
+        endpoint2 = (connection.client_ip, connection.client_port)
+
+        cardinality1 = len(self._endpoint_clients.get(endpoint1, set()))
+        cardinality2 = len(self._endpoint_clients.get(endpoint2, set()))
+
+        # Get port reuse patterns
+        port1_server_ips = len(self._port_server_ips.get(connection.server_port, set()))
+        port1_client_ips = len(self._port_client_ips.get(connection.server_port, set()))
+        port2_server_ips = len(self._port_server_ips.get(connection.client_port, set()))
+        port2_client_ips = len(self._port_client_ips.get(connection.client_port, set()))
+
+        # Minimum threshold for considering an endpoint as server
+        MIN_SERVER_CLIENTS = 2  # At least 2 different client IPs
+        MIN_PORT_REUSE = 2  # At least 2 different server IPs using the same port
+
+        # Case 1: Clear server pattern - one endpoint serves multiple clients
+        if cardinality1 >= MIN_SERVER_CLIENTS and cardinality2 < MIN_SERVER_CLIENTS:
+            # endpoint1 (server_ip:server_port) is the server
+            confidence = "HIGH" if cardinality1 >= 5 else "MEDIUM"
+
+            # Boost confidence if port shows server reuse pattern
+            if port1_server_ips >= MIN_PORT_REUSE and port2_server_ips < MIN_PORT_REUSE:
+                confidence = "HIGH"
+                method = f"CARDINALITY_PORT_REUSE_{cardinality1}v{cardinality2}_P{port1_server_ips}"
+            else:
+                method = f"CARDINALITY_{cardinality1}v{cardinality2}"
+
+            return ServerInfo(
+                server_ip=connection.server_ip,
+                server_port=connection.server_port,
+                client_ip=connection.client_ip,
+                client_port=connection.client_port,
+                confidence=confidence,
+                method=method,
+            )
+
+        if cardinality2 >= MIN_SERVER_CLIENTS and cardinality1 < MIN_SERVER_CLIENTS:
+            # endpoint2 (client_ip:client_port) is actually the server, need to swap
+            confidence = "HIGH" if cardinality2 >= 5 else "MEDIUM"
+
+            # Boost confidence if port shows server reuse pattern
+            if port2_server_ips >= MIN_PORT_REUSE and port1_server_ips < MIN_PORT_REUSE:
+                confidence = "HIGH"
+                method = f"CARDINALITY_PORT_REUSE_SWAPPED_{cardinality2}v{cardinality1}_P{port2_server_ips}"
+            else:
+                method = f"CARDINALITY_SWAPPED_{cardinality2}v{cardinality1}"
+
+            return ServerInfo(
+                server_ip=connection.client_ip,
+                server_port=connection.client_port,
+                client_ip=connection.server_ip,
+                client_port=connection.server_port,
+                confidence=confidence,
+                method=method,
+            )
+
+        # Case 2: Port reuse pattern - multiple server IPs using the same port
+        # This is a strong indicator even if individual endpoint cardinality is low
+        if port1_server_ips >= MIN_PORT_REUSE and port2_server_ips < MIN_PORT_REUSE:
+            # port1 shows server reuse pattern (multiple IPs using this port as server)
+            return ServerInfo(
+                server_ip=connection.server_ip,
+                server_port=connection.server_port,
+                client_ip=connection.client_ip,
+                client_port=connection.client_port,
+                confidence="MEDIUM",
+                method=f"PORT_REUSE_{port1_server_ips}servers_on_port{connection.server_port}",
+            )
+
+        if port2_server_ips >= MIN_PORT_REUSE and port1_server_ips < MIN_PORT_REUSE:
+            # port2 shows server reuse pattern, need to swap
+            return ServerInfo(
+                server_ip=connection.client_ip,
+                server_port=connection.client_port,
+                client_ip=connection.server_ip,
+                client_port=connection.server_port,
+                confidence="MEDIUM",
+                method=f"PORT_REUSE_SWAPPED_{port2_server_ips}servers_on_port{connection.client_port}",
+            )
+
+        # Case 3: Both have high cardinality or both have low cardinality
+        # Use the ratio to make a decision if there's a significant difference
+        if cardinality1 > 0 and cardinality2 > 0:
+            ratio = max(cardinality1, cardinality2) / min(cardinality1, cardinality2)
+
+            # If ratio is significant (e.g., 3:1 or higher), use the higher one as server
+            if ratio >= 3.0:
+                if cardinality1 > cardinality2:
+                    return ServerInfo(
+                        server_ip=connection.server_ip,
+                        server_port=connection.server_port,
+                        client_ip=connection.client_ip,
+                        client_port=connection.client_port,
+                        confidence="MEDIUM",
+                        method=f"CARDINALITY_RATIO_{cardinality1}v{cardinality2}",
+                    )
+                else:
+                    return ServerInfo(
+                        server_ip=connection.client_ip,
+                        server_port=connection.client_port,
+                        client_ip=connection.server_ip,
+                        client_port=connection.server_port,
+                        confidence="MEDIUM",
+                        method=f"CARDINALITY_RATIO_SWAPPED_{cardinality2}v{cardinality1}",
+                    )
+
+        # No clear cardinality-based determination
+        return ServerInfo(
+            server_ip=connection.server_ip,
+            server_port=connection.server_port,
+            client_ip=connection.client_ip,
+            client_port=connection.client_port,
+            confidence="UNKNOWN",
+            method=f"CARDINALITY_UNCLEAR_{cardinality1}v{cardinality2}_P1:{port1_server_ips}_P2:{port2_server_ips}",
+        )
 
     def _detect_by_syn(self, connection: TcpConnection) -> ServerInfo:
         """

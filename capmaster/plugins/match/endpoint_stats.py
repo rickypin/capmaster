@@ -80,9 +80,41 @@ class EndpointStatsCollector:
         # Track confidences for averaging
         self.confidences: dict[tuple[EndpointTuple, EndpointTuple], list[str]] = defaultdict(list)
 
+        # Store all matches for cardinality analysis
+        self.matches: list[ConnectionMatch] = []
+
     def add_match(self, match: ConnectionMatch) -> None:
         """
         Add a matched connection pair.
+
+        Args:
+            match: Matched connection pair from files A and B
+        """
+        # Store match for later processing
+        self.matches.append(match)
+
+    def finalize(self) -> None:
+        """
+        Finalize statistics collection.
+
+        This performs cardinality analysis and then processes all matches
+        with the enhanced server detection.
+        """
+        # Step 1: Collect all connections for cardinality analysis
+        for match in self.matches:
+            self.detector.collect_connection(match.conn1)
+            self.detector.collect_connection(match.conn2)
+
+        # Step 2: Finalize cardinality analysis
+        self.detector.finalize_cardinality()
+
+        # Step 3: Process all matches with enhanced detection
+        for match in self.matches:
+            self._process_match(match)
+
+    def _process_match(self, match: ConnectionMatch) -> None:
+        """
+        Process a single match with server detection.
 
         Args:
             match: Matched connection pair from files A and B
