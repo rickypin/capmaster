@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from rich.progress import Progress
@@ -36,6 +37,7 @@ class AnalysisExecutor:
         modules: list[AnalysisModule],
         progress: Progress | None = None,
         output_format: str = "txt",
+        generate_sidecar: bool = False,
     ) -> dict[str, Path]:
         """
         Execute analysis modules on a PCAP file.
@@ -46,6 +48,7 @@ class AnalysisExecutor:
             modules: List of analysis module instances to execute
             progress: Optional Progress instance for progress tracking
             output_format: Output format ("txt" or "md", default: "txt")
+        generate_sidecar: Whether to emit metadata sidecar files per module output
 
         Returns:
             Dictionary mapping module names to output file paths
@@ -80,7 +83,13 @@ class AnalysisExecutor:
 
             logger.debug(f"Running module: {module.name}")
             output_file = self._execute_module(
-                module, input_file, output_dir, base_name, module_sequence, output_format
+                module,
+                input_file,
+                output_dir,
+                base_name,
+                module_sequence,
+                output_format,
+                generate_sidecar,
             )
             results[module.name] = output_file
 
@@ -98,6 +107,7 @@ class AnalysisExecutor:
         base_name: str,
         sequence: int,
         output_format: str = "txt",
+        generate_sidecar: bool = False,
     ) -> Path:
         """
         Execute a single analysis module.
@@ -109,12 +119,14 @@ class AnalysisExecutor:
             base_name: Base name for output file
             sequence: Sequence number for output file
             output_format: Output format ("txt" or "md", default: "txt")
+            generate_sidecar: Whether to emit metadata sidecar files per module output
 
         Returns:
             Path to generated output file
         """
         # Build tshark arguments
         tshark_args = module.build_tshark_args(input_file)
+        required_protocols = sorted(module.required_protocols)
 
         # Generate output file path with specified format
         output_file = OutputManager.get_output_path(
@@ -132,9 +144,27 @@ class AnalysisExecutor:
         # Post-process output if module provides custom processing
         processed_output = module.post_process(result.stdout, output_format)
 
+        if output_format.lower() == "md":
+            header = module.name.replace("_", " ")
+            body = processed_output.rstrip("\n")
+            processed_output = f"## {header}\n\n```\n{body}\n```\n"
+
         # Write processed output to file
         with open(output_file, "w", encoding="utf-8") as f:
             f.write(processed_output)
+
+        if generate_sidecar:
+            sidecar_path = output_file.parent / f"{output_file.stem}.meta.json"
+            sidecar_content = {
+                "id": module.name,
+                "source": "basic",
+                "tags": [],
+                "source_pcap": input_file.name,
+                "tshark_args": tshark_args,
+                "protocols": required_protocols,
+            }
+            with open(sidecar_path, "w", encoding="utf-8") as sidecar_file:
+                json.dump(sidecar_content, sidecar_file, indent=2)
 
         # Log execution status
         if result.returncode == 0:
