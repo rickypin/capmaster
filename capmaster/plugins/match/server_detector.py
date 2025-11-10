@@ -96,6 +96,11 @@ class ServerDetector:
         # Key: port, Value: set of IPs using this port as client
         self._port_client_ips: dict[int, set[str]] = defaultdict(set)
 
+        # Track port stability: for each IP:Port, track the set of peer ports it connects to
+        # This helps identify "one port connects to many peer ports" pattern (server characteristic)
+        # Key: (ip, port), Value: set of peer ports
+        self._endpoint_peer_ports: dict[tuple[str, int], set[int]] = defaultdict(set)
+
         # Flag to indicate if cardinality analysis is available
         self._cardinality_ready = False
 
@@ -120,6 +125,10 @@ class ServerDetector:
         # Track port usage pattern
         self._port_server_ips[connection.server_port].add(connection.server_ip)
         self._port_client_ips[connection.server_port].add(connection.client_ip)
+        # Track port stability: server_ip:server_port connects to client_port
+        self._endpoint_peer_ports[(connection.server_ip, connection.server_port)].add(
+            connection.client_port
+        )
 
         # Direction 2: client_ip:client_port -> server_ip
         self._endpoint_clients[(connection.client_ip, connection.client_port)].add(
@@ -131,6 +140,10 @@ class ServerDetector:
         # Track port usage pattern
         self._port_server_ips[connection.client_port].add(connection.client_ip)
         self._port_client_ips[connection.client_port].add(connection.server_ip)
+        # Track port stability: client_ip:client_port connects to server_port
+        self._endpoint_peer_ports[(connection.client_ip, connection.client_port)].add(
+            connection.server_port
+        )
 
     def finalize_cardinality(self) -> None:
         """
@@ -176,9 +189,10 @@ class ServerDetector:
         """
         Detect server by cardinality analysis.
 
-        Uses two key characteristics:
+        Uses three key characteristics:
         1. A server IP:Port typically serves multiple client IPs (high cardinality)
         2. Multiple server IPs often use the same port to provide services (port reuse pattern)
+        3. A server IP:Port uses the same port to connect to multiple peer ports (port stability)
 
         Args:
             connection: TCP connection to analyze
@@ -199,9 +213,14 @@ class ServerDetector:
         port2_server_ips = len(self._port_server_ips.get(connection.client_port, set()))
         port2_client_ips = len(self._port_client_ips.get(connection.client_port, set()))
 
-        # Minimum threshold for considering an endpoint as server
+        # Get port stability patterns (how many different peer ports each endpoint connects to)
+        peer_ports1 = len(self._endpoint_peer_ports.get(endpoint1, set()))
+        peer_ports2 = len(self._endpoint_peer_ports.get(endpoint2, set()))
+
+        # Minimum thresholds
         MIN_SERVER_CLIENTS = 2  # At least 2 different client IPs
         MIN_PORT_REUSE = 2  # At least 2 different server IPs using the same port
+        MIN_PEER_PORTS = 2  # At least 2 different peer ports (port stability indicator)
 
         # Case 1: Clear server pattern - one endpoint serves multiple clients
         if cardinality1 >= MIN_SERVER_CLIENTS and cardinality2 < MIN_SERVER_CLIENTS:
@@ -268,7 +287,32 @@ class ServerDetector:
                 method=f"PORT_REUSE_SWAPPED_{port2_server_ips}servers_on_port{connection.client_port}",
             )
 
-        # Case 3: Both have high cardinality or both have low cardinality
+        # Case 3: Port stability pattern - one endpoint uses same port to connect to multiple peer ports
+        # This is a strong indicator of server behavior even when IP cardinality is low (e.g., point-to-point)
+        # Example: B:60001 connects to A:50001, A:50002, A:50003 → B:60001 is likely the server
+        if peer_ports1 >= MIN_PEER_PORTS and peer_ports2 < MIN_PEER_PORTS:
+            # endpoint1 shows port stability (same port, multiple peer ports)
+            return ServerInfo(
+                server_ip=connection.server_ip,
+                server_port=connection.server_port,
+                client_ip=connection.client_ip,
+                client_port=connection.client_port,
+                confidence="MEDIUM",
+                method=f"PORT_STABILITY_{peer_ports1}peer_ports",
+            )
+
+        if peer_ports2 >= MIN_PEER_PORTS and peer_ports1 < MIN_PEER_PORTS:
+            # endpoint2 shows port stability, need to swap
+            return ServerInfo(
+                server_ip=connection.client_ip,
+                server_port=connection.client_port,
+                client_ip=connection.server_ip,
+                client_port=connection.server_port,
+                confidence="MEDIUM",
+                method=f"PORT_STABILITY_SWAPPED_{peer_ports2}peer_ports",
+            )
+
+        # Case 4: Both have high cardinality or both have low cardinality
         # Use the ratio to make a decision if there's a significant difference
         if cardinality1 > 0 and cardinality2 > 0:
             ratio = max(cardinality1, cardinality2) / min(cardinality1, cardinality2)
@@ -301,7 +345,7 @@ class ServerDetector:
             client_ip=connection.client_ip,
             client_port=connection.client_port,
             confidence="UNKNOWN",
-            method=f"CARDINALITY_UNCLEAR_{cardinality1}v{cardinality2}_P1:{port1_server_ips}_P2:{port2_server_ips}",
+            method=f"CARDINALITY_UNCLEAR_C{cardinality1}v{cardinality2}_PR{port1_server_ips}v{port2_server_ips}_PS{peer_ports1}v{peer_ports2}",
         )
 
     def _detect_by_syn(self, connection: TcpConnection) -> ServerInfo:

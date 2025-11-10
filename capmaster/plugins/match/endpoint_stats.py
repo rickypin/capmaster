@@ -145,6 +145,26 @@ class EndpointStatsCollector:
         confidence = self._min_confidence(info_a.confidence, info_b.confidence)
         self.confidences[pair_key].append(confidence)
 
+        # For VERY_LOW confidence, also add the reversed interpretation
+        # This helps avoid missing connections due to incorrect server detection
+        if confidence == "VERY_LOW":
+            # Create reversed tuples (swap server/client roles)
+            tuple_a_reversed = EndpointTuple(
+                client_ip=info_a.server_ip,
+                server_ip=info_a.client_ip,
+                server_port=info_a.client_port,
+            )
+            tuple_b_reversed = EndpointTuple(
+                client_ip=info_b.server_ip,
+                server_ip=info_b.client_ip,
+                server_port=info_b.client_port,
+            )
+
+            # Add reversed pair
+            pair_key_reversed = (tuple_a_reversed, tuple_b_reversed)
+            self.pair_stats[pair_key_reversed] += 1
+            self.confidences[pair_key_reversed].append(confidence)
+
     def get_stats(self) -> list[EndpointPairStats]:
         """
         Get aggregated statistics.

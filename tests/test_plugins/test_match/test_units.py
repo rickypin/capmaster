@@ -361,6 +361,45 @@ class TestMatchPlugin:
         content = output_file.read_text()
         assert len(content) > 0, "Output file is empty"
 
+    def test_execute_with_no_sampling(self, plugin: MatchPlugin, test_case_dir: Path, tmp_path: Path):
+        """Test executing match with sampling disabled."""
+        output_file = tmp_path / "matches_no_sampling.txt"
+
+        # Execute the plugin with no_sampling=True
+        exit_code = plugin.execute(
+            input_path=test_case_dir,
+            output_file=output_file,
+            bucket_strategy="auto",
+            score_threshold=0.3,
+            no_sampling=True,
+        )
+
+        # Check that execution succeeded
+        assert exit_code == 0, "Plugin execution failed"
+
+        # Check that output file was created
+        assert output_file.exists(), "Output file was not created"
+
+    def test_execute_with_custom_sampling_params(self, plugin: MatchPlugin, test_case_dir: Path, tmp_path: Path):
+        """Test executing match with custom sampling parameters."""
+        output_file = tmp_path / "matches_custom_sampling.txt"
+
+        # Execute the plugin with custom sampling parameters
+        exit_code = plugin.execute(
+            input_path=test_case_dir,
+            output_file=output_file,
+            bucket_strategy="auto",
+            score_threshold=0.3,
+            sampling_threshold=5000,
+            sampling_rate=0.3,
+        )
+
+        # Check that execution succeeded
+        assert exit_code == 0, "Plugin execution failed"
+
+        # Check that output file was created
+        assert output_file.exists(), "Output file was not created"
+
     def test_execute_with_invalid_input(self, plugin: MatchPlugin, tmp_path: Path):
         """Test executing match with invalid input."""
         # Test with non-existent directory

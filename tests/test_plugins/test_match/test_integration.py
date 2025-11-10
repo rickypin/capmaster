@@ -194,13 +194,13 @@ class TestMatchIntegration:
         """Test match with verbose output."""
         if not tc_001_1.exists():
             pytest.skip(f"Test case directory not found: {tc_001_1}")
-        
+
         files = self.get_pcap_files(tc_001_1)
         if len(files) != 2:
             pytest.skip(f"Expected 2 files, found {len(files)}")
-        
+
         output_file = tmp_path / "matches_verbose.txt"
-        
+
         # Run with verbose flag
         result = subprocess.run(
             [
@@ -213,6 +213,118 @@ class TestMatchIntegration:
             capture_output=True,
             text=True,
         )
+
+    def test_match_with_no_sampling(self, tc_001_1: Path, tmp_path: Path):
+        """Test match with sampling disabled."""
+        if not tc_001_1.exists():
+            pytest.skip(f"Test case directory not found: {tc_001_1}")
+
+        files = self.get_pcap_files(tc_001_1)
+        if len(files) != 2:
+            pytest.skip(f"Expected 2 files, found {len(files)}")
+
+        output_file = tmp_path / "matches_no_sampling.txt"
+
+        # Run with --no-sampling flag
+        result = subprocess.run(
+            [
+                "python", "-m", "capmaster",
+                "match",
+                "-i", str(tc_001_1),
+                "-o", str(output_file),
+                "--no-sampling",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        assert output_file.exists(), "Output file was not created"
+
+        # Check that output mentions sampling is disabled
+        assert "Sampling disabled" in result.stderr or "no-sampling" in result.stderr.lower()
+
+    def test_match_with_custom_sampling_threshold(self, tc_001_1: Path, tmp_path: Path):
+        """Test match with custom sampling threshold."""
+        if not tc_001_1.exists():
+            pytest.skip(f"Test case directory not found: {tc_001_1}")
+
+        files = self.get_pcap_files(tc_001_1)
+        if len(files) != 2:
+            pytest.skip(f"Expected 2 files, found {len(files)}")
+
+        output_file = tmp_path / "matches_custom_threshold.txt"
+
+        # Run with custom sampling threshold
+        result = subprocess.run(
+            [
+                "python", "-m", "capmaster",
+                "match",
+                "-i", str(tc_001_1),
+                "-o", str(output_file),
+                "--sampling-threshold", "5000",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        assert output_file.exists(), "Output file was not created"
+
+    def test_match_with_custom_sampling_rate(self, tc_001_1: Path, tmp_path: Path):
+        """Test match with custom sampling rate."""
+        if not tc_001_1.exists():
+            pytest.skip(f"Test case directory not found: {tc_001_1}")
+
+        files = self.get_pcap_files(tc_001_1)
+        if len(files) != 2:
+            pytest.skip(f"Expected 2 files, found {len(files)}")
+
+        output_file = tmp_path / "matches_custom_rate.txt"
+
+        # Run with custom sampling rate
+        result = subprocess.run(
+            [
+                "python", "-m", "capmaster",
+                "match",
+                "-i", str(tc_001_1),
+                "-o", str(output_file),
+                "--sampling-rate", "0.3",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        assert output_file.exists(), "Output file was not created"
+
+    def test_match_with_combined_sampling_params(self, tc_001_1: Path, tmp_path: Path):
+        """Test match with both custom threshold and rate."""
+        if not tc_001_1.exists():
+            pytest.skip(f"Test case directory not found: {tc_001_1}")
+
+        files = self.get_pcap_files(tc_001_1)
+        if len(files) != 2:
+            pytest.skip(f"Expected 2 files, found {len(files)}")
+
+        output_file = tmp_path / "matches_combined.txt"
+
+        # Run with both custom threshold and rate
+        result = subprocess.run(
+            [
+                "python", "-m", "capmaster",
+                "match",
+                "-i", str(tc_001_1),
+                "-o", str(output_file),
+                "--sampling-threshold", "2000",
+                "--sampling-rate", "0.7",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        assert output_file.exists(), "Output file was not created"
         
         assert result.returncode == 0, f"Command failed: {result.stderr}"
         assert output_file.exists(), "Output file was not created"
