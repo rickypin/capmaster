@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 import re
 
@@ -134,194 +135,169 @@ class VoipQualityModule(AnalysisModule):
     def post_process(self, tshark_output: str, output_format: str = "txt") -> str:
         """
         Post-process RTP streams to calculate VoIP quality metrics.
-        
-        Parses RTP stream statistics and calculates MOS scores.
-        
+
+        Parses RTP stream statistics, computes MOS, and emits a concise
+        severity-aware summary with sampled stream details.
+
         Args:
             tshark_output: Raw tshark RTP streams output
             output_format: Output format ("txt" or "md", default: "txt")
-            
+
         Returns:
             Formatted output with VoIP quality assessment
         """
         if not tshark_output.strip():
             return "No RTP streams found for VoIP quality analysis\n"
-        
-        lines = []
-        lines.append("=" * 100)
-        lines.append("VoIP Quality Assessment (MOS Analysis)")
-        lines.append("=" * 100)
-        lines.append("")
-        
-        # Parse RTP stream data
+
         streams = []
         stream_pattern = re.compile(
-            r'\s*(\d+\.\d+)\s+(\d+\.\d+)\s+'  # Start time, End time
-            r'([\d.]+)\s+(\d+)\s+'  # Src IP, Src Port
-            r'([\d.]+)\s+(\d+)\s+'  # Dst IP, Dst Port
-            r'(0x[0-9A-Fa-f]+)\s+'  # SSRC
-            r'(\S+)\s+'  # Payload/Codec
-            r'(\d+)\s+'  # Packets
-            r'(\d+)\s+\(([\d.]+)%\)\s+'  # Lost packets and percentage
-            r'([\d.]+)\s+'  # Min Delta
-            r'([\d.]+)\s+'  # Mean Delta
-            r'([\d.]+)\s+'  # Max Delta
-            r'([\d.]+)\s+'  # Min Jitter
-            r'([\d.]+)\s+'  # Mean Jitter
-            r'([\d.]+)'  # Max Jitter
+            r"\s*(\d+\.\d+)\s+(\d+\.\d+)\s+"
+            r"([\d.]+)\s+(\d+)\s+"
+            r"([\d.]+)\s+(\d+)\s+"
+            r"(0x[0-9A-Fa-f]+)\s+"
+            r"(\S+)\s+"
+            r"(\d+)\s+"
+            r"(\d+)\s+\(([\d.]+)%\)\s+"
+            r"([\d.]+)\s+"
+            r"([\d.]+)\s+"
+            r"([\d.]+)\s+"
+            r"([\d.]+)\s+"
+            r"([\d.]+)\s+"
+            r"([\d.]+)"
         )
-        
-        for line in tshark_output.split('\n'):
+
+        for line in tshark_output.split("\n"):
             match = stream_pattern.search(line)
-            if match:
-                start_time = float(match.group(1))
-                end_time = float(match.group(2))
-                src_ip = match.group(3)
-                src_port = match.group(4)
-                dst_ip = match.group(5)
-                dst_port = match.group(6)
-                ssrc = match.group(7)
-                codec = match.group(8)
-                packets = int(match.group(9))
-                lost_packets = int(match.group(10))
-                loss_percent = float(match.group(11))
-                min_delta = float(match.group(12))
-                mean_delta = float(match.group(13))
-                max_delta = float(match.group(14))
-                min_jitter = float(match.group(15))
-                mean_jitter = float(match.group(16))
-                max_jitter = float(match.group(17))
-                
-                # Calculate MOS
-                mos, rating = self._calculate_mos(loss_percent, mean_jitter, codec)
-                
-                duration = end_time - start_time
-                
-                streams.append({
-                    'src': f"{src_ip}:{src_port}",
-                    'dst': f"{dst_ip}:{dst_port}",
-                    'ssrc': ssrc,
-                    'codec': codec,
-                    'packets': packets,
-                    'lost': lost_packets,
-                    'loss_percent': loss_percent,
-                    'mean_jitter': mean_jitter,
-                    'max_jitter': max_jitter,
-                    'duration': duration,
-                    'mos': mos,
-                    'rating': rating,
-                })
-        
+            if not match:
+                continue
+
+            start_time = float(match.group(1))
+            end_time = float(match.group(2))
+            src_ip = match.group(3)
+            src_port = match.group(4)
+            dst_ip = match.group(5)
+            dst_port = match.group(6)
+            ssrc = match.group(7)
+            codec = match.group(8)
+            packets = int(match.group(9))
+            lost_packets = int(match.group(10))
+            loss_percent = float(match.group(11))
+            mean_jitter = float(match.group(16))
+            max_jitter = float(match.group(17))
+
+            mos, rating = self._calculate_mos(loss_percent, mean_jitter, codec)
+            duration = end_time - start_time
+
+            issues: list[str] = []
+            if loss_percent > 5:
+                issues.append(f"High packet loss {loss_percent:.1f}%")
+            elif loss_percent > 1:
+                issues.append(f"Moderate packet loss {loss_percent:.1f}%")
+
+            if mean_jitter > 30:
+                issues.append(f"High jitter {mean_jitter:.1f} ms")
+            elif mean_jitter > 20:
+                issues.append(f"Moderate jitter {mean_jitter:.1f} ms")
+
+            if max_jitter > 50:
+                issues.append(f"Jitter spikes {max_jitter:.1f} ms")
+
+            streams.append(
+                {
+                    "src": f"{src_ip}:{src_port}",
+                    "dst": f"{dst_ip}:{dst_port}",
+                    "ssrc": ssrc,
+                    "codec": codec,
+                    "packets": packets,
+                    "lost": lost_packets,
+                    "loss_percent": loss_percent,
+                    "mean_jitter": mean_jitter,
+                    "max_jitter": max_jitter,
+                    "duration": duration,
+                    "mos": mos,
+                    "rating": rating,
+                    "issues": issues,
+                }
+            )
+
         if not streams:
             return "No valid RTP streams found for quality analysis\n"
-        
-        # Overall summary
+
         total_streams = len(streams)
-        avg_mos = sum(s['mos'] for s in streams) / total_streams
-        
-        # Count quality levels
-        excellent = sum(1 for s in streams if s['rating'] == 'Excellent')
-        good = sum(1 for s in streams if s['rating'] == 'Good')
-        fair = sum(1 for s in streams if s['rating'] == 'Fair')
-        poor = sum(1 for s in streams if s['rating'] == 'Poor')
-        bad = sum(1 for s in streams if s['rating'] == 'Bad')
-        
-        lines.append("Overall Summary:")
-        lines.append("-" * 100)
-        lines.append(f"  Total RTP Streams:       {total_streams}")
-        lines.append(f"  Average MOS Score:       {avg_mos:.2f}")
+        avg_mos = sum(s["mos"] for s in streams) / total_streams if total_streams else 0.0
+        rating_counts = Counter(stream["rating"] for stream in streams)
+        severity_map = {
+            "Excellent": "Low",
+            "Good": "Low",
+            "Fair": "Medium",
+            "Poor": "High",
+            "Bad": "High",
+        }
+        severity_rank = {"High": 0, "Medium": 1, "Low": 2}
+        severity_counts = Counter(severity_map.get(stream["rating"], "Low") for stream in streams)
+        overall_severity = (
+            "High"
+            if severity_counts["High"]
+            else ("Medium" if severity_counts["Medium"] else "Low")
+        )
+
+        lines: list[str] = []
+        lines.append("VoIP Quality Overview")
+        lines.append("Metric,Value")
+        lines.append(f"Total Streams,{total_streams}")
+        lines.append(f"Average MOS,{avg_mos:.2f}")
+        lines.append(f"Overall Severity,{overall_severity}")
+        lines.append(f"High-Severity Streams,{severity_counts['High']}")
+        lines.append(f"Medium-Severity Streams,{severity_counts['Medium']}")
         lines.append("")
-        lines.append("Quality Distribution:")
-        lines.append(f"  Excellent (MOS ≥ 4.3):   {excellent} streams")
-        lines.append(f"  Good (MOS 4.0-4.3):      {good} streams")
-        lines.append(f"  Fair (MOS 3.6-4.0):      {fair} streams")
-        lines.append(f"  Poor (MOS 3.1-3.6):      {poor} streams")
-        lines.append(f"  Bad (MOS < 3.1):         {bad} streams")
+
+        lines.append("Quality Distribution")
+        lines.append("Rating,Count,Share")
+        for rating in ["Excellent", "Good", "Fair", "Poor", "Bad"]:
+            count = rating_counts.get(rating, 0)
+            share = (count / total_streams * 100) if total_streams else 0.0
+            lines.append(f"{rating},{count},{share:.1f}%")
+
         lines.append("")
-        
-        # Detailed stream analysis
-        lines.append("Detailed Stream Quality Analysis:")
-        lines.append("-" * 100)
-        lines.append(f"{'Stream':<6} {'MOS':<6} {'Rating':<12} {'Loss%':<8} {'Jitter(ms)':<12} "
-                    f"{'Codec':<10} {'Packets':<10} {'Duration(s)':<12}")
-        lines.append("-" * 100)
-        
-        for i, stream in enumerate(streams, 1):
-            mos_str = f"{stream['mos']:.2f}"
-            loss_str = f"{stream['loss_percent']:.1f}%"
-            jitter_str = f"{stream['mean_jitter']:.2f}"
-            duration_str = f"{stream['duration']:.1f}"
-            
-            # Add indicator for quality
-            if stream['rating'] == 'Excellent':
-                indicator = "✓"
-            elif stream['rating'] in ['Good', 'Fair']:
-                indicator = "○"
-            else:
-                indicator = "⚠"
-            
-            lines.append(f"{i:<6} {mos_str:<6} {indicator} {stream['rating']:<10} {loss_str:<8} "
-                        f"{jitter_str:<12} {stream['codec']:<10} {stream['packets']:<10} {duration_str:<12}")
-        
+        highlight_candidates = sorted(
+            streams,
+            key=lambda stream: (
+                severity_rank.get(severity_map.get(stream["rating"], "Low"), 2),
+                stream["mos"],
+            ),
+        )
+        highlight_limit = 5
+        highlights = highlight_candidates[:highlight_limit]
+
+        if highlights:
+            lines.append("Highlighted Streams")
+            lines.append("Index,Endpoints,Codec,MOS,Rating,Loss%,MeanJitter(ms),Severity")
+            for idx, stream in enumerate(highlights, 1):
+                severity = severity_map.get(stream["rating"], "Low")
+                endpoint = f"{stream['src']} -> {stream['dst']}"
+                lines.append(
+                    f"{idx},{endpoint},{stream['codec']},{stream['mos']:.2f},{stream['rating']},"
+                    f"{stream['loss_percent']:.1f},{stream['mean_jitter']:.2f},{severity}"
+                )
+                if stream["issues"]:
+                    sampled = self.sample_items(stream["issues"], limit=2)
+                    lines.append(f"  Issues: {', '.join(sampled)}")
+            remaining = total_streams - len(highlights)
+            if remaining > 0:
+                lines.append(f"... {remaining} additional streams hidden")
+
         lines.append("")
-        
-        # Detailed information for each stream
-        lines.append("Stream Details:")
-        lines.append("-" * 100)
-        
-        for i, stream in enumerate(streams, 1):
-            lines.append(f"\nStream {i}: {stream['src']} → {stream['dst']}")
-            lines.append(f"  SSRC:           {stream['ssrc']}")
-            lines.append(f"  Codec:          {stream['codec']}")
-            lines.append(f"  Duration:       {stream['duration']:.2f} seconds")
-            lines.append(f"  Packets:        {stream['packets']} (Lost: {stream['lost']}, {stream['loss_percent']:.2f}%)")
-            lines.append(f"  Mean Jitter:    {stream['mean_jitter']:.3f} ms")
-            lines.append(f"  Max Jitter:     {stream['max_jitter']:.3f} ms")
-            lines.append(f"  MOS Score:      {stream['mos']:.2f} ({stream['rating']})")
-            
-            # Quality assessment
-            issues = []
-            if stream['loss_percent'] > 5:
-                issues.append(f"HIGH packet loss ({stream['loss_percent']:.1f}%)")
-            elif stream['loss_percent'] > 1:
-                issues.append(f"Moderate packet loss ({stream['loss_percent']:.1f}%)")
-            
-            if stream['mean_jitter'] > 30:
-                issues.append(f"HIGH jitter ({stream['mean_jitter']:.1f} ms)")
-            elif stream['mean_jitter'] > 20:
-                issues.append(f"Moderate jitter ({stream['mean_jitter']:.1f} ms)")
-            
-            if issues:
-                lines.append(f"  Issues:         {', '.join(issues)}")
-            else:
-                lines.append(f"  Issues:         None - Good quality")
-        
-        lines.append("")
-        lines.append("=" * 100)
-        lines.append("")
-        lines.append("MOS Score Reference:")
-        lines.append("  5.0       - Excellent (imperceptible impairment)")
-        lines.append("  4.0-4.9   - Good (perceptible but not annoying)")
-        lines.append("  3.0-3.9   - Fair (slightly annoying)")
-        lines.append("  2.0-2.9   - Poor (annoying)")
-        lines.append("  1.0-1.9   - Bad (very annoying)")
-        lines.append("")
-        lines.append("Recommendations:")
-        if avg_mos >= 4.0:
-            lines.append("  ✓ VoIP quality is good. No immediate action required.")
-        elif avg_mos >= 3.6:
-            lines.append("  ○ VoIP quality is acceptable but could be improved.")
-            lines.append("    - Check network congestion and QoS settings")
-            lines.append("    - Monitor for packet loss and jitter spikes")
+        lines.append("Action Guidance")
+        if severity_counts["High"]:
+            lines.append(
+                "Prioritize investigation of high severity streams to address packet loss and jitter."
+            )
+        elif severity_counts["Medium"]:
+            lines.append(
+                "Monitor medium severity streams for early signs of degradation."
+            )
         else:
-            lines.append("  ⚠ VoIP quality is poor. Immediate action recommended:")
-            lines.append("    - Investigate network issues (congestion, routing)")
-            lines.append("    - Enable QoS/traffic prioritization for VoIP")
-            lines.append("    - Check for bandwidth limitations")
-            lines.append("    - Consider upgrading network infrastructure")
-        
-        lines.append("")
-        lines.append("=" * 100)
-        
-        return '\n'.join(lines) + '\n'
+            lines.append("Quality metrics are stable; continue routine monitoring.")
+
+        return "\n".join(lines) + "\n"
 

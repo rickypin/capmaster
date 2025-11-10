@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
+from typing import cast
 
 from capmaster.plugins.analyze.modules import register_module
 from capmaster.plugins.analyze.modules.base import AnalysisModule
@@ -100,19 +101,43 @@ class TlsAlertModule(AnalysisModule):
             alerts[alert_desc]["count"] += 1  # type: ignore
             alerts[alert_desc]["connections"].add(connection)  # type: ignore
         
-        # Sort by alert description
-        sorted_alerts = sorted(alerts.items())
-        
-        # Generate output
-        lines = []
+        sorted_alerts = sorted(alerts.items(), key=lambda item: -cast(int, item[1]["count"]))
+
+        def classify(desc: str) -> str:
+            lower = desc.lower()
+            if "fatal" in lower or " handshake" in lower:
+                return "High"
+            if "warning" in lower:
+                return "Medium"
+            return "Medium"
+
+        lines: list[str] = []
+        lines.append("TLS Alert Summary")
+        lines.append("Alert,Severity,Count,Unique Connections")
+        summary: list[tuple[str, str, int, list[str]]] = []
         for alert_desc, data in sorted_alerts:
-            count = data["count"]
-            connections = sorted(data["connections"])  # type: ignore
-            
-            lines.append(f"TLS Alert: {alert_desc} (count {count}):")
-            for conn in connections:
-                lines.append(conn)
-            lines.append("")  # Empty line between groups
-        
+            count = cast(int, data["count"])
+            conn_list = sorted(list(cast(set[str], data["connections"])))
+            severity = classify(alert_desc)
+            summary.append((alert_desc, severity, count, conn_list))
+            lines.append(f"{alert_desc},{severity},{count},{len(conn_list)}")
+
+        highlights = [row for row in summary if row[1] == "High"]
+        if len(highlights) < 3:
+            highlights.extend(row for row in summary if row[1] == "Medium" and row not in highlights)
+        highlights = highlights[:3]
+
+        if highlights:
+            lines.append("")
+            lines.append("Highlighted Alerts")
+            for alert_desc, severity, count, connections in highlights:
+                lines.append(f"{alert_desc} [{severity}] total={count}")
+                samples = self.sample_items(connections, limit=3)
+                for conn in samples:
+                    lines.append(f"  sample: {conn}")
+                remaining = len(connections) - len(samples)
+                if remaining > 0:
+                    lines.append(f"  ... {remaining} more")
+
         return '\n'.join(lines)
 

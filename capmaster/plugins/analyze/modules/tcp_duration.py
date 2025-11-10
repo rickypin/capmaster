@@ -59,49 +59,76 @@ class TcpDurationModule(AnalysisModule):
         Returns:
             Formatted output with connections binned by duration
         """
-        # Duration bins (in seconds)
         bins = [1, 5, 10, 30, 60]
-
-        # Storage for each bucket
         bucket_data: dict[str, list[str]] = defaultdict(list)
-
-        # Parse TCP conversations
-        # Format: "192.168.1.1:12345 <-> 192.168.1.2:80  ... Duration:123.456"
-        # Regex to match conversation lines with duration
         pattern = r'^([^ ]+):([0-9]+)\s+<->\s+([^ ]+):([0-9]+).*\s+([0-9]+(?:\.[0-9]+)?)\s*$'
 
         for line in tshark_output.split('\n'):
             match = re.match(pattern, line.strip())
-            if match:
-                src_ip = match.group(1)
-                src_port = match.group(2)
-                dst_ip = match.group(3)
-                dst_port = match.group(4)
-                duration = float(match.group(5))
+            if not match:
+                continue
 
-                # Determine bucket
-                bucket_name = f">={bins[-1]}s"
-                for bin_val in bins:
-                    if duration < bin_val:
-                        bucket_name = f"<{bin_val}s"
-                        break
+            src_ip = match.group(1)
+            src_port = match.group(2)
+            dst_ip = match.group(3)
+            dst_port = match.group(4)
+            duration = float(match.group(5))
 
-                # Format connection string
-                conn_str = f"{src_ip},{src_port},{dst_ip},{dst_port},TCP,{duration:.3f}s"
-                bucket_data[bucket_name].append(conn_str)
+            bucket_name = f">={bins[-1]}s"
+            for bin_val in bins:
+                if duration < bin_val:
+                    bucket_name = f"<{bin_val}s"
+                    break
 
-        # Generate output in reverse bin order (>=60s, <60s, <30s, ...)
+            conn_str = f"{src_ip},{src_port},{dst_ip},{dst_port},TCP,{duration:.3f}s"
+            bucket_data[bucket_name].append(conn_str)
+
         bucket_order = [f">={bins[-1]}s"]
         for i in range(len(bins) - 1, -1, -1):
             bucket_order.append(f"<{bins[i]}s")
 
-        lines = []
+        severity_map = {
+            f">={bins[-1]}s": "High",
+            f"<{bins[-1]}s": "High",
+            "<30s": "Medium",
+            "<10s": "Low",
+            "<5s": "Low",
+            "<1s": "Low",
+        }
+
+        bucket_counts = {bucket: len(bucket_data[bucket]) for bucket in bucket_order}
+        total_connections = sum(bucket_counts.values())
+
+        lines: list[str] = []
+        lines.append("TCP Duration Buckets")
+        lines.append("Bucket,Count,Share")
         for bucket in bucket_order:
-            count = len(bucket_data[bucket])
-            lines.append(f"Bucket {bucket}: {count} connections")
-            if count > 0:
-                for conn in bucket_data[bucket]:
-                    lines.append(conn)
-            lines.append("")  # Empty line after each bucket
+            count = bucket_counts[bucket]
+            share = (count / total_connections * 100) if total_connections else 0.0
+            lines.append(f"{bucket},{count},{share:.1f}%")
+
+        non_empty_buckets = [b for b in bucket_order if bucket_counts[b] > 0]
+        severity_rank = {"High": 0, "Medium": 1, "Low": 2}
+        non_empty_buckets.sort(
+            key=lambda b: (
+                severity_rank.get(severity_map.get(b, "Low"), 2),
+                -bucket_counts[b],
+            )
+        )
+
+        detailed_buckets = non_empty_buckets[:3]
+        if detailed_buckets:
+            lines.append("")
+            lines.append("Highlighted Buckets (sampled)")
+            for bucket in detailed_buckets:
+                severity = severity_map.get(bucket, "Low")
+                count = bucket_counts[bucket]
+                samples = self.sample_items(bucket_data[bucket], limit=3)
+                lines.append(f"{bucket} [{severity}] total={count}")
+                for entry in samples:
+                    lines.append(f"  sample: {entry}")
+                remaining = count - len(samples)
+                if remaining > 0:
+                    lines.append(f"  ... {remaining} more")
 
         return '\n'.join(lines)

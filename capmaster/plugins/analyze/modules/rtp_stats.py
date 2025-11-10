@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 import re
 
@@ -20,6 +22,17 @@ class RtpStatsModule(AnalysisModule):
     
     This helps identify VoIP quality issues and network problems.
     """
+
+    @dataclass
+    class _StreamMetrics:
+        endpoint: str
+        packets: int
+        lost: int
+        loss_pct: float
+        mean_jitter: float
+        max_jitter: float
+        severity: str
+        issues: list[str]
 
     @property
     def name(self) -> str:
@@ -66,152 +79,138 @@ class RtpStatsModule(AnalysisModule):
         """
         if not tshark_output.strip():
             return "No RTP streams found\n"
-        
+
         lines = tshark_output.strip().split('\n')
-        
-        # Find the header line and data lines
+
         header_idx = -1
         separator_idx = -1
-        
-        for i, line in enumerate(lines):
+        for idx, line in enumerate(lines):
             if "Start time" in line and "End time" in line:
-                header_idx = i
+                header_idx = idx
             elif line.strip().startswith("==="):
-                separator_idx = i
-        
+                separator_idx = idx
+
         if header_idx == -1:
-            # No RTP streams found or unexpected format
             return tshark_output
-        
-        # Extract stream data lines (between header and final separator)
-        stream_lines = []
-        for i in range(header_idx + 1, len(lines)):
-            line = lines[i].strip()
-            if line.startswith("==="):
+
+        stream_lines: list[str] = []
+        for raw in lines[header_idx + 1 :]:
+            stripped = raw.strip()
+            if stripped.startswith("==="):
                 break
-            if line and not line.startswith("="):
-                stream_lines.append(line)
-        
+            if stripped and not stripped.startswith("="):
+                stream_lines.append(stripped)
+
         if not stream_lines:
             return "No RTP streams found\n"
-        
-        # Parse and analyze streams
-        output_lines = []
-        output_lines.append("=" * 100)
-        output_lines.append("RTP Stream Statistics")
-        output_lines.append("=" * 100)
-        output_lines.append("")
-        
-        # Add original tshark output
-        output_lines.append("Stream Details:")
-        output_lines.append("-" * 100)
-        output_lines.extend(lines[header_idx:separator_idx + 1])
-        output_lines.append("")
-        
-        # Analyze each stream
-        output_lines.append("Quality Analysis:")
-        output_lines.append("-" * 100)
-        
-        stream_count = 0
+
+        streams: list[RtpStatsModule._StreamMetrics] = []
         total_packets = 0
         total_lost = 0
         max_jitter = 0.0
-        
+
         for line in stream_lines:
-            stream_count += 1
-            
-            # Parse stream information using regex
-            # Expected format has fields separated by whitespace
-            # We're interested in: Pkts, Lost, Mean Jitter, Max Jitter, Problems
-            
-            # Extract packet count (look for number followed by number in parentheses for loss)
-            pkts_match = re.search(r'\s+(\d+)\s+\d+\s+\([\d.]+%\)', line)
-            if pkts_match:
-                pkts = int(pkts_match.group(1))
-                total_packets += pkts
-            else:
-                pkts = 0
-            
-            # Extract packet loss
-            loss_match = re.search(r'\s+(\d+)\s+\(([\d.]+)%\)', line)
-            if loss_match:
-                lost = int(loss_match.group(1))
-                loss_pct = float(loss_match.group(2))
-                total_lost += lost
-            else:
-                lost = 0
-                loss_pct = 0.0
-            
-            # Extract jitter values (look for decimal numbers in ms)
-            jitter_matches = re.findall(r'([\d.]+)\s+ms', line)
-            if len(jitter_matches) >= 3:
-                # Typically: Min Jitter, Mean Jitter, Max Jitter
-                mean_jitter = float(jitter_matches[1]) if len(jitter_matches) > 1 else 0.0
-                stream_max_jitter = float(jitter_matches[2]) if len(jitter_matches) > 2 else 0.0
-                max_jitter = max(max_jitter, stream_max_jitter)
-            else:
-                mean_jitter = 0.0
-                stream_max_jitter = 0.0
-            
-            # Extract source and destination
-            ip_matches = re.findall(r'(\d+\.\d+\.\d+\.\d+)\s+(\d+)', line)
+            pkts_match = re.search(r"\s+(\d+)\s+\d+\s+\([\d.]+%\)", line)
+            packets = int(pkts_match.group(1)) if pkts_match else 0
+            total_packets += packets
+
+            loss_match = re.search(r"\s+(\d+)\s+\(([\d.]+)%\)", line)
+            lost = int(loss_match.group(1)) if loss_match else 0
+            loss_pct = float(loss_match.group(2)) if loss_match else 0.0
+            total_lost += lost
+
+            jitter_matches = re.findall(r"([\d.]+)\s+ms", line)
+            mean_jitter = float(jitter_matches[1]) if len(jitter_matches) > 1 else 0.0
+            stream_max_jitter = float(jitter_matches[2]) if len(jitter_matches) > 2 else 0.0
+            max_jitter = max(max_jitter, stream_max_jitter)
+
+            ip_matches = re.findall(r"(\d+\.\d+\.\d+\.\d+)\s+(\d+)", line)
             if len(ip_matches) >= 2:
                 src_ip, src_port = ip_matches[0]
                 dst_ip, dst_port = ip_matches[1]
                 endpoint = f"{src_ip}:{src_port} -> {dst_ip}:{dst_port}"
             else:
                 endpoint = "Unknown"
-            
-            # Quality assessment
-            quality_issues = []
-            
+
+            issues: list[str] = []
             if loss_pct > 5.0:
-                quality_issues.append(f"HIGH packet loss ({loss_pct:.1f}%)")
+                issues.append(f"High packet loss {loss_pct:.1f}%")
             elif loss_pct > 1.0:
-                quality_issues.append(f"Moderate packet loss ({loss_pct:.1f}%)")
-            
+                issues.append(f"Moderate packet loss {loss_pct:.1f}%")
             if mean_jitter > 30.0:
-                quality_issues.append(f"HIGH jitter ({mean_jitter:.3f} ms)")
+                issues.append(f"High jitter {mean_jitter:.1f} ms")
             elif mean_jitter > 20.0:
-                quality_issues.append(f"Moderate jitter ({mean_jitter:.3f} ms)")
-            
+                issues.append(f"Moderate jitter {mean_jitter:.1f} ms")
             if stream_max_jitter > 50.0:
-                quality_issues.append(f"HIGH max jitter ({stream_max_jitter:.3f} ms)")
-            
-            # Output stream analysis
-            output_lines.append(f"\nStream {stream_count}: {endpoint}")
-            output_lines.append(f"  Packets: {pkts}, Lost: {lost} ({loss_pct:.1f}%)")
-            output_lines.append(f"  Mean Jitter: {mean_jitter:.3f} ms, Max Jitter: {stream_max_jitter:.3f} ms")
-            
-            if quality_issues:
-                output_lines.append(f"  ⚠ Quality Issues: {', '.join(quality_issues)}")
+                issues.append(f"Jitter spikes {stream_max_jitter:.1f} ms")
+
+            if loss_pct > 5.0 or mean_jitter > 30.0 or stream_max_jitter > 50.0:
+                severity = "High"
+            elif loss_pct > 1.0 or mean_jitter > 20.0:
+                severity = "Medium"
             else:
-                output_lines.append(f"  ✓ Quality: Good")
-        
-        # Summary
+                severity = "Low"
+
+            streams.append(
+                self._StreamMetrics(
+                    endpoint=endpoint,
+                    packets=packets,
+                    lost=lost,
+                    loss_pct=loss_pct,
+                    mean_jitter=mean_jitter,
+                    max_jitter=stream_max_jitter,
+                    severity=severity,
+                    issues=issues,
+                )
+            )
+
+        stream_count = len(streams)
+        severity_counts = Counter(stream.severity for stream in streams)
+        severity_rank = {"High": 0, "Medium": 1, "Low": 2}
+
+        output_lines: list[str] = []
+        output_lines.append("RTP Stream Overview")
+        output_lines.append("Metric,Value")
+        output_lines.append(f"Total Streams,{stream_count}")
+        output_lines.append(f"Total Packets,{total_packets}")
+        output_lines.append(f"Lost Packets,{total_lost}")
+        overall_loss = (total_lost / total_packets * 100) if total_packets else 0.0
+        output_lines.append(f"Overall Loss %, {overall_loss:.2f}")
+        output_lines.append(f"High Severity Streams,{severity_counts['High']}")
+        output_lines.append(f"Medium Severity Streams,{severity_counts['Medium']}")
+        output_lines.append(f"Low Severity Streams,{severity_counts['Low']}")
+        output_lines.append(f"Peak Max Jitter,{max_jitter:.2f} ms")
         output_lines.append("")
-        output_lines.append("=" * 100)
-        output_lines.append("Summary:")
-        output_lines.append(f"  Total RTP Streams:   {stream_count}")
-        output_lines.append(f"  Total Packets:       {total_packets}")
-        output_lines.append(f"  Total Lost Packets:  {total_lost}")
-        if total_packets > 0:
-            overall_loss_pct = (total_lost / total_packets) * 100
-            output_lines.append(f"  Overall Packet Loss: {overall_loss_pct:.2f}%")
-        output_lines.append(f"  Maximum Jitter:      {max_jitter:.3f} ms")
-        
-        # Overall quality assessment
-        output_lines.append("")
-        if total_packets > 0:
-            overall_loss_pct = (total_lost / total_packets) * 100
-            if overall_loss_pct > 5.0 or max_jitter > 30.0:
-                output_lines.append("  Overall Quality: ⚠ POOR - Significant quality issues detected")
-            elif overall_loss_pct > 1.0 or max_jitter > 20.0:
-                output_lines.append("  Overall Quality: ⚠ FAIR - Some quality issues detected")
-            else:
-                output_lines.append("  Overall Quality: ✓ GOOD - No significant issues")
-        
-        output_lines.append("=" * 100)
-        
-        return '\n'.join(output_lines) + '\n'
+
+        output_lines.append("Severity Breakdown")
+        output_lines.append("Severity,Streams,Share")
+        for severity in ["High", "Medium", "Low"]:
+            count = severity_counts.get(severity, 0)
+            share = (count / stream_count * 100) if stream_count else 0.0
+            output_lines.append(f"{severity},{count},{share:.1f}%")
+
+        if streams:
+            output_lines.append("")
+            output_lines.append("Highlighted Streams")
+            output_lines.append("Index,Endpoint,Packets,Loss%,Mean Jitter ms,Max Jitter ms,Severity")
+            sorted_streams = sorted(
+                streams,
+                key=lambda s: (
+                    severity_rank[s.severity],
+                    -s.loss_pct,
+                    -s.mean_jitter,
+                ),
+            )
+            for idx, stream in enumerate(sorted_streams[:5], 1):
+                output_lines.append(
+                    f"{idx},{stream.endpoint},{stream.packets},{stream.loss_pct:.1f},{stream.mean_jitter:.2f},{stream.max_jitter:.2f},{stream.severity}"
+                )
+                if stream.issues:
+                    sampled = self.sample_items(stream.issues, limit=2)
+                    output_lines.append(f"  Issues: {', '.join(sampled)}")
+            remaining = stream_count - min(5, stream_count)
+            if remaining > 0:
+                output_lines.append(f"... {remaining} additional stream(s) hidden")
+
+        return "\n".join(output_lines) + "\n"
 

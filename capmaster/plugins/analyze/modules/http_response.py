@@ -92,17 +92,40 @@ class HttpResponseModule(AnalysisModule):
             connection = f"{src_ip}:{src_port} -> {dst_ip}:{dst_port}"
             responses[status_code].append(connection)
         
-        # Sort by status code (numerically)
         sorted_codes = sorted(responses.keys(), key=lambda x: int(x) if x.isdigit() else 999)
-        
-        # Generate output
-        lines = []
+        total_count = sum(len(conns) for conns in responses.values())
+
+        def classify(code: str) -> str:
+            if code.startswith('5'):
+                return "High"
+            if code.startswith('4'):
+                return "Medium"
+            return "Low"
+
+        lines: list[str] = []
+        lines.append("HTTP Response Summary")
+        lines.append("Status,Severity,Count,Share")
         for code in sorted_codes:
-            connections = responses[code]
-            lines.append(f"Status {code}:")
-            for conn in connections:
-                lines.append(conn)
-            lines.append("")  # Empty line between groups
-        
+            count = len(responses[code])
+            share = (count / total_count * 100) if total_count else 0.0
+            severity = classify(code)
+            lines.append(f"{code},{severity},{count},{share:.1f}%")
+
+        highlighted = [code for code in sorted_codes if classify(code) != "Low"]
+        highlighted = highlighted[:3]
+        if highlighted:
+            lines.append("")
+            lines.append("Highlighted Statuses")
+            for code in highlighted:
+                severity = classify(code)
+                connections = responses[code]
+                lines.append(f"{code} [{severity}] total={len(connections)}")
+                samples = self.sample_items(connections, limit=3)
+                for conn in samples:
+                    lines.append(f"  sample: {conn}")
+                remaining = len(connections) - len(samples)
+                if remaining > 0:
+                    lines.append(f"  ... {remaining} more")
+
         return '\n'.join(lines)
 

@@ -54,7 +54,7 @@ class TestVoipQualityModule:
         module = VoipQualityModule()
         
         # No packet loss, low jitter
-        mos, rating = module._calculate_mos(0.0, 5.0, "g711U")
+        mos, rating = module._calculate_mos(0.0, 5.0, "g711U")  # type: ignore[attr-defined]
         
         assert mos >= 4.0
         assert rating in ["Excellent", "Good"]
@@ -64,7 +64,7 @@ class TestVoipQualityModule:
         module = VoipQualityModule()
         
         # High packet loss, high jitter
-        mos, rating = module._calculate_mos(10.0, 100.0, "g711U")
+        mos, rating = module._calculate_mos(10.0, 100.0, "g711U")  # type: ignore[attr-defined]
         
         assert mos < 3.5
         assert rating in ["Poor", "Bad"]
@@ -74,8 +74,8 @@ class TestVoipQualityModule:
         module = VoipQualityModule()
         
         # G.711 should have higher base quality than G.729
-        mos_g711, _ = module._calculate_mos(0.0, 10.0, "g711U")
-        mos_g729, _ = module._calculate_mos(0.0, 10.0, "g729")
+        mos_g711, _ = module._calculate_mos(0.0, 10.0, "g711U")  # type: ignore[attr-defined]
+        mos_g729, _ = module._calculate_mos(0.0, 10.0, "g729")  # type: ignore[attr-defined]
         
         assert mos_g711 > mos_g729
 
@@ -90,23 +90,17 @@ class TestVoipQualityModule:
 =============================================================="""
         
         result = module.post_process(sample_output)
-        
+
         # Check summary
-        assert "VoIP Quality Assessment" in result
-        assert "Total RTP Streams:" in result
-        assert "1" in result
-        
-        # Check MOS score
-        assert "MOS Score:" in result
-        assert "Average MOS Score:" in result
-        
-        # Check quality rating
-        assert "Quality Distribution:" in result
-        
-        # Check stream details
-        assert "Stream Details:" in result
-        assert "10.135.65.10:16676" in result
-        assert "10.128.131.17:19490" in result
+        assert "VoIP Quality Overview" in result
+        assert "Total Streams,1" in result
+        assert "Average MOS," in result
+
+        # Check distribution and highlights
+        assert "Quality Distribution" in result
+        assert "Highlighted Streams" in result
+        assert "Codec" in result
+        assert "10.135.65.10:16676 -> 10.128.131.17:19490" in result
         assert "g711U" in result
 
     def test_post_process_multiple_streams(self):
@@ -121,14 +115,13 @@ class TestVoipQualityModule:
 =============================================================="""
         
         result = module.post_process(sample_output)
-        
+
         # Check that both streams are processed
-        assert "Total RTP Streams:       2" in result
-        assert "Stream 1:" in result
-        assert "Stream 2:" in result
-        
+        assert "Total Streams,2" in result
+        assert result.count("Issues:") >= 1 or "High" in result
+
         # Check average MOS
-        assert "Average MOS Score:" in result
+        assert "Average MOS," in result
 
     def test_post_process_with_quality_issues(self):
         """Test post-processing with quality issues."""
@@ -141,11 +134,11 @@ class TestVoipQualityModule:
 =============================================================="""
         
         result = module.post_process(sample_output)
-        
+
         # Check that issues are detected
         assert "Issues:" in result
-        assert ("HIGH packet loss" in result or "packet loss" in result)
-        assert ("HIGH jitter" in result or "jitter" in result)
+        assert "packet loss" in result.lower()
+        assert "jitter" in result.lower()
 
     def test_mos_range_validation(self):
         """Test that MOS scores are within valid range."""
@@ -159,7 +152,7 @@ class TestVoipQualityModule:
         ]
         
         for loss, jitter, codec in test_cases:
-            mos, rating = module._calculate_mos(loss, jitter, codec)
+            mos, rating = module._calculate_mos(loss, jitter, codec)  # type: ignore[attr-defined]
             
             # MOS should be between 1.0 and 5.0
             assert 1.0 <= mos <= 5.0
@@ -178,10 +171,10 @@ class TestVoipQualityModule:
 =============================================================="""
         
         result = module.post_process(good_output)
-        
-        # Should have recommendations section
-        assert "Recommendations:" in result
-        
-        # For good quality, should recommend no action
-        assert ("No immediate action required" in result or "good" in result.lower())
+
+        # Should have action guidance section
+        assert "Action Guidance" in result
+
+        # For good quality, should recommend benign action
+        assert "routine monitoring" in result.lower()
 

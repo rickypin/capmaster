@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Sequence, TypeVar
+
+T = TypeVar("T")
 
 
 class AnalysisModule(ABC):
@@ -78,6 +81,33 @@ class AnalysisModule(ABC):
         # Default: no post-processing, just return as-is
         # Subclasses can override to provide format-specific processing
         return tshark_output
+
+    def sample_items(self, items: Sequence[T], limit: int = 3) -> list[T]:
+        """Return an evenly distributed sample from a sequence."""
+        if limit <= 0:
+            return []
+        seq = list(items)
+        if len(seq) <= limit:
+            return seq
+        if limit == 1:
+            return [seq[0]]
+        step = (len(seq) - 1) / float(limit - 1)
+        indices: list[int] = []
+        for i in range(limit):
+            idx = int(round(i * step))
+            if indices and idx <= indices[-1]:
+                idx = indices[-1] + 1
+            if idx >= len(seq):
+                idx = len(seq) - 1
+            indices.append(idx)
+        # Ensure unique indices while keeping order
+        unique_indices: list[int] = []
+        for idx in indices:
+            if not unique_indices or idx != unique_indices[-1]:
+                unique_indices.append(idx)
+        while len(unique_indices) < limit and unique_indices[-1] + 1 < len(seq):
+            unique_indices.append(unique_indices[-1] + 1)
+        return [seq[i] for i in unique_indices[:limit]]
 
     def should_execute(self, detected_protocols: set[str]) -> bool:
         """

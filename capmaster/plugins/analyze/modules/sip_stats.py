@@ -144,46 +144,63 @@ class SipStatsModule(AnalysisModule):
             lines.append("-" * 70)
             lines.append(f"{'Method':<20} {'Count':>10}")
             lines.append("-" * 70)
-            
-            for method, count in sorted(method_counter.items(), key=lambda x: -x[1]):
+
+            sorted_methods = sorted(method_counter.items(), key=lambda x: -x[1])
+            for method, count in sorted_methods:
                 lines.append(f"{method:<20} {count:>10}")
-            
-            lines.append("")
-            lines.append("Method Details:")
-            lines.append("-" * 70)
-            for method in sorted(method_counter.keys()):
-                lines.append(f"\n{method} ({method_counter[method]} occurrences):")
-                # Show first 5 connections for each method
-                for conn in method_connections[method][:5]:
-                    lines.append(f"  {conn}")
-                if len(method_connections[method]) > 5:
-                    lines.append(f"  ... and {len(method_connections[method]) - 5} more")
-            lines.append("")
+
+            top_methods = sorted_methods[:3]
+            if top_methods:
+                lines.append("")
+                lines.append("Top Method Samples:")
+                lines.append("-" * 70)
+                for method, count in top_methods:
+                    lines.append(f"{method} total={count}")
+                    samples = self.sample_items(method_connections[method], limit=3)
+                    for conn in samples:
+                        lines.append(f"  sample: {conn}")
+                    remaining = len(method_connections[method]) - len(samples)
+                    if remaining > 0:
+                        lines.append(f"  ... {remaining} more")
+                lines.append("")
         
         # SIP Response Codes section
         if response_counter:
             lines.append("SIP Response Codes:")
             lines.append("-" * 70)
-            lines.append(f"{'Status Code':<20} {'Count':>10}")
+            lines.append(f"{'Status Code':<20} {'Count':>10} {'Severity':>10}")
             lines.append("-" * 70)
-            
-            # Sort by status code numerically
+
+            def classify_status(code: str) -> str:
+                if code.startswith('5'):
+                    return "High"
+                if code.startswith('4'):
+                    return "Medium"
+                return "Low"
+
             sorted_codes = sorted(response_counter.keys(), key=lambda x: int(x) if x.isdigit() else 999)
             for code in sorted_codes:
                 count = response_counter[code]
-                lines.append(f"{code:<20} {count:>10}")
-            
-            lines.append("")
-            lines.append("Response Code Details:")
-            lines.append("-" * 70)
-            for code in sorted_codes:
-                lines.append(f"\nStatus {code} ({response_counter[code]} occurrences):")
-                # Show first 5 connections for each response code
-                for conn in response_connections[code][:5]:
-                    lines.append(f"  {conn}")
-                if len(response_connections[code]) > 5:
-                    lines.append(f"  ... and {len(response_connections[code]) - 5} more")
-            lines.append("")
+                severity = classify_status(code)
+                lines.append(f"{code:<20} {count:>10} {severity:>10}")
+
+            highlights = [code for code in sorted_codes if classify_status(code) != "Low"]
+            highlights = highlights[:3]
+            if highlights:
+                lines.append("")
+                lines.append("Highlighted Responses:")
+                lines.append("-" * 70)
+                for code in highlights:
+                    severity = classify_status(code)
+                    total = response_counter[code]
+                    lines.append(f"Status {code} [{severity}] total={total}")
+                    samples = self.sample_items(response_connections[code], limit=3)
+                    for conn in samples:
+                        lines.append(f"  sample: {conn}")
+                    remaining = len(response_connections[code]) - len(samples)
+                    if remaining > 0:
+                        lines.append(f"  ... {remaining} more")
+                lines.append("")
         
         # Summary
         lines.append("=" * 70)
