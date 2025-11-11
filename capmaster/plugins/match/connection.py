@@ -576,3 +576,76 @@ class ConnectionBuilder:
             server_ttl = Counter(server_ttls).most_common(1)[0][0]
 
         return client_ttl, server_ttl
+
+
+class FiveTupleConnectionBuilder(ConnectionBuilder):
+    """
+    Build TcpConnection objects by merging packets with the same 5-tuple.
+
+    This builder groups packets by direction-independent 5-tuple (protocol, IP1, port1, IP2, port2)
+    instead of by stream ID. This allows:
+    1. Merging port-reused connections (same 5-tuple, different stream IDs)
+    2. Determining server from later SYN packets when first connection lacks handshake
+
+    Example:
+        Stream 1: 192.168.1.1:8080 <-> 10.0.0.1:443 (no SYN packet)
+        Stream 2: 192.168.1.1:8080 <-> 10.0.0.1:443 (has SYN packet)
+        → Both streams merged into one connection with server determined from Stream 2's SYN
+    """
+
+    def __init__(self, payload_bytes: int = 100):
+        """
+        Initialize the 5-tuple connection builder.
+
+        Args:
+            payload_bytes: Number of payload bytes to use for hashing
+        """
+        super().__init__(payload_bytes)
+        # Override: group by 5-tuple instead of stream ID
+        self._five_tuples: dict[tuple[int, str, int, str, int], list[TcpPacket]] = defaultdict(list)
+
+    def add_packet(self, packet: TcpPacket) -> None:
+        """
+        Add a packet to the builder, grouped by 5-tuple.
+
+        Args:
+            packet: TCP packet to add
+        """
+        # Create direction-independent 5-tuple key
+        five_tuple = self._get_five_tuple_key(packet)
+        self._five_tuples[five_tuple].append(packet)
+
+    def _get_five_tuple_key(self, packet: TcpPacket) -> tuple[int, str, int, str, int]:
+        """
+        Get direction-independent 5-tuple key for a packet.
+
+        Args:
+            packet: TCP packet
+
+        Returns:
+            Tuple of (protocol, ip1, port1, ip2, port2) where ip1:port1 <= ip2:port2
+        """
+        endpoint1 = (packet.src_ip, packet.src_port)
+        endpoint2 = (packet.dst_ip, packet.dst_port)
+
+        # Sort endpoints to get canonical order
+        if endpoint1 <= endpoint2:
+            return (packet.protocol, packet.src_ip, packet.src_port, packet.dst_ip, packet.dst_port)
+        else:
+            return (packet.protocol, packet.dst_ip, packet.dst_port, packet.src_ip, packet.src_port)
+
+    def build_connections(self) -> Iterator[TcpConnection]:
+        """
+        Build TcpConnection objects from collected packets, grouped by 5-tuple.
+
+        Yields:
+            TcpConnection objects for each unique 5-tuple
+        """
+        for five_tuple, packets in self._five_tuples.items():
+            # Use a synthetic stream ID based on the 5-tuple
+            # This ensures each 5-tuple gets a unique ID
+            stream_id = hash(five_tuple) & 0x7FFFFFFF  # Ensure positive int
+
+            connection = self._build_connection(stream_id, packets)
+            if connection:
+                yield connection

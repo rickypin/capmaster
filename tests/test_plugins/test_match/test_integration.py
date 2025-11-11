@@ -1,5 +1,6 @@
 """Integration tests for Match plugin."""
 
+import json
 import subprocess
 from pathlib import Path
 from typing import List
@@ -404,4 +405,119 @@ class TestMatchIntegration:
             content = f.read()
             # Should contain endpoint statistics (client IP, server IP, server port)
             assert len(content) > 0
+
+    def test_match_with_endpoint_stats_json(self, tc_001_1: Path, tmp_path: Path):
+        """Test match with endpoint statistics JSON output."""
+        if not tc_001_1.exists():
+            pytest.skip(f"Test case directory not found: {tc_001_1}")
+
+        files = self.get_pcap_files(tc_001_1)
+        if len(files) != 2:
+            pytest.skip(f"Expected 2 files, found {len(files)}")
+
+        output_file = tmp_path / "matches.txt"
+        json_file = tmp_path / "endpoint_stats.json"
+
+        # Run with --endpoint-stats and --endpoint-stats-json
+        result = subprocess.run(
+            [
+                "python", "-m", "capmaster",
+                "match",
+                "-i", str(tc_001_1),
+                "-o", str(output_file),
+                "--endpoint-stats",
+                "--endpoint-stats-json", str(json_file),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        assert output_file.exists(), "Output file was not created"
+        assert json_file.exists(), "JSON file was not created"
+
+        # Verify JSON file format
+        with open(json_file, "r") as f:
+            lines = f.readlines()
+            assert len(lines) > 0, "JSON file is empty"
+
+            # Verify each line is valid JSON
+            for i, line in enumerate(lines):
+                try:
+                    record = json.loads(line.strip())
+                    # Verify required fields exist
+                    assert "pcap_id" in record, f"Line {i+1}: missing pcap_id"
+                    assert "group_id" in record, f"Line {i+1}: missing group_id"
+                    assert "type" in record, f"Line {i+1}: missing type"
+                    assert "is_capture" in record, f"Line {i+1}: missing is_capture"
+                    assert "net_area" in record, f"Line {i+1}: missing net_area"
+                    assert "stream_cnt" in record, f"Line {i+1}: missing stream_cnt"
+                    assert "pktlen" in record, f"Line {i+1}: missing pktlen"
+                    assert "display_name" in record, f"Line {i+1}: missing display_name"
+                    assert "metrics" in record, f"Line {i+1}: missing metrics"
+
+                    # Verify data types
+                    assert isinstance(record["pcap_id"], int), f"Line {i+1}: pcap_id should be int"
+                    assert isinstance(record["group_id"], int), f"Line {i+1}: group_id should be int"
+                    assert isinstance(record["type"], int), f"Line {i+1}: type should be int"
+                    assert isinstance(record["is_capture"], bool), f"Line {i+1}: is_capture should be bool"
+                    assert isinstance(record["net_area"], list), f"Line {i+1}: net_area should be list"
+                    assert isinstance(record["stream_cnt"], int), f"Line {i+1}: stream_cnt should be int"
+                    assert isinstance(record["pktlen"], int), f"Line {i+1}: pktlen should be int"
+                    assert isinstance(record["display_name"], str), f"Line {i+1}: display_name should be str"
+                    assert isinstance(record["metrics"], dict), f"Line {i+1}: metrics should be dict"
+
+                    # Verify node types are valid (1=client, 2=server, 1001/1002=network device)
+                    assert record["type"] in [1, 2, 1001, 1002], f"Line {i+1}: invalid type {record['type']}"
+
+                    # Verify type-specific fields
+                    if record["type"] == 1:  # Client node
+                        assert "ip" in record, f"Line {i+1}: client node should have ip"
+                    elif record["type"] == 2:  # Server node
+                        assert "ip" in record, f"Line {i+1}: server node should have ip"
+                        assert "port" in record, f"Line {i+1}: server node should have port"
+                        assert "proto" in record, f"Line {i+1}: server node should have proto"
+
+                except json.JSONDecodeError as e:
+                    pytest.fail(f"Line {i+1} is not valid JSON: {e}\nLine content: {line}")
+
+    def test_match_with_endpoint_stats_json_creates_directory(self, tc_001_1: Path, tmp_path: Path):
+        """Test that JSON output creates parent directories if they don't exist."""
+        if not tc_001_1.exists():
+            pytest.skip(f"Test case directory not found: {tc_001_1}")
+
+        files = self.get_pcap_files(tc_001_1)
+        if len(files) != 2:
+            pytest.skip(f"Expected 2 files, found {len(files)}")
+
+        output_file = tmp_path / "matches.txt"
+        # Use a nested directory path that doesn't exist yet
+        json_file = tmp_path / "nested" / "dir" / "endpoint_stats.json"
+
+        # Verify the directory doesn't exist yet
+        assert not json_file.parent.exists(), "Parent directory should not exist yet"
+
+        # Run with --endpoint-stats and --endpoint-stats-json
+        result = subprocess.run(
+            [
+                "python", "-m", "capmaster",
+                "match",
+                "-i", str(tc_001_1),
+                "-o", str(output_file),
+                "--endpoint-stats",
+                "--endpoint-stats-json", str(json_file),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        assert output_file.exists(), "Output file was not created"
+        assert json_file.exists(), "JSON file was not created"
+        assert json_file.parent.exists(), "Parent directory was not created"
+
+        # Verify JSON file is not empty
+        with open(json_file, "r") as f:
+            lines = f.readlines()
+            assert len(lines) > 0, "JSON file is empty"
 

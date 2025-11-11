@@ -117,6 +117,8 @@ class ConnectionMatcher:
 
         # Match within each bucket
         matches = []
+        # Track matched pairs to avoid duplicates (for PORT bucketing where connections appear in multiple buckets)
+        seen_pairs: set[tuple[int, int]] = set()
 
         for bucket_key in buckets1.keys():
             if bucket_key in buckets2:
@@ -124,7 +126,16 @@ class ConnectionMatcher:
                     buckets1[bucket_key],
                     buckets2[bucket_key],
                 )
-                matches.extend(bucket_matches)
+                # Deduplicate matches by stream_id pair
+                for match in bucket_matches:
+                    pair_key = (match.conn1.stream_id, match.conn2.stream_id)
+                    if pair_key not in seen_pairs:
+                        seen_pairs.add(pair_key)
+                        matches.append(match)
+
+        # Align port directions: ensure same ports are on the same side (client or server)
+        # Prioritize connections with SYN packets (more reliable server detection)
+        matches = self._align_port_directions(matches)
 
         return matches
 
@@ -462,3 +473,133 @@ class ConnectionMatcher:
             )
 
         return stats
+
+    def _align_port_directions(self, matches: list[ConnectionMatch]) -> list[ConnectionMatch]:
+        """
+        Align port directions in matched connections.
+
+        Ensures that the same port appears on the same side (client or server) in both connections.
+        Prioritizes connections with SYN packets for more reliable server detection.
+
+        Args:
+            matches: List of matched connection pairs
+
+        Returns:
+            List of matches with aligned port directions
+
+        Example:
+            Before alignment:
+                conn1: 8.67.2.125:26302 (server) <-> 8.42.96.45:35101 (client)
+                conn2: 8.42.96.45:35101 (server) <-> 8.67.2.125:26302 (client)
+                → Port 26302 is server in conn1 but client in conn2 (contradiction!)
+
+            After alignment (assuming conn1 has SYN packet):
+                conn1: 8.67.2.125:26302 (server) <-> 8.42.96.45:35101 (client)
+                conn2: 8.67.2.125:26302 (server) <-> 8.42.96.45:35101 (client)
+                → Port 26302 is server in both connections ✓
+        """
+        aligned_matches = []
+
+        for match in matches:
+            conn1 = match.conn1
+            conn2 = match.conn2
+
+            # Get port sets for both connections
+            ports1 = {conn1.client_port, conn1.server_port}
+            ports2 = {conn2.client_port, conn2.server_port}
+
+            # Find common ports (should have at least one)
+            common_ports = ports1 & ports2
+
+            if not common_ports:
+                # No common ports - keep original match
+                aligned_matches.append(match)
+                continue
+
+            # Check if port directions are aligned
+            # For each common port, check if it's on the same side (client or server)
+            needs_swap = False
+
+            for port in common_ports:
+                # Check where this port appears in each connection
+                is_server1 = (port == conn1.server_port)
+                is_server2 = (port == conn2.server_port)
+
+                if is_server1 != is_server2:
+                    # Port is on different sides - need to swap one connection
+                    needs_swap = True
+                    break
+
+            if not needs_swap:
+                # Directions already aligned
+                aligned_matches.append(match)
+                continue
+
+            # Need to swap one connection's direction
+            # Prioritize keeping the connection with SYN packet (more reliable server detection)
+            has_syn1 = conn1.syn_timestamp is not None
+            has_syn2 = conn2.syn_timestamp is not None
+
+            if has_syn1 and not has_syn2:
+                # Keep conn1, swap conn2
+                swapped_conn2 = self._swap_connection_direction(conn2)
+                aligned_matches.append(ConnectionMatch(conn1, swapped_conn2, match.score))
+            elif has_syn2 and not has_syn1:
+                # Keep conn2, swap conn1
+                swapped_conn1 = self._swap_connection_direction(conn1)
+                aligned_matches.append(ConnectionMatch(swapped_conn1, conn2, match.score))
+            else:
+                # Both have SYN or both don't have SYN
+                # Default: keep conn1, swap conn2
+                swapped_conn2 = self._swap_connection_direction(conn2)
+                aligned_matches.append(ConnectionMatch(conn1, swapped_conn2, match.score))
+
+        return aligned_matches
+
+    def _swap_connection_direction(self, conn: TcpConnection) -> TcpConnection:
+        """
+        Swap client/server roles in a connection.
+
+        Args:
+            conn: Connection to swap
+
+        Returns:
+            New connection with swapped client/server roles
+        """
+        return TcpConnection(
+            stream_id=conn.stream_id,
+            protocol=conn.protocol,
+            # Swap IPs and ports
+            client_ip=conn.server_ip,
+            client_port=conn.server_port,
+            server_ip=conn.client_ip,
+            server_port=conn.client_port,
+            # Keep timestamps
+            syn_timestamp=conn.syn_timestamp,
+            syn_options=conn.syn_options,
+            # Swap ISNs
+            client_isn=conn.server_isn,
+            server_isn=conn.client_isn,
+            # Keep TCP timestamps
+            tcp_timestamp_tsval=conn.tcp_timestamp_tsval,
+            tcp_timestamp_tsecr=conn.tcp_timestamp_tsecr,
+            # Swap payloads
+            client_payload_md5=conn.server_payload_md5,
+            server_payload_md5=conn.client_payload_md5,
+            # Keep signatures
+            length_signature=conn.length_signature,
+            is_header_only=conn.is_header_only,
+            # Keep global IPID set
+            ipid_set=conn.ipid_set,
+            ipid_first=conn.ipid_first,
+            # Swap direction-specific IPID sets
+            client_ipid_set=conn.server_ipid_set,
+            server_ipid_set=conn.client_ipid_set,
+            # Keep time info
+            first_packet_time=conn.first_packet_time,
+            last_packet_time=conn.last_packet_time,
+            packet_count=conn.packet_count,
+            # Swap TTLs
+            client_ttl=conn.server_ttl,
+            server_ttl=conn.client_ttl,
+        )

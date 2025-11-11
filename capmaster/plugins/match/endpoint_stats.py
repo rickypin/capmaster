@@ -109,14 +109,16 @@ class EndpointStatsCollector:
     paired relationship between files A and B.
     """
 
-    def __init__(self, detector: ServerDetector):
+    def __init__(self, detector: ServerDetector, disable_very_low_dual_output: bool = False):
         """
         Initialize the collector.
 
         Args:
             detector: Server detector for determining server/client roles
+            disable_very_low_dual_output: If True, disable dual output for VERY_LOW confidence pairs
         """
         self.detector = detector
+        self.disable_very_low_dual_output = disable_very_low_dual_output
 
         # Key: (tuple_a, tuple_b), Value: count
         self.pair_stats: dict[tuple[EndpointTuple, EndpointTuple], int] = defaultdict(int)
@@ -173,7 +175,9 @@ class EndpointStatsCollector:
         Args:
             match: Matched connection pair from files A and B
         """
-        # Detect server for both connections
+        # Use the client/server roles from the connections directly
+        # (these may have been aligned by the matcher to ensure port consistency)
+        # But still detect to get confidence levels
         info_a = self.detector.detect(match.conn1)
         info_b = self.detector.detect(match.conn2)
 
@@ -181,17 +185,18 @@ class EndpointStatsCollector:
         protocol_a = match.conn1.protocol
         protocol_b = match.conn2.protocol
 
-        # Create endpoint tuples (client port is excluded)
+        # Create endpoint tuples using the connection's client/server roles
+        # (not the detector's results, which may differ after alignment)
         tuple_a = EndpointTuple(
-            client_ip=info_a.client_ip,
-            server_ip=info_a.server_ip,
-            server_port=info_a.server_port,
+            client_ip=match.conn1.client_ip,
+            server_ip=match.conn1.server_ip,
+            server_port=match.conn1.server_port,
             protocol=protocol_a,
         )
         tuple_b = EndpointTuple(
-            client_ip=info_b.client_ip,
-            server_ip=info_b.server_ip,
-            server_port=info_b.server_port,
+            client_ip=match.conn2.client_ip,
+            server_ip=match.conn2.server_ip,
+            server_port=match.conn2.server_port,
             protocol=protocol_b,
         )
 
@@ -221,7 +226,8 @@ class EndpointStatsCollector:
 
         # For VERY_LOW confidence, also add the reversed interpretation
         # This helps avoid missing connections due to incorrect server detection
-        if confidence == "VERY_LOW":
+        # Can be disabled with disable_very_low_dual_output flag
+        if confidence == "VERY_LOW" and not self.disable_very_low_dual_output:
             # Create reversed tuples (swap server/client roles)
             tuple_a_reversed = EndpointTuple(
                 client_ip=info_a.server_ip,

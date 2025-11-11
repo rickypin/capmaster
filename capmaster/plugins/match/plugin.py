@@ -128,6 +128,26 @@ class MatchPlugin(PluginBase):
             type=int,
             help="Case ID for database table name (e.g., 137 -> kase_137_topological_graph). Required when --db-connection is used.",
         )
+        @click.option(
+            "--endpoint-stats-json",
+            type=click.Path(path_type=Path),
+            help="Output JSON file for endpoint statistics in database format (one JSON object per line)",
+        )
+        @click.option(
+            "--merge-by-5tuple",
+            is_flag=True,
+            default=False,
+            help="Merge TCP connections by direction-independent 5-tuple within each PCAP file. "
+            "This allows port reuse detection and can determine server from later SYN packets "
+            "when the first connection lacks handshake packets.",
+        )
+        @click.option(
+            "--disable-very-low-dual-output",
+            is_flag=True,
+            default=False,
+            help="Disable dual output for VERY_LOW confidence endpoint pairs. "
+            "By default, VERY_LOW confidence pairs output both original and reversed interpretations.",
+        )
         @click.pass_context
         def match_command(
             ctx: click.Context,
@@ -148,6 +168,9 @@ class MatchPlugin(PluginBase):
             sampling_rate: float,
             db_connection: str | None,
             kase_id: int | None,
+            endpoint_stats_json: Path | None,
+            merge_by_5tuple: bool,
+            disable_very_low_dual_output: bool,
         ) -> None:
             """
             Match TCP connections between PCAP files.
@@ -226,6 +249,13 @@ class MatchPlugin(PluginBase):
                 --endpoint-stats \\
                 --db-connection "postgresql://postgres:password@host:port/db" \\
                 --kase-id 137
+
+            \b
+            JSON Output:
+              # Write endpoint statistics to JSON file (one JSON object per line)
+              capmaster match --file1 a.pcap --file1-pcapid 0 --file2 b.pcap --file2-pcapid 1 \\
+                --endpoint-stats \\
+                --endpoint-stats-json endpoint_stats.json
             """
             # Validate input parameters
             validate_dual_file_input(ctx, input_path, file1, file2, file1_pcapid, file2_pcapid)
@@ -253,6 +283,9 @@ class MatchPlugin(PluginBase):
                 sampling_rate=sampling_rate,
                 db_connection=db_connection,
                 kase_id=kase_id,
+                endpoint_stats_json=endpoint_stats_json,
+                merge_by_5tuple=merge_by_5tuple,
+                disable_very_low_dual_output=disable_very_low_dual_output,
             )
             ctx.exit(exit_code)
 
@@ -275,6 +308,9 @@ class MatchPlugin(PluginBase):
         sampling_rate: float = 0.5,
         db_connection: str | None = None,
         kase_id: int | None = None,
+        endpoint_stats_json: Path | None = None,
+        merge_by_5tuple: bool = False,
+        disable_very_low_dual_output: bool = False,
     ) -> int:
         """
         Execute the match plugin.
@@ -295,6 +331,11 @@ class MatchPlugin(PluginBase):
             no_sampling: Disable sampling
             sampling_threshold: Connection count threshold for sampling
             sampling_rate: Fraction of connections to keep when sampling
+            db_connection: Database connection string
+            kase_id: Case ID for database table name
+            endpoint_stats_json: Output JSON file for endpoint statistics
+            merge_by_5tuple: Merge connections by direction-independent 5-tuple
+            disable_very_low_dual_output: Disable dual output for VERY_LOW confidence pairs
 
         Returns:
             Exit code (0 for success, non-zero for failure)
@@ -348,13 +389,17 @@ class MatchPlugin(PluginBase):
                 extract_task = progress.add_task("[cyan]Extracting connections...", total=2)
 
                 progress.update(extract_task, description=f"[cyan]Extracting from {match_file1.name}...")
-                connections1 = self._extract_connections(match_file1)
+                connections1 = self._extract_connections(match_file1, merge_by_5tuple=merge_by_5tuple)
                 logger.info(f"Found {len(connections1)} connections in {match_file1.name}")
+                if merge_by_5tuple:
+                    logger.info("  (merged by direction-independent 5-tuple)")
                 progress.update(extract_task, advance=1)
 
                 progress.update(extract_task, description=f"[cyan]Extracting from {match_file2.name}...")
-                connections2 = self._extract_connections(match_file2)
+                connections2 = self._extract_connections(match_file2, merge_by_5tuple=merge_by_5tuple)
                 logger.info(f"Found {len(connections2)} connections in {match_file2.name}")
+                if merge_by_5tuple:
+                    logger.info("  (merged by direction-independent 5-tuple)")
                 progress.update(extract_task, advance=1)
 
                 # Apply sampling if needed (unless disabled)
@@ -452,6 +497,7 @@ class MatchPlugin(PluginBase):
                         match_file1,
                         match_file2,
                         endpoint_stats_output,
+                        disable_very_low_dual_output=disable_very_low_dual_output,
                     )
                     progress.update(endpoint_task, advance=1)
 
@@ -467,6 +513,18 @@ class MatchPlugin(PluginBase):
                             pcap_id_mapping,
                         )
                         progress.update(db_task, advance=1)
+
+                    # Write to JSON file if requested
+                    if endpoint_stats_json:
+                        json_task = progress.add_task("[green]Writing to JSON file...", total=1)
+                        self._write_to_json(
+                            endpoint_stats_json,
+                            endpoint_stats_list,
+                            match_file1,
+                            match_file2,
+                            pcap_id_mapping,
+                        )
+                        progress.update(json_task, advance=1)
 
             logger.info("Matching complete")
             return 0
@@ -494,17 +552,18 @@ class MatchPlugin(PluginBase):
             # Unexpected errors - show traceback in debug mode
             return handle_error(e, show_traceback=logger.level <= logging.DEBUG)
 
-    def _extract_connections(self, pcap_file: Path) -> list:
+    def _extract_connections(self, pcap_file: Path, merge_by_5tuple: bool = False) -> list:
         """
         Extract TCP connections from a PCAP file.
 
         Args:
             pcap_file: Path to PCAP file
+            merge_by_5tuple: If True, merge connections by direction-independent 5-tuple
 
         Returns:
             List of TcpConnection objects
         """
-        return extract_connections_from_pcap(pcap_file)
+        return extract_connections_from_pcap(pcap_file, merge_by_5tuple=merge_by_5tuple)
 
     def _output_results(
         self, matches: list, stats: dict, output_file: Path | None
@@ -571,6 +630,7 @@ class MatchPlugin(PluginBase):
         file1: Path,
         file2: Path,
         output_file: Path | None,
+        disable_very_low_dual_output: bool = False,
     ) -> list:
         """
         Output endpoint statistics for matched connections.
@@ -580,13 +640,16 @@ class MatchPlugin(PluginBase):
             file1: Path to first PCAP file
             file2: Path to second PCAP file
             output_file: Output file for statistics (None for stdout)
+            disable_very_low_dual_output: Disable dual output for VERY_LOW confidence pairs
 
         Returns:
             List of EndpointPairStats objects
         """
         # Create detector and collector
         detector = ServerDetector()
-        collector = EndpointStatsCollector(detector)
+        collector = EndpointStatsCollector(
+            detector, disable_very_low_dual_output=disable_very_low_dual_output
+        )
 
         # Collect statistics from matches
         for match in matches:
@@ -741,4 +804,42 @@ class MatchPlugin(PluginBase):
             logger.error("Install psycopg2-binary to enable database output: pip install psycopg2-binary")
         except Exception as e:
             logger.error(f"Failed to write to database: {e}")
+            raise
+
+    def _write_to_json(
+        self,
+        output_file: Path,
+        endpoint_stats: list,
+        file1: Path,
+        file2: Path,
+        pcap_id_mapping: dict[str, int] | None = None,
+    ) -> None:
+        """
+        Write endpoint statistics to JSON file.
+
+        Args:
+            output_file: Path to output JSON file
+            endpoint_stats: List of EndpointPairStats objects
+            file1: Path to first PCAP file
+            file2: Path to second PCAP file
+            pcap_id_mapping: Mapping from file path to pcap_id (optional)
+        """
+        from capmaster.plugins.match.db_writer import MatchDatabaseWriter
+
+        logger.info(f"Writing endpoint statistics to JSON file: {output_file}")
+
+        try:
+            # Write endpoint statistics to JSON
+            records_written = MatchDatabaseWriter.write_endpoint_stats_to_json(
+                endpoint_stats=endpoint_stats,
+                pcap_id_mapping=pcap_id_mapping or {},
+                file1_path=str(file1),
+                file2_path=str(file2),
+                output_file=output_file,
+            )
+
+            logger.info(f"Successfully wrote {records_written} records to {output_file}")
+
+        except Exception as e:
+            logger.error(f"Failed to write to JSON file: {e}")
             raise
