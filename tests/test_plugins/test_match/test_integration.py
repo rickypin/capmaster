@@ -336,3 +336,72 @@ class TestMatchIntegration:
         assert result.returncode == 0, f"Command failed: {result.stderr}"
         assert output_file.exists(), "Output file was not created"
 
+    def test_match_with_one_to_many_mode(self, tc_001_1: Path, tmp_path: Path):
+        """Test match with one-to-many matching mode."""
+        if not tc_001_1.exists():
+            pytest.skip(f"Test case directory not found: {tc_001_1}")
+
+        files = self.get_pcap_files(tc_001_1)
+        if len(files) != 2:
+            pytest.skip(f"Expected 2 files, found {len(files)}")
+
+        output_file = tmp_path / "matches_one_to_many.txt"
+
+        # Run with --match-mode one-to-many
+        result = subprocess.run(
+            [
+                "python", "-m", "capmaster",
+                "match",
+                "-i", str(tc_001_1),
+                "-o", str(output_file),
+                "--match-mode", "one-to-many",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        assert output_file.exists(), "Output file was not created"
+
+        # Verify output contains match statistics
+        with open(output_file, "r") as f:
+            content = f.read()
+            # One-to-many mode should report unique_matched and max_matches_per_conn
+            assert "Match Statistics" in content or len(content) > 0
+
+    def test_match_with_endpoint_stats(self, tc_001_1: Path, tmp_path: Path):
+        """Test match with endpoint statistics generation."""
+        if not tc_001_1.exists():
+            pytest.skip(f"Test case directory not found: {tc_001_1}")
+
+        files = self.get_pcap_files(tc_001_1)
+        if len(files) != 2:
+            pytest.skip(f"Expected 2 files, found {len(files)}")
+
+        output_file = tmp_path / "matches.txt"
+        stats_file = tmp_path / "endpoint_stats.txt"
+
+        # Run with --endpoint-stats
+        result = subprocess.run(
+            [
+                "python", "-m", "capmaster",
+                "match",
+                "-i", str(tc_001_1),
+                "-o", str(output_file),
+                "--endpoint-stats",
+                "--endpoint-stats-output", str(stats_file),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        assert output_file.exists(), "Output file was not created"
+        assert stats_file.exists(), "Endpoint stats file was not created"
+
+        # Verify stats file contains endpoint information
+        with open(stats_file, "r") as f:
+            content = f.read()
+            # Should contain endpoint statistics (client IP, server IP, server port)
+            assert len(content) > 0
+

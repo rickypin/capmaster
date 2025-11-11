@@ -443,3 +443,43 @@ class TestPacketExtractor:
         assert len(result[0]) == 1
         assert len(result[1]) == 1
 
+    def test_extract_multiple_streams_performance_optimization(
+        self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
+    ):
+        """Test that extract_multiple_streams uses single tshark call for multiple streams."""
+        extractor.tshark = mock_tshark
+
+        # Mock output for 3 streams
+        mock_output = (
+            "0\t1\t0x0001\t0x002\t1000000\t0\t1234567890.123456\n"
+            "1\t2\t0x0002\t0x012\t2000000\t1000001\t1234567890.234567\n"
+            "2\t3\t0x0003\t0x010\t1000001\t2000001\t1234567890.345678\n"
+        )
+
+        mock_tshark.execute.return_value = TsharkResult(
+            returncode=0,
+            stdout=mock_output,
+            stderr=""
+        )
+
+        # Extract 3 streams
+        result = extractor.extract_multiple_streams(sample_pcap, [0, 1, 2])
+
+        # Should call tshark only ONCE (not 3 times)
+        assert mock_tshark.execute.call_count == 1
+
+        # Verify the filter includes all 3 streams
+        call_args = mock_tshark.execute.call_args[0][0]
+        filter_arg_index = call_args.index("-Y") + 1
+        filter_expr = call_args[filter_arg_index]
+        assert "tcp.stream==0" in filter_expr
+        assert "tcp.stream==1" in filter_expr
+        assert "tcp.stream==2" in filter_expr
+        assert " or " in filter_expr  # Should use OR to combine filters
+
+        # Verify results
+        assert len(result) == 3
+        assert 0 in result
+        assert 1 in result
+        assert 2 in result
+

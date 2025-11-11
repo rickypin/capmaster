@@ -225,6 +225,8 @@ class TestComparePlugin:
                 is_header_only=True,
                 ipid_first=100,
                 ipid_set={100, 101},
+                client_ipid_set={100},
+                server_ipid_set={101},
                 first_packet_time=1000.0,
                 last_packet_time=1001.0,
                 packet_count=2,
@@ -313,4 +315,83 @@ class TestComparePlugin:
             # First call should be for a_file.pcap (alphabetically first)
             first_call_file = mock_extract.call_args_list[0][0][0]
             assert first_call_file.name == "a_file.pcap"
+
+    def test_execute_with_match_mode_one_to_many(
+        self, plugin: ComparePlugin, two_pcap_dir: Path
+    ):
+        """Test execute with match_mode=one-to-many parameter."""
+        with patch("capmaster.plugins.compare.plugin.extract_connections_from_pcap") as mock_extract, \
+             patch("capmaster.plugins.compare.plugin.ConnectionMatcher") as mock_matcher:
+
+            mock_extract.return_value = []
+            mock_matcher_instance = MagicMock()
+            mock_matcher_instance.match.return_value = []
+            mock_matcher.return_value = mock_matcher_instance
+
+            exit_code = plugin.execute(
+                input_path=two_pcap_dir,
+                match_mode="one-to-many",
+                silent=True
+            )
+
+            # Should succeed
+            assert exit_code == 0
+
+            # Verify ConnectionMatcher was called with correct match_mode
+            from capmaster.plugins.match.matcher import MatchMode
+            mock_matcher.assert_called_once()
+            call_kwargs = mock_matcher.call_args[1]
+            assert call_kwargs["match_mode"] == MatchMode.ONE_TO_MANY
+
+    def test_execute_with_invalid_match_mode(
+        self, plugin: ComparePlugin, two_pcap_dir: Path
+    ):
+        """Test execute with invalid match_mode parameter."""
+        # Invalid match_mode should be caught and return non-zero exit code
+        exit_code = plugin.execute(
+            input_path=two_pcap_dir,
+            match_mode="invalid-mode",
+            silent=True
+        )
+
+        # Should fail with non-zero exit code
+        assert exit_code != 0
+
+    def test_execute_with_batch_packet_extraction(
+        self, plugin: ComparePlugin, two_pcap_dir: Path
+    ):
+        """Test that batch packet extraction is used for performance optimization."""
+        with patch("capmaster.plugins.compare.plugin.extract_connections_from_pcap") as mock_extract, \
+             patch("capmaster.plugins.compare.plugin.ConnectionMatcher") as mock_matcher, \
+             patch("capmaster.plugins.compare.plugin.PacketExtractor") as mock_extractor_class:
+
+            # Create mock connections
+            from capmaster.plugins.match.connection import TcpConnection
+            mock_conn1 = MagicMock(spec=TcpConnection)
+            mock_conn1.stream_id = 1
+            mock_conn2 = MagicMock(spec=TcpConnection)
+            mock_conn2.stream_id = 2
+            mock_extract.return_value = [mock_conn1, mock_conn2]
+
+            # Create mock matches
+            from capmaster.plugins.match.matcher import ConnectionMatch, MatchScore
+            mock_score = MagicMock(spec=MatchScore)
+            mock_score.normalized_score = 0.95
+            mock_match = ConnectionMatch(conn1=mock_conn1, conn2=mock_conn2, score=mock_score)
+            mock_matcher.return_value.match.return_value = [mock_match]
+
+            # Mock packet extractor
+            mock_extractor = MagicMock()
+            mock_extractor.extract_multiple_streams.return_value = {1: [], 2: []}
+            mock_extractor_class.return_value = mock_extractor
+
+            exit_code = plugin.execute(
+                input_path=two_pcap_dir,
+                silent=True
+            )
+
+            assert exit_code == 0
+
+            # Verify extract_multiple_streams was called (batch extraction)
+            assert mock_extractor.extract_multiple_streams.called
 

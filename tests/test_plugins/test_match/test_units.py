@@ -39,6 +39,8 @@ def create_test_connection(**kwargs) -> TcpConnection:
         "is_header_only": False,
         "ipid_first": 0,
         "ipid_set": set(),
+        "client_ipid_set": set(),
+        "server_ipid_set": set(),
         "first_packet_time": 1234567890.0,
         "last_packet_time": 1234567890.0,
         "packet_count": 1,
@@ -72,6 +74,8 @@ class TestTcpConnection:
             is_header_only=False,
             ipid_first=54321,
             ipid_set={54321, 54322, 54323},
+            client_ipid_set={54321, 54322},
+            server_ipid_set={54323},
             first_packet_time=1234567890.0,
             last_packet_time=1234567900.0,
             packet_count=10,
@@ -239,7 +243,9 @@ class TestConnectionScorer:
             server_payload_md5="def456",
             length_signature="C:100 S:200 C:50",
             ipid_first=54321,
-            ipid_set={54321},
+            ipid_set={54321, 54322, 54323},  # Need at least 2 IPIDs for matching
+            client_ipid_set={54321, 54322},
+            server_ipid_set={54323},
         )
 
     @pytest.fixture
@@ -262,6 +268,8 @@ class TestConnectionScorer:
             length_signature=conn1.length_signature,
             ipid_first=conn1.ipid_first,
             ipid_set=conn1.ipid_set,
+            client_ipid_set=conn1.client_ipid_set,
+            server_ipid_set=conn1.server_ipid_set,
         )
 
     def test_score_identical_connections(self, scorer: ConnectionScorer, conn1: TcpConnection, conn2_identical: TcpConnection):
@@ -504,4 +512,226 @@ class TestConnectionMatcher:
         assert match.conn1 == connections_a[0]
         assert match.conn2 == connections_b[0]
         assert match.score.normalized_score >= 0.5
+
+
+@pytest.mark.unit
+class TestMicroflowScoring:
+    """Test microflow auto-accept functionality."""
+
+    def test_microflow_auto_accept_with_strong_handshake(self):
+        """Test microflow auto-accept for short flows with strong handshake evidence."""
+        # Create two microflows (3 packets each) with strong handshake evidence
+        conn1 = create_test_connection(
+            syn_options="mss=1460;ws=7;sack=1;ts=1",
+            client_isn=1000000,
+            server_isn=2000000,
+            tcp_timestamp_tsval="12345",
+            tcp_timestamp_tsecr="67890",
+            length_signature="C:100 S:200",
+            ipid_set={54321},  # Only 1 common IPID (relaxed requirement)
+            packet_count=3,
+            first_packet_time=1234567890.0,
+            last_packet_time=1234567890.5,
+            client_ttl=64,
+            server_ttl=128,
+        )
+
+        conn2 = create_test_connection(
+            syn_options="mss=1460;ws=7;sack=1;ts=1",
+            client_isn=1000000,
+            server_isn=2000000,
+            tcp_timestamp_tsval="12345",
+            tcp_timestamp_tsecr="67890",
+            length_signature="C:100 S:200",
+            ipid_set={54321},  # Same IPID
+            packet_count=3,
+            first_packet_time=1234567890.0,
+            last_packet_time=1234567890.5,
+            client_ttl=64,
+            server_ttl=128,
+        )
+
+        scorer = ConnectionScorer()
+        micro_score = scorer.score_microflow(conn1, conn2)
+
+        # Should be accepted by microflow rule
+        assert micro_score is not None
+        assert micro_score.microflow_accept is True
+        assert micro_score.is_valid_match(0.60)
+        assert "micro" in micro_score.evidence
+        assert "synopt" in micro_score.evidence
+        assert "isnC" in micro_score.evidence
+
+    def test_microflow_reject_insufficient_evidence(self):
+        """Test microflow rejection when handshake evidence is insufficient."""
+        # Create two microflows with weak handshake evidence
+        conn1 = create_test_connection(
+            syn_options="",  # No SYN options
+            client_isn=0,
+            server_isn=0,
+            tcp_timestamp_tsval="",
+            tcp_timestamp_tsecr="",
+            length_signature="",
+            ipid_set={54321},
+            packet_count=2,
+            first_packet_time=1234567890.0,
+            last_packet_time=1234567890.5,
+        )
+
+        conn2 = create_test_connection(
+            syn_options="",
+            client_isn=0,
+            server_isn=0,
+            tcp_timestamp_tsval="",
+            tcp_timestamp_tsecr="",
+            length_signature="",
+            ipid_set={54321},
+            packet_count=2,
+            first_packet_time=1234567890.0,
+            last_packet_time=1234567890.5,
+        )
+
+        scorer = ConnectionScorer()
+        micro_score = scorer.score_microflow(conn1, conn2)
+
+        # Should be rejected due to insufficient evidence
+        assert micro_score is None
+
+    def test_microflow_reject_no_ipid_overlap(self):
+        """Test microflow rejection when no IPID overlap."""
+        conn1 = create_test_connection(
+            syn_options="mss=1460;ws=7;sack=1;ts=1",
+            client_isn=1000000,
+            ipid_set={54321},
+            packet_count=2,
+        )
+
+        conn2 = create_test_connection(
+            syn_options="mss=1460;ws=7;sack=1;ts=1",
+            client_isn=1000000,
+            ipid_set={99999},  # Different IPID
+            packet_count=2,
+        )
+
+        scorer = ConnectionScorer()
+        micro_score = scorer.score_microflow(conn1, conn2)
+
+        # Should be rejected due to no IPID overlap
+        assert micro_score is None
+
+    def test_microflow_trigger_by_packet_count(self):
+        """Test microflow trigger by packet count (<=3 packets)."""
+        conn1 = create_test_connection(
+            syn_options="mss=1460",
+            client_isn=1000000,
+            ipid_set={54321},
+            packet_count=3,  # Exactly 3 packets
+            first_packet_time=1234567890.0,
+            last_packet_time=1234567900.0,  # Long duration, but packet count triggers
+        )
+
+        conn2 = create_test_connection(
+            syn_options="mss=1460",
+            client_isn=1000000,
+            ipid_set={54321},
+            packet_count=3,
+            first_packet_time=1234567890.0,
+            last_packet_time=1234567900.0,
+        )
+
+        scorer = ConnectionScorer()
+        micro_score = scorer.score_microflow(conn1, conn2)
+
+        # Should be accepted (packet count triggers microflow)
+        assert micro_score is not None
+        assert micro_score.microflow_accept is True
+
+
+@pytest.mark.unit
+class TestStrongIPIDAcceptance:
+    """Test strong IPID acceptance (force_accept flag)."""
+
+    def test_strong_ipid_force_accept(self):
+        """Test strong IPID acceptance with 10+ overlapping IPIDs and 80%+ ratio."""
+        # Create connections with strong IPID overlap (12 overlapping out of 15 total)
+        ipid_set_large = set(range(54321, 54321 + 15))  # 15 IPIDs
+        ipid_set_overlap = set(range(54321, 54321 + 12))  # 12 overlapping IPIDs (80%)
+
+        conn1 = create_test_connection(
+            syn_options="mss=1460",
+            client_isn=1000000,
+            ipid_set=ipid_set_large,
+        )
+
+        conn2 = create_test_connection(
+            syn_options="mss=1460",
+            client_isn=1000000,
+            ipid_set=ipid_set_overlap,
+        )
+
+        scorer = ConnectionScorer()
+        score = scorer.score(conn1, conn2)
+
+        # Should have force_accept=True due to strong IPID overlap
+        assert score.force_accept is True
+        assert score.ipid_match is True
+        assert "ipid*" in score.evidence  # * indicates strong IPID
+        assert score.is_valid_match(0.60)
+
+    def test_weak_ipid_no_force_accept(self):
+        """Test that weak IPID overlap does not trigger force_accept."""
+        # Create connections with weak IPID overlap (only 2 IPIDs)
+        conn1 = create_test_connection(
+            syn_options="mss=1460",
+            client_isn=1000000,
+            ipid_set={54321, 54322},
+        )
+
+        conn2 = create_test_connection(
+            syn_options="mss=1460",
+            client_isn=1000000,
+            ipid_set={54321, 54322},
+        )
+
+        scorer = ConnectionScorer()
+        score = scorer.score(conn1, conn2)
+
+        # Should NOT have force_accept=True
+        assert score.force_accept is False
+        assert score.ipid_match is True
+        assert "ipid*" not in score.evidence
+
+    def test_strong_ipid_bypasses_threshold(self):
+        """Test that strong IPID can bypass normalized score threshold."""
+        # Create connections with strong IPID but weak other features
+        ipid_set_large = set(range(54321, 54321 + 15))
+        ipid_set_overlap = set(range(54321, 54321 + 12))
+
+        conn1 = create_test_connection(
+            syn_options="mss=1460",
+            client_isn=1000000,
+            ipid_set=ipid_set_large,
+            # Weak other features
+            tcp_timestamp_tsval="",
+            client_payload_md5="",
+            server_payload_md5="",
+            length_signature="",
+        )
+
+        conn2 = create_test_connection(
+            syn_options="mss=9999",  # Different SYN options
+            client_isn=9999999,  # Different ISN
+            ipid_set=ipid_set_overlap,
+            tcp_timestamp_tsval="",
+            client_payload_md5="",
+            server_payload_md5="",
+            length_signature="",
+        )
+
+        scorer = ConnectionScorer()
+        score = scorer.score(conn1, conn2)
+
+        # Should be accepted despite low normalized score
+        assert score.force_accept is True
+        assert score.is_valid_match(0.60)  # Accepted even if normalized_score < 0.60
 
