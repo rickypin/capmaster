@@ -1,8 +1,8 @@
 """Database writer for match plugin results."""
 
 from __future__ import annotations
+
 import logging
-from typing import Any
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -11,13 +11,14 @@ logger = logging.getLogger(__name__)
 class MatchDatabaseWriter:
     """
     Write match plugin results to PostgreSQL database.
-    
+
     This class handles:
     - Database connection management
     - Table creation/validation for topological_graph table
+    - Clearing existing data before writing new data
     - Data insertion for matched connection results
     """
-    
+
     def __init__(self, connection_string: str, kase_id: int):
         """
         Initialize database writer.
@@ -32,16 +33,16 @@ class MatchDatabaseWriter:
         self.full_table_name = f"public.{self.table_name}"
         self._conn = None
         self._cursor = None
-        
+
     def __enter__(self):
         """Context manager entry."""
         self.connect()
         return self
-        
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit."""
         self.close()
-        
+
     def connect(self) -> None:
         """
         Establish database connection.
@@ -60,10 +61,10 @@ class MatchDatabaseWriter:
                 "  2. pip install -r requirements-database.txt\n"
                 "  3. pip install psycopg2-binary"
             )
-        
+
         # Parse connection string
         parsed = urlparse(self.connection_string)
-        
+
         try:
             self._conn = psycopg2.connect(
                 host=parsed.hostname,
@@ -79,7 +80,7 @@ class MatchDatabaseWriter:
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")
             raise
-            
+
     def close(self) -> None:
         """Close database connection."""
         if self._cursor:
@@ -87,7 +88,7 @@ class MatchDatabaseWriter:
         if self._conn:
             self._conn.close()
         logger.info("Database connection closed")
-        
+
     def ensure_table_exists(self) -> None:
         """
         Ensure the target table exists, create it if not.
@@ -145,7 +146,7 @@ class MatchDatabaseWriter:
         """
 
         self._cursor.execute(create_table_sql)
-        
+
         # Create sequence for id column
         sequence_name = f"{self.table_name}_id_seq"
         create_sequence_sql = f"""
@@ -156,20 +157,20 @@ class MatchDatabaseWriter:
                 NO MAXVALUE
                 CACHE 1;
         """
-        
+
         self._cursor.execute(create_sequence_sql)
-        
+
         # Set sequence ownership
         self._cursor.execute(f"""
             ALTER SEQUENCE public.{sequence_name} OWNED BY {self.full_table_name}.id;
         """)
-        
+
         # Set default value for id column
         self._cursor.execute(f"""
-            ALTER TABLE ONLY {self.full_table_name} 
+            ALTER TABLE ONLY {self.full_table_name}
             ALTER COLUMN id SET DEFAULT nextval('public.{sequence_name}'::regclass);
         """)
-        
+
         # Add primary key constraint
         self._cursor.execute(f"""
             ALTER TABLE ONLY {self.full_table_name}
@@ -178,6 +179,40 @@ class MatchDatabaseWriter:
 
         self._conn.commit()
         logger.info(f"Table {self.full_table_name} created successfully")
+
+    def clear_table_data(self) -> None:
+        """
+        Clear all data from the target table.
+
+        This method truncates the table and resets the auto-increment sequence.
+        If the table doesn't exist, this method does nothing.
+        """
+        if not self._cursor or not self._conn:
+            raise RuntimeError("Database not connected")
+
+        # Check if table exists
+        self._cursor.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_schema = 'public'
+                AND table_name = %s
+            );
+        """, (self.table_name,))
+
+        exists = self._cursor.fetchone()[0]
+
+        if not exists:
+            logger.info(f"Table {self.full_table_name} does not exist, skipping clear operation")
+            return
+
+        logger.info(f"Clearing all data from table {self.full_table_name}...")
+
+        # Truncate table and restart identity (reset auto-increment sequence)
+        truncate_sql = f"TRUNCATE TABLE {self.full_table_name} RESTART IDENTITY;"
+        self._cursor.execute(truncate_sql)
+
+        self._conn.commit()
+        logger.info(f"Table {self.full_table_name} cleared successfully")
 
     def insert_node(
         self,
@@ -252,13 +287,13 @@ class MatchDatabaseWriter:
                 display_name,
             )
         )
-        
+
     def commit(self) -> None:
         """Commit current transaction."""
         if self._conn:
             self._conn.commit()
             logger.info("Transaction committed")
-            
+
     def rollback(self) -> None:
         """Rollback current transaction."""
         if self._conn:
@@ -369,7 +404,7 @@ class MatchDatabaseWriter:
         pcap_id_a = pcap_id_mapping.get(file1_path, 0)
         pcap_id_b = pcap_id_mapping.get(file2_path, 1)
 
-        logger.info(f"Writing endpoint statistics to database...")
+        logger.info("Writing endpoint statistics to database...")
         logger.info(f"  File A pcap_id: {pcap_id_a}")
         logger.info(f"  File B pcap_id: {pcap_id_b}")
 
