@@ -776,6 +776,14 @@ class MatchPlugin(PluginBase):
         """
         from capmaster.plugins.match.db_writer import MatchDatabaseWriter
 
+        # Skip database operations if no endpoint pairs were matched
+        if not endpoint_stats:
+            logger.warning(
+                "No endpoint pairs found in match results. "
+                "Skipping database write operation to preserve existing data."
+            )
+            return
+
         logger.info(f"Writing endpoint statistics to database (kase_id={kase_id})...")
 
         try:
@@ -825,6 +833,14 @@ class MatchPlugin(PluginBase):
             pcap_id_mapping: Mapping from file path to pcap_id (optional)
         """
         from capmaster.plugins.match.db_writer import MatchDatabaseWriter
+
+        # Skip JSON write if no endpoint pairs were matched
+        if not endpoint_stats:
+            logger.warning(
+                "No endpoint pairs found in match results. "
+                "Skipping JSON file write operation."
+            )
+            return
 
         logger.info(f"Writing endpoint statistics to JSON file: {output_file}")
 
