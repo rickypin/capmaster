@@ -41,7 +41,15 @@ class ConnectionSampler:
         Args:
             threshold: Number of connections above which sampling is triggered
             sample_rate: Fraction of connections to keep (0.0 to 1.0)
+
+        Raises:
+            ValueError: If threshold <= 0 or sample_rate not in (0.0, 1.0]
         """
+        if threshold <= 0:
+            raise ValueError(f"Threshold must be positive, got {threshold}")
+        if not 0.0 < sample_rate <= 1.0:
+            raise ValueError(f"Sample rate must be in (0.0, 1.0], got {sample_rate}")
+
         self.threshold = threshold
         self.sample_rate = sample_rate
 

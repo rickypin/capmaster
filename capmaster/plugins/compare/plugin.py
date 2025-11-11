@@ -14,6 +14,7 @@ from capmaster.plugins.compare.packet_comparator import PacketComparator
 from capmaster.plugins.compare.packet_extractor import PacketExtractor
 from capmaster.plugins.match.connection_extractor import extract_connections_from_pcap
 from capmaster.plugins.match.matcher import BucketStrategy, ConnectionMatcher, MatchMode
+from capmaster.utils.cli_options import validate_database_params, validate_dual_file_input
 from capmaster.utils.errors import (
     InsufficientFilesError,
     handle_error,
@@ -348,31 +349,13 @@ class ComparePlugin(PluginBase):
               When --db-connection and --kase-id are provided, flow hash results will
               also be written to the database table public.kase_{kase_id}_tcp_stream_extra.
             """
-            # Validate input parameters - must use either -i or (--file1 and --file2)
-            if input_path and (file1 or file2):
-                ctx.fail("Cannot use both -i/--input and --file1/--file2 at the same time")
-
-            if not input_path and not (file1 and file2):
-                ctx.fail("Must provide either -i/--input or both --file1 and --file2")
-
-            # Validate file1/file2 parameters
-            if file1 or file2 or file1_pcapid is not None or file2_pcapid is not None:
-                if not (file1 and file2):
-                    ctx.fail("Both --file1 and --file2 must be provided together")
-                if file1_pcapid is None or file2_pcapid is None:
-                    ctx.fail("Both --file1-pcapid and --file2-pcapid must be provided when using --file1/--file2")
-                if file1_pcapid not in (0, 1):
-                    ctx.fail("--file1-pcapid must be 0 or 1")
-                if file2_pcapid not in (0, 1):
-                    ctx.fail("--file2-pcapid must be 0 or 1")
+            # Validate input parameters
+            validate_dual_file_input(ctx, input_path, file1, file2, file1_pcapid, file2_pcapid)
 
             # Validate database parameters
-            if db_connection and not kase_id:
-                ctx.fail("--kase-id is required when --db-connection is provided")
-            if kase_id and not db_connection:
-                ctx.fail("--db-connection is required when --kase-id is provided")
-            if db_connection and not show_flow_hash:
-                ctx.fail("--show-flow-hash is required when using database output")
+            validate_database_params(
+                ctx, db_connection, kase_id, "show-flow-hash", show_flow_hash
+            )
 
             exit_code = self.execute(
                 input_path=input_path,
@@ -528,17 +511,27 @@ class ComparePlugin(PluginBase):
                 comparator = PacketComparator()
                 results = []
 
+                # OPTIMIZATION: Batch extract packets for all matched connections
+                # This reduces tshark invocations from 2N to 2 (one per file)
+                # Collect all stream IDs from matches
+                baseline_stream_ids = [match.conn1.stream_id for match in matches]
+                compare_stream_ids = [match.conn2.stream_id for match in matches]
+
+                # Extract packets for all streams in batch
+                baseline_packets_by_stream = extractor.extract_multiple_streams(
+                    baseline_file,
+                    baseline_stream_ids,
+                )
+                compare_packets_by_stream = extractor.extract_multiple_streams(
+                    compare_file,
+                    compare_stream_ids,
+                )
+
+                # Compare packets for each matched connection
                 for match in matches:
-                    # Extract packets for this connection from both files
-                    # Use stream_id to distinguish between multiple streams with same 5-tuple
-                    baseline_packets = extractor.extract_by_stream_id(
-                        baseline_file,
-                        match.conn1.stream_id,
-                    )
-                    compare_packets = extractor.extract_by_stream_id(
-                        compare_file,
-                        match.conn2.stream_id,
-                    )
+                    # Get packets for this connection from batch results
+                    baseline_packets = baseline_packets_by_stream.get(match.conn1.stream_id, [])
+                    compare_packets = compare_packets_by_stream.get(match.conn2.stream_id, [])
 
                     # Create connection identifier
                     conn_id = (
@@ -644,6 +637,23 @@ class ComparePlugin(PluginBase):
         from capmaster.plugins.compare.flow_hash import calculate_connection_flow_hash, format_flow_hash
         from capmaster.plugins.compare.db_writer import DatabaseWriter
 
+        # OPTIMIZATION: Cache flow hash calculations to avoid redundant computation
+        # Flow hash is calculated for the same connection multiple times:
+        # - Once for baseline connection display
+        # - Once for compare connection display
+        # - Once for database write
+        # Cache key: (client_ip, server_ip, client_port, server_port)
+        flow_hash_cache: dict[tuple[str, str, int, int], tuple[int, Any]] = {}
+
+        def get_cached_flow_hash(client_ip: str, server_ip: str, client_port: int, server_port: int) -> tuple[int, Any]:
+            """Get flow hash from cache or calculate and cache it."""
+            cache_key = (client_ip, server_ip, client_port, server_port)
+            if cache_key not in flow_hash_cache:
+                flow_hash_cache[cache_key] = calculate_connection_flow_hash(
+                    client_ip, server_ip, client_port, server_port
+                )
+            return flow_hash_cache[cache_key]
+
         lines = []
         lines.append("=" * 100)
         lines.append("TCP Connection Packet-Level Comparison Report")
@@ -694,8 +704,8 @@ class ComparePlugin(PluginBase):
                 last_time_str = str(last_time_ns)
 
             if show_flow_hash:
-                # Calculate flow hash for baseline connection
-                hash_hex, flow_side = calculate_connection_flow_hash(
+                # Get flow hash from cache (OPTIMIZATION: avoid redundant calculation)
+                hash_hex, flow_side = get_cached_flow_hash(
                     conn.client_ip,
                     conn.server_ip,
                     conn.client_port,
@@ -751,8 +761,8 @@ class ComparePlugin(PluginBase):
                 last_time_str = str(last_time_ns)
 
             if show_flow_hash:
-                # Calculate flow hash for compare connection
-                hash_hex, flow_side = calculate_connection_flow_hash(
+                # Get flow hash from cache (OPTIMIZATION: avoid redundant calculation)
+                hash_hex, flow_side = get_cached_flow_hash(
                     conn.client_ip,
                     conn.server_ip,
                     conn.client_port,
@@ -907,6 +917,7 @@ class ComparePlugin(PluginBase):
                 baseline_file,
                 compare_file,
                 pcap_id_mapping,
+                flow_hash_cache,
             )
 
 
@@ -918,6 +929,7 @@ class ComparePlugin(PluginBase):
         baseline_file: Path,
         compare_file: Path,
         pcap_id_mapping: dict[str, int] | None = None,
+        flow_hash_cache: dict[tuple[str, str, int, int], tuple[int, Any]] | None = None,
     ) -> None:
         """
         Write comparison results to database.
@@ -929,12 +941,17 @@ class ComparePlugin(PluginBase):
             baseline_file: Baseline PCAP file (file1)
             compare_file: Compare PCAP file (file2)
             pcap_id_mapping: Mapping from file path to pcap_id (optional)
+            flow_hash_cache: Cache of flow hash calculations (optional, for optimization)
         """
         from capmaster.plugins.compare.flow_hash import calculate_connection_flow_hash
         from capmaster.plugins.compare.packet_comparator import DiffType
         from capmaster.plugins.compare.db_writer import DatabaseWriter
 
         logger.info(f"Writing results to database (kase_id={kase_id})...")
+
+        # Initialize flow_hash_cache if not provided
+        if flow_hash_cache is None:
+            flow_hash_cache = {}
 
         try:
             with DatabaseWriter(db_connection, kase_id) as db:
@@ -959,13 +976,16 @@ class ComparePlugin(PluginBase):
                 for match, packets_a, packets_b, result in results:
                     conn = match.conn1  # Use baseline connection
 
-                    # Calculate flow hash
-                    flow_hash, _ = calculate_connection_flow_hash(
-                        conn.client_ip,
-                        conn.server_ip,
-                        conn.client_port,
-                        conn.server_port,
-                    )
+                    # Get flow hash from cache (OPTIMIZATION: avoid redundant calculation)
+                    cache_key = (conn.client_ip, conn.server_ip, conn.client_port, conn.server_port)
+                    if cache_key not in flow_hash_cache:
+                        flow_hash_cache[cache_key] = calculate_connection_flow_hash(
+                            conn.client_ip,
+                            conn.server_ip,
+                            conn.client_port,
+                            conn.server_port,
+                        )
+                    flow_hash, _ = flow_hash_cache[cache_key]
 
                     # Create group key
                     group_key = (conn.stream_id, flow_hash)
@@ -1011,7 +1031,10 @@ class ComparePlugin(PluginBase):
                     ]
                     group['seq_num_diffs'].extend(seq_num_diffs)
 
-                # Write one record per baseline stream
+                # OPTIMIZATION: Prepare all records for batch insert
+                # This reduces database round-trips from N to 1
+                batch_records = []
+
                 for group_key, group in baseline_stream_groups.items():
                     tcp_flags_diffs = group['tcp_flags_diffs']
                     tcp_flags_cnt = len(tcp_flags_diffs)
@@ -1062,18 +1085,21 @@ class ComparePlugin(PluginBase):
 
                     seq_num_text_string = "; ".join(seq_num_text_list) if seq_num_text_list else ""
 
-                    # Insert record
-                    db.insert_flow_hash(
-                        pcap_id=pcap_id,
-                        flow_hash=group['flow_hash'],
-                        first_time=group['first_time'],
-                        last_time=group['last_time'],
-                        tcp_flags_different_cnt=tcp_flags_cnt,
-                        tcp_flags_different_type=tcp_flags_type,
-                        tcp_flags_different_text=tcp_flags_text_string,
-                        seq_num_different_cnt=seq_num_cnt,
-                        seq_num_different_text=seq_num_text_string,
-                    )
+                    # Add record to batch
+                    batch_records.append({
+                        'pcap_id': pcap_id,
+                        'flow_hash': group['flow_hash'],
+                        'first_time': group['first_time'],
+                        'last_time': group['last_time'],
+                        'tcp_flags_different_cnt': tcp_flags_cnt,
+                        'tcp_flags_different_type': tcp_flags_type,
+                        'tcp_flags_different_text': tcp_flags_text_string,
+                        'seq_num_different_cnt': seq_num_cnt,
+                        'seq_num_different_text': seq_num_text_string,
+                    })
+
+                # Batch insert all records
+                db.insert_flow_hash_batch(batch_records)
 
                 # Commit all inserts
                 db.commit()

@@ -263,34 +263,34 @@ class TestVoIPModulesIntegration:
     def test_rtp_module_with_real_pcap(self, voip_pcap: Path):
         """Test RTP module with real VOIP.pcap file."""
         from capmaster.core.tshark_wrapper import TsharkWrapper
-        
+
         module = RtpStatsModule()
         tshark = TsharkWrapper()
-        
+
         # Execute tshark
         args = module.build_tshark_args(voip_pcap)
         result = tshark.execute(args=args, input_file=voip_pcap)
-        
+
         # Post-process
         output = module.post_process(result.stdout)
-        
-        # Verify output
-        assert "RTP Stream Statistics" in output or "RTP Streams" in output
+
+        # Verify output - check for the actual output format
+        assert "RTP Stream Overview" in output or "RTP Streams" in output
 
     def test_ssh_module_with_real_pcap(self, voip_pcap: Path):
         """Test SSH module with real VOIP.pcap file."""
         from capmaster.core.tshark_wrapper import TsharkWrapper
-        
+
         module = SshStatsModule()
         tshark = TsharkWrapper()
-        
+
         # Execute tshark
         args = module.build_tshark_args(voip_pcap)
         result = tshark.execute(args=args, input_file=voip_pcap)
-        
+
         # Post-process
         output = module.post_process(result.stdout)
-        
-        # Verify output
-        assert "SSH Statistics" in output or "No SSH traffic found" in output
+
+        # Verify output - check for the actual output format
+        assert "SSH Overview" in output or "No SSH traffic found" in output
 

@@ -147,30 +147,45 @@ class ConnectionMatcher:
             return self.bucket_strategy
 
         # Auto-select based on connection characteristics
-        # This mimics the original script's logic:
-        # - If servers are the same -> use SERVER bucketing (high precision)
-        # - If servers differ but have common ports -> use PORT bucketing (NAT/LB friendly)
-        # - Otherwise -> use SERVER bucketing (may not match)
+        # NAT-aware heuristic to support both SNAT and DNAT automatically.
+        # Heuristics:
+        # - If client IPs have no overlap but server IPs overlap -> likely SNAT → use PORT
+        # - If server IPs have no overlap but client IPs overlap -> likely DNAT → use PORT
+        # - If neither clients nor servers overlap but there are common ports -> ambiguous NAT/LB → use PORT
+        # - If servers are identical on both sides -> use SERVER (high precision)
+        # - Else if some common servers exist -> prefer SERVER; otherwise PORT
 
-        # Count unique servers and ports
+        # Count unique clients, servers and ports
+        clients1 = {c.client_ip for c in connections1}
+        clients2 = {c.client_ip for c in connections2}
         servers1 = {c.server_ip for c in connections1}
         servers2 = {c.server_ip for c in connections2}
         ports1 = {c.server_port for c in connections1}
         ports2 = {c.server_port for c in connections2}
 
-        # Check for common servers and ports
+        # Intersections
+        common_clients = clients1 & clients2
         common_servers = servers1 & servers2
         common_ports = ports1 & ports2
 
-        # If servers are identical, use SERVER bucketing
+        # NAT likelihood checks
+        snat_likely = (not common_clients) and bool(common_servers)
+        dnat_likely = (not common_servers) and bool(common_clients)
+        nat_ambiguous = (not common_clients) and (not common_servers) and bool(common_ports)
+
+        if snat_likely or dnat_likely or nat_ambiguous:
+            # PORT bucketing is robust to IP translation (only requires a common port)
+            return BucketStrategy.PORT
+
+        # If servers are identical, use SERVER bucketing (highest precision)
         if common_servers and len(common_servers) == len(servers1) == len(servers2):
             return BucketStrategy.SERVER
 
-        # If servers differ but have common ports, use PORT bucketing
+        # If servers differ but have common ports, use PORT bucketing (NAT/LB friendly)
         if not common_servers and common_ports:
             return BucketStrategy.PORT
 
-        # If have some common servers, use SERVER bucketing
+        # If have some common servers, prefer SERVER bucketing
         if common_servers:
             return BucketStrategy.SERVER
 
@@ -187,6 +202,10 @@ class ConnectionMatcher:
 
         Uses normalized 5-tuple for direction-independent bucketing.
 
+        For PORT strategy, each connection is placed in multiple buckets (one for each port).
+        This allows connections with different client ports but same server port to be matched
+        (e.g., for F5 SNAT scenarios where client port changes but server port remains the same).
+
         Args:
             connections: List of connections
             strategy: Bucketing strategy
@@ -201,14 +220,20 @@ class ConnectionMatcher:
                 # Use both IPs from normalized 5-tuple to handle direction independence
                 ip1, port1, ip2, port2 = conn.get_normalized_5tuple()
                 key = f"{ip1}:{ip2}"
+                buckets[key].append(conn)
             elif strategy == BucketStrategy.PORT:
-                # Use both ports from normalized 5-tuple to handle direction independence
-                ip1, port1, ip2, port2 = conn.get_normalized_5tuple()
-                key = f"{port1}:{port2}"
+                # Place connection in buckets for BOTH ports
+                # This ensures connections with at least one common port (the server port)
+                # will be in the same bucket and can be compared
+                # Example:
+                #   Connection A: 47525 <-> 10007 → buckets["47525"] and buckets["10007"]
+                #   Connection B: 1425 <-> 10007  → buckets["1425"] and buckets["10007"]
+                #   They will both be in buckets["10007"] and can be matched
+                for port in {conn.client_port, conn.server_port}:
+                    buckets[str(port)].append(conn)
             else:  # NONE or AUTO (fallback)
                 key = "all"
-
-            buckets[key].append(conn)
+                buckets[key].append(conn)
 
         return buckets
 
@@ -262,17 +287,35 @@ class ConnectionMatcher:
 
         for i, conn1 in enumerate(bucket1):
             for j, conn2 in enumerate(bucket2):
+                # OPTIMIZATION: Pre-filter invalid matches before expensive scoring
+                # Check server port requirement first - fast check
+                # At least one common port (the server port) must match
+                ports1 = {conn1.client_port, conn1.server_port}
+                ports2 = {conn2.client_port, conn2.server_port}
+                if not (ports1 & ports2):
+                    continue
+
+                # Check IPID requirement - fast set intersection check (direction-aware with overlap threshold)
+                ipid_ok = self._check_ipid_prefilter(conn1, conn2)
+                if not ipid_ok:
+                    # Try microflow auto-accept path (relaxed IPID for ultra-short flows)
+                    micro_score = self.scorer.score_microflow(conn1, conn2)
+                    if micro_score and micro_score.is_valid_match(self.score_threshold):
+                        scored_pairs.append((0, micro_score.normalized_score, i, j, conn1, conn2, micro_score))
+                    continue
+
+                # Only score if pre-checks pass
                 score = self.scorer.score(conn1, conn2)
 
                 if score.is_valid_match(self.score_threshold):
-                    # Use normalized_score for sorting
-                    scored_pairs.append((score.normalized_score, i, j, conn1, conn2, score))
+                    # Prioritize strong IPID matches in sorting
+                    scored_pairs.append((1 if score.force_accept else 0, score.normalized_score, i, j, conn1, conn2, score))
 
-        # Sort by normalized score (descending)
-        scored_pairs.sort(key=lambda x: x[0], reverse=True)
+        # Sort by (force_accept, normalized score) descending
+        scored_pairs.sort(key=lambda x: (x[0], x[1]), reverse=True)
 
         # Greedy matching: take highest scoring pairs first
-        for _, i, j, conn1, conn2, score in scored_pairs:
+        for _, _, i, j, conn1, conn2, score in scored_pairs:
             if i not in used1 and j not in used2:
                 matches.append(ConnectionMatch(conn1, conn2, score))
                 used1.add(i)
@@ -308,15 +351,58 @@ class ConnectionMatcher:
         # Score all pairs and accept all valid matches
         for conn1 in bucket1:
             for conn2 in bucket2:
+                # OPTIMIZATION: Pre-filter invalid matches before expensive scoring
+                # Check server port requirement first - fast check
+                # At least one common port (the server port) must match
+                ports1 = {conn1.client_port, conn1.server_port}
+                ports2 = {conn2.client_port, conn2.server_port}
+                if not (ports1 & ports2):
+                    continue
+
+                # Check IPID requirement - fast set intersection check (direction-aware with overlap threshold)
+                ipid_ok = self._check_ipid_prefilter(conn1, conn2)
+                if not ipid_ok:
+                    # Try microflow auto-accept path (relaxed IPID for ultra-short flows)
+                    micro_score = self.scorer.score_microflow(conn1, conn2)
+                    if micro_score and micro_score.is_valid_match(self.score_threshold):
+                        matches.append(ConnectionMatch(conn1, conn2, micro_score))
+                    continue
+
+                # Only score if pre-checks pass
                 score = self.scorer.score(conn1, conn2)
 
                 if score.is_valid_match(self.score_threshold):
                     matches.append(ConnectionMatch(conn1, conn2, score))
 
-        # Sort by normalized score (descending) for consistent ordering
-        matches.sort(key=lambda m: m.score.normalized_score, reverse=True)
+        # Sort by (force_accept, normalized score) descending for consistent ordering
+        matches.sort(key=lambda m: (1 if m.score.force_accept else 0, m.score.normalized_score), reverse=True)
 
         return matches
+
+    def _check_ipid_prefilter(self, conn1: TcpConnection, conn2: TcpConnection) -> bool:
+        """
+        Fast IPID prefilter check with overlap threshold.
+
+        This is a lightweight version of the full IPID check in scorer,
+        used for early filtering to avoid expensive scoring operations.
+
+        Uses global IPID matching (not direction-aware) to avoid false negatives
+        from incorrect client/server role detection.
+
+        Args:
+            conn1: First connection
+            conn2: Second connection
+
+        Returns:
+            True if connections have sufficient IPID overlap, False otherwise
+        """
+        # Use global IPID sets (all IPIDs from both directions)
+        # This matches the refactored _check_ipid() in scorer.py
+        intersection = conn1.ipid_set & conn2.ipid_set
+
+        # Quick check: at least MIN_IPID_OVERLAP overlapping IPIDs
+        # Full overlap ratio check will be done in scorer if this passes
+        return len(intersection) >= self.scorer.MIN_IPID_OVERLAP
 
     def get_match_stats(
         self,

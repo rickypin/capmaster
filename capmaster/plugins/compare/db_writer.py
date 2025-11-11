@@ -275,7 +275,78 @@ class DatabaseWriter:
                 seq_num_different_text,
             )
         )
-        
+
+    def insert_flow_hash_batch(
+        self,
+        records: list[dict],
+    ) -> None:
+        """
+        Insert multiple flow hash records into the database in a single batch operation.
+
+        OPTIMIZATION: This method reduces database round-trips from N (one per record)
+        to 1 (single batch insert), significantly improving performance when writing
+        large numbers of records.
+
+        Args:
+            records: List of dictionaries, each containing:
+                - pcap_id: PCAP file identifier
+                - flow_hash: Flow hash value (signed 64-bit integer)
+                - first_time: First packet timestamp in nanoseconds (optional)
+                - last_time: Last packet timestamp in nanoseconds (optional)
+                - tcp_flags_different_cnt: Count of TCP flags differences
+                - tcp_flags_different_type: TCP flags change type (optional)
+                - tcp_flags_different_text: TCP flags difference descriptions (optional)
+                - seq_num_different_cnt: Count of sequence number differences
+                - seq_num_different_text: Sequence number difference descriptions (optional)
+        """
+        if not self._cursor or not self._conn:
+            raise RuntimeError("Database not connected")
+
+        if not records:
+            return
+
+        # Build batch insert SQL
+        insert_sql = f"""
+            INSERT INTO {self.full_table_name} (
+                pcap_id,
+                flow_hash,
+                first_time,
+                last_time,
+                tcp_flags_different_cnt,
+                tcp_flags_different_type,
+                tcp_flags_different_text,
+                seq_num_different_cnt,
+                seq_num_different_text
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+
+        # Prepare batch data
+        batch_data = []
+        for record in records:
+            # Convert None to empty string for text fields
+            tcp_flags_text = record.get('tcp_flags_different_text', '')
+            if tcp_flags_text is None:
+                tcp_flags_text = ''
+
+            seq_num_text = record.get('seq_num_different_text', '')
+            if seq_num_text is None:
+                seq_num_text = ''
+
+            batch_data.append((
+                record['pcap_id'],
+                record['flow_hash'],
+                record.get('first_time'),
+                record.get('last_time'),
+                record.get('tcp_flags_different_cnt', 0),
+                record.get('tcp_flags_different_type'),
+                tcp_flags_text,
+                record.get('seq_num_different_cnt', 0),
+                seq_num_text,
+            ))
+
+        # Execute batch insert using executemany
+        self._cursor.executemany(insert_sql, batch_data)
+
     def commit(self) -> None:
         """Commit current transaction."""
         if self._conn:

@@ -7,16 +7,27 @@ from pathlib import Path
 import click
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
-from capmaster.core.file_scanner import PcapScanner
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
 from capmaster.plugins.match.connection_extractor import extract_connections_from_pcap
+from capmaster.plugins.match.endpoint_stats import (
+    EndpointStatsCollector,
+    format_endpoint_stats,
+    format_endpoint_stats_table,
+)
 from capmaster.plugins.match.matcher import BucketStrategy, ConnectionMatcher, MatchMode
 from capmaster.plugins.match.sampler import ConnectionSampler
+from capmaster.plugins.match.server_detector import ServerDetector
+from capmaster.utils.cli_options import (
+    dual_file_input_options,
+    validate_database_params,
+    validate_dual_file_input,
+)
 from capmaster.utils.errors import (
     InsufficientFilesError,
     handle_error,
 )
+from capmaster.utils.input_parser import DualFileInputParser
 
 logger = logging.getLogger(__name__)
 
@@ -45,14 +56,7 @@ class MatchPlugin(PluginBase):
         """
 
         @cli_group.command(name=self.name)
-        @click.option(
-            "-i",
-            "--input",
-            "input_path",
-            type=str,
-            required=True,
-            help="Input directory, file list, or comma-separated PCAP files",
-        )
+        @dual_file_input_options
         @click.option(
             "-o",
             "--output",
@@ -85,15 +89,65 @@ class MatchPlugin(PluginBase):
             help="Matching mode (one-to-one: each connection matches at most once, "
             "one-to-many: allow one connection to match multiple connections based on time overlap)",
         )
+        @click.option(
+            "--endpoint-stats",
+            is_flag=True,
+            default=False,
+            help="Generate endpoint statistics (client IP, server IP, server port) for matched connections",
+        )
+        @click.option(
+            "--endpoint-stats-output",
+            type=click.Path(path_type=Path),
+            help="Output file for endpoint statistics (default: stdout)",
+        )
+        @click.option(
+            "--no-sampling",
+            is_flag=True,
+            default=False,
+            help="Disable connection sampling (process all connections regardless of dataset size)",
+        )
+        @click.option(
+            "--sampling-threshold",
+            type=int,
+            default=1000,
+            help="Number of connections above which sampling is triggered (default: 1000)",
+        )
+        @click.option(
+            "--sampling-rate",
+            type=float,
+            default=0.5,
+            help="Fraction of connections to keep when sampling (0.0-1.0, default: 0.5)",
+        )
+        @click.option(
+            "--db-connection",
+            type=str,
+            help='Database connection string (e.g., "postgresql://user:pass@host:port/db"). When provided, endpoint statistics will be written to database.',
+        )
+        @click.option(
+            "--kase-id",
+            type=int,
+            help="Case ID for database table name (e.g., 137 -> kase_137_topological_graph). Required when --db-connection is used.",
+        )
         @click.pass_context
         def match_command(
             ctx: click.Context,
-            input_path: str,
+            input_path: str | None,
+            file1: Path | None,
+            file1_pcapid: int | None,
+            file2: Path | None,
+            file2_pcapid: int | None,
             output_file: Path | None,
             mode: str,
             bucket: str,
             threshold: float,
             match_mode: str,
+            endpoint_stats: bool,
+            endpoint_stats_output: Path | None,
+            no_sampling: bool,
+            sampling_threshold: int,
+            sampling_rate: float,
+            db_connection: str | None,
+            kase_id: int | None,
         ) -> None:
             """
             Match TCP connections between PCAP files.
@@ -114,6 +168,9 @@ class MatchPlugin(PluginBase):
               # Match comma-separated file list
               capmaster match -i "file1.pcap,file2.pcap"
 
+              # Match using explicit file specification with pcap IDs
+              capmaster match --file1 a.pcap --file1-pcapid 0 --file2 b.pcap --file2-pcapid 1
+
               # Match with custom threshold
               capmaster match -i captures/ --threshold 0.70
 
@@ -126,6 +183,12 @@ class MatchPlugin(PluginBase):
               # Save results to file
               capmaster match -i captures/ -o matches.txt
 
+              # Disable sampling (process all connections)
+              capmaster match -i captures/ --no-sampling
+
+              # Custom sampling parameters
+              capmaster match -i captures/ --sampling-threshold 5000 --sampling-rate 0.3
+
             \b
             Bucketing Strategies:
               auto    - Automatically choose best strategy
@@ -134,43 +197,122 @@ class MatchPlugin(PluginBase):
               none    - No bucketing (compare all pairs)
 
             \b
+            Sampling:
+              By default, sampling is applied when connection count exceeds 1000.
+              Use --no-sampling to disable, or customize with --sampling-threshold
+              and --sampling-rate. Sampling uses time-based stratified sampling
+              and always preserves header-only connections and special ports.
+
+            \b
+            Input:
+              The input can be a directory containing exactly 2 PCAP files,
+              or a comma-separated list of exactly 2 PCAP files,
+              or specified using --file1 and --file2 with their corresponding pcap IDs.
+
+            \b
             Output:
               Match results are printed to stdout by default, or saved to a file
               if -o is specified. Results include match statistics and details.
+
+              When --db-connection and --kase-id are provided, endpoint statistics
+              will also be written to the database table public.kase_{kase_id}_topological_graph.
+
+            \b
+            Database Output:
+              # Write endpoint statistics to database
+              capmaster match --file1 a.pcap --file1-pcapid 0 --file2 b.pcap --file2-pcapid 1 \\
+                --endpoint-stats \\
+                --db-connection "postgresql://postgres:password@host:port/db" \\
+                --kase-id 137
             """
+            # Validate input parameters
+            validate_dual_file_input(ctx, input_path, file1, file2, file1_pcapid, file2_pcapid)
+
+            # Validate database parameters
+            validate_database_params(
+                ctx, db_connection, kase_id, "endpoint-stats", endpoint_stats
+            )
+
             exit_code = self.execute(
                 input_path=input_path,
+                file1=file1,
+                file1_pcapid=file1_pcapid,
+                file2=file2,
+                file2_pcapid=file2_pcapid,
                 output_file=output_file,
                 mode=mode,
                 bucket_strategy=bucket,
                 score_threshold=threshold,
                 match_mode=match_mode,
+                endpoint_stats=endpoint_stats,
+                endpoint_stats_output=endpoint_stats_output,
+                no_sampling=no_sampling,
+                sampling_threshold=sampling_threshold,
+                sampling_rate=sampling_rate,
+                db_connection=db_connection,
+                kase_id=kase_id,
             )
             ctx.exit(exit_code)
 
     def execute(  # type: ignore[override]
         self,
-        input_path: str | Path,
+        input_path: str | Path | None = None,
+        file1: Path | None = None,
+        file1_pcapid: int | None = None,
+        file2: Path | None = None,
+        file2_pcapid: int | None = None,
         output_file: Path | None = None,
         mode: str = "auto",
         bucket_strategy: str = "auto",
         score_threshold: float = 0.60,
         match_mode: str = "one-to-one",
+        endpoint_stats: bool = False,
+        endpoint_stats_output: Path | None = None,
+        no_sampling: bool = False,
+        sampling_threshold: int = 1000,
+        sampling_rate: float = 0.5,
+        db_connection: str | None = None,
+        kase_id: int | None = None,
     ) -> int:
         """
         Execute the match plugin.
 
         Args:
-            input_path: Directory, file list, or comma-separated PCAP files
+            input_path: Directory, file list, or comma-separated PCAP files (legacy method)
+            file1: First PCAP file (explicit method)
+            file1_pcapid: PCAP ID for file1 (0 or 1)
+            file2: Second PCAP file (explicit method)
+            file2_pcapid: PCAP ID for file2 (0 or 1)
             output_file: Output file for results (None for stdout)
             mode: Matching mode (auto or header)
             bucket_strategy: Bucketing strategy
             score_threshold: Minimum score threshold
             match_mode: Matching mode (one-to-one or one-to-many)
+            endpoint_stats: Generate endpoint statistics
+            endpoint_stats_output: Output file for endpoint statistics
+            no_sampling: Disable sampling
+            sampling_threshold: Connection count threshold for sampling
+            sampling_rate: Fraction of connections to keep when sampling
 
         Returns:
             Exit code (0 for success, non-zero for failure)
+
+        Raises:
+            ValueError: If parameters are invalid
         """
+        # Validate parameters
+        if not 0.0 <= score_threshold <= 1.0:
+            logger.error(f"Invalid score threshold: {score_threshold}. Must be between 0.0 and 1.0")
+            return 1
+
+        if not 0.0 < sampling_rate <= 1.0:
+            logger.error(f"Invalid sampling rate: {sampling_rate}. Must be between 0.0 and 1.0")
+            return 1
+
+        if sampling_threshold <= 0:
+            logger.error(f"Invalid sampling threshold: {sampling_threshold}. Must be positive")
+            return 1
+
         try:
             with Progress(
                 SpinnerColumn(),
@@ -178,58 +320,104 @@ class MatchPlugin(PluginBase):
                 BarColumn(),
                 TaskProgressColumn(),
             ) as progress:
-                # Scan for PCAP files
+                # Parse dual file input
                 scan_task = progress.add_task("[cyan]Scanning for PCAP files...", total=1)
 
-                # Parse input path (supports comma-separated file list)
-                if isinstance(input_path, str):
-                    input_paths = PcapScanner.parse_input(input_path)
-                else:
-                    input_paths = [str(input_path)]
-
-                logger.info(f"Scanning: {input_path}")
-                pcap_files = PcapScanner.scan(input_paths, recursive=False)
+                dual_input = DualFileInputParser.parse(
+                    input_path, file1, file2, file1_pcapid, file2_pcapid
+                )
                 progress.update(scan_task, advance=1)
 
-                if len(pcap_files) < 2:
-                    raise InsufficientFilesError(required=2, found=len(pcap_files))
+                # Extract file paths
+                match_file1 = dual_input.file1
+                match_file2 = dual_input.file2
+                pcap_id_mapping = dual_input.pcap_id_mapping
 
-                logger.info(f"Found {len(pcap_files)} PCAP files")
-
-                # For now, match first two files
-                # TODO: Support matching multiple files
-                file1, file2 = pcap_files[0], pcap_files[1]
-                logger.info(f"Matching: {file1.name} <-> {file2.name}")
+                logger.info(f"File 1: {match_file1.name}")
+                logger.info(f"File 2: {match_file2.name}")
+                if pcap_id_mapping:
+                    logger.info(
+                        f"PCAP ID mapping: {match_file1.name} -> {pcap_id_mapping[str(match_file1)]}, "
+                        f"{match_file2.name} -> {pcap_id_mapping[str(match_file2)]}"
+                    )
+                logger.info(f"Matching: {match_file1.name} <-> {match_file2.name}")
 
                 # Extract connections from both files
                 extract_task = progress.add_task("[cyan]Extracting connections...", total=2)
 
-                progress.update(extract_task, description=f"[cyan]Extracting from {file1.name}...")
-                connections1 = self._extract_connections(file1)
-                logger.info(f"Found {len(connections1)} connections in {file1.name}")
+                progress.update(extract_task, description=f"[cyan]Extracting from {match_file1.name}...")
+                connections1 = self._extract_connections(match_file1)
+                logger.info(f"Found {len(connections1)} connections in {match_file1.name}")
                 progress.update(extract_task, advance=1)
 
-                progress.update(extract_task, description=f"[cyan]Extracting from {file2.name}...")
-                connections2 = self._extract_connections(file2)
-                logger.info(f"Found {len(connections2)} connections in {file2.name}")
+                progress.update(extract_task, description=f"[cyan]Extracting from {match_file2.name}...")
+                connections2 = self._extract_connections(match_file2)
+                logger.info(f"Found {len(connections2)} connections in {match_file2.name}")
                 progress.update(extract_task, advance=1)
 
-                # Apply sampling if needed
-                sampler = ConnectionSampler()
+                # Apply sampling if needed (unless disabled)
+                if no_sampling:
+                    logger.info("Sampling disabled by --no-sampling flag")
+                else:
+                    # Validate sampling parameters
+                    if sampling_rate <= 0.0 or sampling_rate > 1.0:
+                        logger.warning(f"Invalid sampling rate {sampling_rate}, using default 0.5")
+                        sampling_rate = 0.5
 
-                if sampler.should_sample(connections1):
-                    sample_task = progress.add_task("[yellow]Sampling connections...", total=1)
-                    logger.info("Applying sampling to first file...")
-                    connections1 = sampler.sample(connections1)
-                    logger.info(f"Sampled to {len(connections1)} connections")
-                    progress.update(sample_task, advance=1)
+                    if sampling_threshold < 1:
+                        logger.warning(f"Invalid sampling threshold {sampling_threshold}, using default 1000")
+                        sampling_threshold = 1000
 
-                if sampler.should_sample(connections2):
-                    sample_task = progress.add_task("[yellow]Sampling connections...", total=1)
-                    logger.info("Applying sampling to second file...")
-                    connections2 = sampler.sample(connections2)
-                    logger.info(f"Sampled to {len(connections2)} connections")
-                    progress.update(sample_task, advance=1)
+                    sampler = ConnectionSampler(
+                        threshold=sampling_threshold,
+                        sample_rate=sampling_rate,
+                    )
+
+                    if sampler.should_sample(connections1):
+                        sample_task = progress.add_task("[yellow]Sampling connections...", total=1)
+                        logger.info(
+                            f"Applying sampling to first file (threshold={sampling_threshold}, rate={sampling_rate})..."
+                        )
+                        original_count1 = len(connections1)
+                        connections1 = sampler.sample(connections1)
+                        logger.info(
+                            f"Sampled from {original_count1} to {len(connections1)} connections "
+                            f"({len(connections1)/original_count1:.1%} retained)"
+                        )
+                        progress.update(sample_task, advance=1)
+
+                    if sampler.should_sample(connections2):
+                        sample_task = progress.add_task("[yellow]Sampling connections...", total=1)
+                        logger.info(
+                            f"Applying sampling to second file (threshold={sampling_threshold}, rate={sampling_rate})..."
+                        )
+                        original_count2 = len(connections2)
+                        connections2 = sampler.sample(connections2)
+                        logger.info(
+                            f"Sampled from {original_count2} to {len(connections2)} connections "
+                            f"({len(connections2)/original_count2:.1%} retained)"
+                        )
+                        progress.update(sample_task, advance=1)
+
+                # Improve server detection using cardinality analysis
+                detector_task = progress.add_task("[yellow]Analyzing server/client roles...", total=1)
+                logger.info("Performing cardinality analysis for server detection...")
+                detector = ServerDetector()
+
+                # Collect all connections for cardinality analysis
+                for conn in connections1:
+                    detector.collect_connection(conn)
+                for conn in connections2:
+                    detector.collect_connection(conn)
+
+                # Finalize cardinality analysis
+                detector.finalize_cardinality()
+
+                # Re-detect server/client roles with improved detection
+                connections1 = self._improve_server_detection(connections1, detector)
+                connections2 = self._improve_server_detection(connections2, detector)
+                logger.info("Server detection improved using cardinality analysis")
+                progress.update(detector_task, advance=1)
 
                 # Match connections
                 match_task = progress.add_task("[green]Matching connections...", total=1)
@@ -253,6 +441,30 @@ class MatchPlugin(PluginBase):
                 output_task = progress.add_task("[green]Writing results...", total=1)
                 self._output_results(matches, stats, output_file)
                 progress.update(output_task, advance=1)
+
+                # Generate endpoint statistics if requested
+                if endpoint_stats:
+                    endpoint_task = progress.add_task("[green]Generating endpoint statistics...", total=1)
+                    endpoint_stats_list = self._output_endpoint_stats(
+                        matches,
+                        match_file1,
+                        match_file2,
+                        endpoint_stats_output,
+                    )
+                    progress.update(endpoint_task, advance=1)
+
+                    # Write to database if connection parameters provided
+                    if db_connection and kase_id is not None:
+                        db_task = progress.add_task("[green]Writing to database...", total=1)
+                        self._write_to_database(
+                            db_connection,
+                            kase_id,
+                            endpoint_stats_list,
+                            match_file1,
+                            match_file2,
+                            pcap_id_mapping,
+                        )
+                        progress.update(db_task, advance=1)
 
             logger.info("Matching complete")
             return 0
@@ -349,3 +561,179 @@ class MatchPlugin(PluginBase):
             logger.info(f"Results written to: {output_file}")
         else:
             print(output_text)
+
+
+    def _output_endpoint_stats(
+        self,
+        matches: list,
+        file1: Path,
+        file2: Path,
+        output_file: Path | None,
+    ) -> list:
+        """
+        Output endpoint statistics for matched connections.
+
+        Args:
+            matches: List of ConnectionMatch objects
+            file1: Path to first PCAP file
+            file2: Path to second PCAP file
+            output_file: Output file for statistics (None for stdout)
+
+        Returns:
+            List of EndpointPairStats objects
+        """
+        # Create detector and collector
+        detector = ServerDetector()
+        collector = EndpointStatsCollector(detector)
+
+        # Collect statistics from matches
+        for match in matches:
+            collector.add_match(match)
+
+        # Finalize collection (performs cardinality analysis)
+        collector.finalize()
+
+        # Get aggregated statistics
+        stats = collector.get_stats()
+
+        # Format output (use detailed format)
+        output_text = format_endpoint_stats(
+            stats,
+            file1_name=file1.name,
+            file2_name=file2.name,
+        )
+
+        # Write output
+        if output_file:
+            output_file.write_text(output_text)
+            logger.info(f"Endpoint statistics written to: {output_file}")
+        else:
+            print(output_text)
+
+        # Return stats for database writing
+        return stats
+
+    def _improve_server_detection(
+        self,
+        connections: list[TcpConnection],
+        detector: ServerDetector,
+    ) -> list[TcpConnection]:
+        """
+        Improve server/client detection using ServerDetector.
+
+        This method re-detects server/client roles for connections where
+        the original detection may be unreliable (e.g., missing SYN packets).
+        It then rebuilds the IPID sets based on the corrected roles.
+
+        Args:
+            connections: List of connections to improve
+            detector: ServerDetector with finalized cardinality analysis
+
+        Returns:
+            List of connections with improved server/client detection
+        """
+        from capmaster.plugins.match.connection import TcpConnection
+
+        improved_connections = []
+
+        for conn in connections:
+            # Detect server using multi-layer approach
+            server_info = detector.detect(conn)
+
+            # Check if server/client roles need to be swapped
+            needs_swap = (
+                server_info.server_ip != conn.server_ip
+                or server_info.server_port != conn.server_port
+            )
+
+            if needs_swap:
+                # Swap server/client roles and rebuild IPID sets
+                improved_conn = TcpConnection(
+                    stream_id=conn.stream_id,
+                    protocol=conn.protocol,
+                    client_ip=server_info.client_ip,
+                    client_port=server_info.client_port,
+                    server_ip=server_info.server_ip,
+                    server_port=server_info.server_port,
+                    syn_timestamp=conn.syn_timestamp,
+                    syn_options=conn.syn_options,
+                    client_isn=conn.server_isn,  # Swap ISNs
+                    server_isn=conn.client_isn,
+                    tcp_timestamp_tsval=conn.tcp_timestamp_tsval,
+                    tcp_timestamp_tsecr=conn.tcp_timestamp_tsecr,
+                    client_payload_md5=conn.server_payload_md5,  # Swap payloads
+                    server_payload_md5=conn.client_payload_md5,
+                    length_signature=conn.length_signature,
+                    is_header_only=conn.is_header_only,
+                    ipid_set=conn.ipid_set,
+                    ipid_first=conn.ipid_first,
+                    client_ipid_set=conn.server_ipid_set,  # Swap IPID sets
+                    server_ipid_set=conn.client_ipid_set,
+                    first_packet_time=conn.first_packet_time,
+                    last_packet_time=conn.last_packet_time,
+                    packet_count=conn.packet_count,
+                    client_ttl=conn.server_ttl,  # Swap TTLs
+                    server_ttl=conn.client_ttl,
+                )
+                improved_connections.append(improved_conn)
+                logger.debug(
+                    f"Swapped server/client for stream {conn.stream_id}: "
+                    f"{conn.client_ip}:{conn.client_port} <-> {conn.server_ip}:{conn.server_port} "
+                    f"-> {improved_conn.client_ip}:{improved_conn.client_port} <-> "
+                    f"{improved_conn.server_ip}:{improved_conn.server_port} "
+                    f"(method: {server_info.method}, confidence: {server_info.confidence})"
+                )
+            else:
+                # No swap needed, keep original connection
+                improved_connections.append(conn)
+
+        return improved_connections
+
+    def _write_to_database(
+        self,
+        db_connection: str,
+        kase_id: int,
+        endpoint_stats: list,
+        file1: Path,
+        file2: Path,
+        pcap_id_mapping: dict[str, int] | None = None,
+    ) -> None:
+        """
+        Write endpoint statistics to database.
+
+        Args:
+            db_connection: Database connection string
+            kase_id: Case ID for table name
+            endpoint_stats: List of EndpointPairStats objects
+            file1: Path to first PCAP file
+            file2: Path to second PCAP file
+            pcap_id_mapping: Mapping from file path to pcap_id (optional)
+        """
+        from capmaster.plugins.match.db_writer import MatchDatabaseWriter
+
+        logger.info(f"Writing endpoint statistics to database (kase_id={kase_id})...")
+
+        try:
+            with MatchDatabaseWriter(db_connection, kase_id) as db:
+                # Ensure table exists
+                db.ensure_table_exists()
+
+                # Write endpoint statistics
+                records_inserted = db.write_endpoint_stats(
+                    endpoint_stats=endpoint_stats,
+                    pcap_id_mapping=pcap_id_mapping or {},
+                    file1_path=str(file1),
+                    file2_path=str(file2),
+                )
+
+                # Commit all inserts
+                db.commit()
+
+                logger.info(f"Successfully wrote {records_inserted} records to database")
+
+        except ImportError as e:
+            logger.error(f"Database functionality not available: {e}")
+            logger.error("Install psycopg2-binary to enable database output: pip install psycopg2-binary")
+        except Exception as e:
+            logger.error(f"Failed to write to database: {e}")
+            raise

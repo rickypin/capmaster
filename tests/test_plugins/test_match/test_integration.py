@@ -194,13 +194,13 @@ class TestMatchIntegration:
         """Test match with verbose output."""
         if not tc_001_1.exists():
             pytest.skip(f"Test case directory not found: {tc_001_1}")
-        
+
         files = self.get_pcap_files(tc_001_1)
         if len(files) != 2:
             pytest.skip(f"Expected 2 files, found {len(files)}")
-        
+
         output_file = tmp_path / "matches_verbose.txt"
-        
+
         # Run with verbose flag
         result = subprocess.run(
             [
@@ -213,9 +213,195 @@ class TestMatchIntegration:
             capture_output=True,
             text=True,
         )
-        
+
+        # Check that the command succeeded
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+
+        # Check that output file was created
+        assert output_file.exists(), "Output file was not created"
+
+        # Verbose output should be in stdout (INFO level logs)
+        assert "INFO" in result.stdout, "No verbose output in stdout"
+        assert len(result.stdout) > 0, "No output generated"
+
+    def test_match_with_no_sampling(self, tc_001_1: Path, tmp_path: Path):
+        """Test match with sampling disabled."""
+        if not tc_001_1.exists():
+            pytest.skip(f"Test case directory not found: {tc_001_1}")
+
+        files = self.get_pcap_files(tc_001_1)
+        if len(files) != 2:
+            pytest.skip(f"Expected 2 files, found {len(files)}")
+
+        output_file = tmp_path / "matches_no_sampling.txt"
+
+        # Run with --no-sampling flag
+        result = subprocess.run(
+            [
+                "python", "-m", "capmaster",
+                "match",
+                "-i", str(tc_001_1),
+                "-o", str(output_file),
+                "--no-sampling",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
         assert result.returncode == 0, f"Command failed: {result.stderr}"
         assert output_file.exists(), "Output file was not created"
-        # Verbose output should be in stderr
-        assert len(result.stderr) > 0 or len(result.stdout) > 0, "No verbose output"
+
+        # The --no-sampling flag should work without errors
+        # (No specific output message is required, just verify it doesn't crash)
+
+    def test_match_with_custom_sampling_threshold(self, tc_001_1: Path, tmp_path: Path):
+        """Test match with custom sampling threshold."""
+        if not tc_001_1.exists():
+            pytest.skip(f"Test case directory not found: {tc_001_1}")
+
+        files = self.get_pcap_files(tc_001_1)
+        if len(files) != 2:
+            pytest.skip(f"Expected 2 files, found {len(files)}")
+
+        output_file = tmp_path / "matches_custom_threshold.txt"
+
+        # Run with custom sampling threshold
+        result = subprocess.run(
+            [
+                "python", "-m", "capmaster",
+                "match",
+                "-i", str(tc_001_1),
+                "-o", str(output_file),
+                "--sampling-threshold", "5000",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        assert output_file.exists(), "Output file was not created"
+
+    def test_match_with_custom_sampling_rate(self, tc_001_1: Path, tmp_path: Path):
+        """Test match with custom sampling rate."""
+        if not tc_001_1.exists():
+            pytest.skip(f"Test case directory not found: {tc_001_1}")
+
+        files = self.get_pcap_files(tc_001_1)
+        if len(files) != 2:
+            pytest.skip(f"Expected 2 files, found {len(files)}")
+
+        output_file = tmp_path / "matches_custom_rate.txt"
+
+        # Run with custom sampling rate
+        result = subprocess.run(
+            [
+                "python", "-m", "capmaster",
+                "match",
+                "-i", str(tc_001_1),
+                "-o", str(output_file),
+                "--sampling-rate", "0.3",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        assert output_file.exists(), "Output file was not created"
+
+    def test_match_with_combined_sampling_params(self, tc_001_1: Path, tmp_path: Path):
+        """Test match with both custom threshold and rate."""
+        if not tc_001_1.exists():
+            pytest.skip(f"Test case directory not found: {tc_001_1}")
+
+        files = self.get_pcap_files(tc_001_1)
+        if len(files) != 2:
+            pytest.skip(f"Expected 2 files, found {len(files)}")
+
+        output_file = tmp_path / "matches_combined.txt"
+
+        # Run with both custom threshold and rate
+        result = subprocess.run(
+            [
+                "python", "-m", "capmaster",
+                "match",
+                "-i", str(tc_001_1),
+                "-o", str(output_file),
+                "--sampling-threshold", "2000",
+                "--sampling-rate", "0.7",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        assert output_file.exists(), "Output file was not created"
+
+    def test_match_with_one_to_many_mode(self, tc_001_1: Path, tmp_path: Path):
+        """Test match with one-to-many matching mode."""
+        if not tc_001_1.exists():
+            pytest.skip(f"Test case directory not found: {tc_001_1}")
+
+        files = self.get_pcap_files(tc_001_1)
+        if len(files) != 2:
+            pytest.skip(f"Expected 2 files, found {len(files)}")
+
+        output_file = tmp_path / "matches_one_to_many.txt"
+
+        # Run with --match-mode one-to-many
+        result = subprocess.run(
+            [
+                "python", "-m", "capmaster",
+                "match",
+                "-i", str(tc_001_1),
+                "-o", str(output_file),
+                "--match-mode", "one-to-many",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        assert output_file.exists(), "Output file was not created"
+
+        # Verify output contains match statistics
+        with open(output_file, "r") as f:
+            content = f.read()
+            # One-to-many mode should report unique_matched and max_matches_per_conn
+            assert "Match Statistics" in content or len(content) > 0
+
+    def test_match_with_endpoint_stats(self, tc_001_1: Path, tmp_path: Path):
+        """Test match with endpoint statistics generation."""
+        if not tc_001_1.exists():
+            pytest.skip(f"Test case directory not found: {tc_001_1}")
+
+        files = self.get_pcap_files(tc_001_1)
+        if len(files) != 2:
+            pytest.skip(f"Expected 2 files, found {len(files)}")
+
+        output_file = tmp_path / "matches.txt"
+        stats_file = tmp_path / "endpoint_stats.txt"
+
+        # Run with --endpoint-stats
+        result = subprocess.run(
+            [
+                "python", "-m", "capmaster",
+                "match",
+                "-i", str(tc_001_1),
+                "-o", str(output_file),
+                "--endpoint-stats",
+                "--endpoint-stats-output", str(stats_file),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        assert output_file.exists(), "Output file was not created"
+        assert stats_file.exists(), "Endpoint stats file was not created"
+
+        # Verify stats file contains endpoint information
+        with open(stats_file, "r") as f:
+            content = f.read()
+            # Should contain endpoint statistics (client IP, server IP, server port)
+            assert len(content) > 0
 
