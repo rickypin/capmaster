@@ -138,10 +138,13 @@ dmypy.json
 cases/
 cases_02/
 downloads/
+2hops/
+2hops/
 
 # Analysis output (statistics directory created by analyze_pcap.sh)
 statistics/
 **/statistics/
+analysis/
 
 # Processed PCAP files (created by remove_one_way_tcp.sh)
 *-OWTR.pcap

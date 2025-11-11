@@ -80,6 +80,12 @@ class TcpConnection:
     ipid_set: set[int]
     """Set of all unique IP ID values in the stream (for flexible IPID matching)"""
 
+    client_ipid_set: set[int]
+    """Set of unique IP ID values from client packets (for direction-aware IPID matching)"""
+
+    server_ipid_set: set[int]
+    """Set of unique IP ID values from server packets (for direction-aware IPID matching)"""
+
     first_packet_time: float
     """Timestamp of the earliest packet in the stream (Unix timestamp in seconds)"""
 
@@ -94,6 +100,9 @@ class TcpConnection:
 
     server_ttl: int = 0
     """Most common TTL value from server packets (0 if not available)"""
+
+    total_bytes: int = 0
+    """Total bytes (sum of frame lengths) for all packets in the stream"""
 
     def __str__(self) -> str:
         """String representation for debugging."""
@@ -215,6 +224,9 @@ class TcpPacket:
     ttl: int = 0
     """IP Time To Live"""
 
+    frame_len: int = 0
+    """Frame length (total packet size including all headers)"""
+
     def is_syn(self) -> bool:
         """Check if this is a SYN packet (SYN=1, ACK=0)."""
         try:
@@ -312,7 +324,9 @@ class ConnectionBuilder:
                 break
 
         # Determine client and server
-        # If no SYN packet, use first packet direction (matching original script)
+        # Priority 1: Use SYN packet (most reliable)
+        # Priority 2: Use SYN-ACK packet (SYN-ACK sender is server)
+        # Priority 3: Use first packet direction (fallback)
         if syn_packet:
             client_ip = syn_packet.src_ip
             client_port = syn_packet.src_port
@@ -323,8 +337,20 @@ class ConnectionBuilder:
             client_isn = syn_packet.seq
             server_isn = syn_ack_packet.seq if syn_ack_packet else 0
             ipid_first = syn_packet.ip_id
+        elif syn_ack_packet:
+            # No SYN packet but have SYN-ACK - use SYN-ACK to determine server
+            # SYN-ACK sender is the server, receiver is the client
+            server_ip = syn_ack_packet.src_ip
+            server_port = syn_ack_packet.src_port
+            client_ip = syn_ack_packet.dst_ip
+            client_port = syn_ack_packet.dst_port
+            syn_timestamp = syn_ack_packet.timestamp or 0.0
+            syn_options = ""  # No SYN options available (SYN-ACK options are different)
+            client_isn = 0  # Don't have client ISN without SYN packet
+            server_isn = syn_ack_packet.seq
+            ipid_first = syn_ack_packet.ip_id
         else:
-            # No SYN packet - use first packet direction
+            # No SYN or SYN-ACK packet - use first packet direction (fallback)
             first_packet = packets[0]
             client_ip = first_packet.src_ip
             client_port = first_packet.src_port
@@ -380,11 +406,26 @@ class ConnectionBuilder:
         if not ipid_set and ipid_first is not None:
             ipid_set = {ipid_first}
 
+        # Collect IPID values by direction (client vs server)
+        client_ipid_set = {
+            p.ip_id
+            for p in packets
+            if p.ip_id is not None and p.ip_id != 0 and p.src_ip == client_ip
+        }
+        server_ipid_set = {
+            p.ip_id
+            for p in packets
+            if p.ip_id is not None and p.ip_id != 0 and p.src_ip == server_ip
+        }
+
         # Get protocol number from first packet (all packets in a stream should have same protocol)
         protocol = packets[0].protocol if packets else 6  # Default to TCP (6)
 
         # Compute TTL values (client and server separately)
         client_ttl, server_ttl = self._compute_ttl_values(packets, client_ip, server_ip)
+
+        # Compute total bytes (sum of frame lengths)
+        total_bytes = sum(p.frame_len for p in packets if p.frame_len > 0)
 
         return TcpConnection(
             stream_id=stream_id,
@@ -405,11 +446,14 @@ class ConnectionBuilder:
             is_header_only=is_header_only,
             ipid_first=ipid_first,
             ipid_set=ipid_set,
+            client_ipid_set=client_ipid_set,
+            server_ipid_set=server_ipid_set,
             first_packet_time=first_packet_time,
             last_packet_time=last_packet_time,
             packet_count=packet_count,
             client_ttl=client_ttl,
             server_ttl=server_ttl,
+            total_bytes=total_bytes,
         )
 
     def _compute_payload_hashes(

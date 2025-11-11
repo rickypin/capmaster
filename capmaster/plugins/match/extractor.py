@@ -38,6 +38,7 @@ class TcpFieldExtractor:
         "tcp.options.timestamp.tsecr",  # TCP timestamp TSecr
         "data.data",  # Payload data (hex)
         "ip.ttl",  # IP Time To Live
+        "frame.len",  # Frame length (total packet size)
     ]
 
     def __init__(self) -> None:
@@ -179,6 +180,7 @@ class TcpFieldExtractor:
             tcp_timestamp_tsecr = row[15] if len(row) > 15 else ""
             payload_data = row[16] if len(row) > 16 else ""
             ttl = int(row[17]) if len(row) > 17 and row[17] else 0
+            frame_len = int(row[18]) if len(row) > 18 and row[18] else 0
 
             return TcpPacket(
                 frame_number=frame_number,
@@ -199,6 +201,7 @@ class TcpFieldExtractor:
                 tcp_timestamp_tsecr=tcp_timestamp_tsecr,
                 payload_data=payload_data,
                 ttl=ttl,
+                frame_len=frame_len,
             )
         except (ValueError, IndexError):
             return None

@@ -399,6 +399,26 @@ class MatchPlugin(PluginBase):
                         )
                         progress.update(sample_task, advance=1)
 
+                # Improve server detection using cardinality analysis
+                detector_task = progress.add_task("[yellow]Analyzing server/client roles...", total=1)
+                logger.info("Performing cardinality analysis for server detection...")
+                detector = ServerDetector()
+
+                # Collect all connections for cardinality analysis
+                for conn in connections1:
+                    detector.collect_connection(conn)
+                for conn in connections2:
+                    detector.collect_connection(conn)
+
+                # Finalize cardinality analysis
+                detector.finalize_cardinality()
+
+                # Re-detect server/client roles with improved detection
+                connections1 = self._improve_server_detection(connections1, detector)
+                connections2 = self._improve_server_detection(connections2, detector)
+                logger.info("Server detection improved using cardinality analysis")
+                progress.update(detector_task, advance=1)
+
                 # Match connections
                 match_task = progress.add_task("[green]Matching connections...", total=1)
                 logger.info("Matching connections...")
@@ -592,6 +612,82 @@ class MatchPlugin(PluginBase):
 
         # Return stats for database writing
         return stats
+
+    def _improve_server_detection(
+        self,
+        connections: list[TcpConnection],
+        detector: ServerDetector,
+    ) -> list[TcpConnection]:
+        """
+        Improve server/client detection using ServerDetector.
+
+        This method re-detects server/client roles for connections where
+        the original detection may be unreliable (e.g., missing SYN packets).
+        It then rebuilds the IPID sets based on the corrected roles.
+
+        Args:
+            connections: List of connections to improve
+            detector: ServerDetector with finalized cardinality analysis
+
+        Returns:
+            List of connections with improved server/client detection
+        """
+        from capmaster.plugins.match.connection import TcpConnection
+
+        improved_connections = []
+
+        for conn in connections:
+            # Detect server using multi-layer approach
+            server_info = detector.detect(conn)
+
+            # Check if server/client roles need to be swapped
+            needs_swap = (
+                server_info.server_ip != conn.server_ip
+                or server_info.server_port != conn.server_port
+            )
+
+            if needs_swap:
+                # Swap server/client roles and rebuild IPID sets
+                improved_conn = TcpConnection(
+                    stream_id=conn.stream_id,
+                    protocol=conn.protocol,
+                    client_ip=server_info.client_ip,
+                    client_port=server_info.client_port,
+                    server_ip=server_info.server_ip,
+                    server_port=server_info.server_port,
+                    syn_timestamp=conn.syn_timestamp,
+                    syn_options=conn.syn_options,
+                    client_isn=conn.server_isn,  # Swap ISNs
+                    server_isn=conn.client_isn,
+                    tcp_timestamp_tsval=conn.tcp_timestamp_tsval,
+                    tcp_timestamp_tsecr=conn.tcp_timestamp_tsecr,
+                    client_payload_md5=conn.server_payload_md5,  # Swap payloads
+                    server_payload_md5=conn.client_payload_md5,
+                    length_signature=conn.length_signature,
+                    is_header_only=conn.is_header_only,
+                    ipid_set=conn.ipid_set,
+                    ipid_first=conn.ipid_first,
+                    client_ipid_set=conn.server_ipid_set,  # Swap IPID sets
+                    server_ipid_set=conn.client_ipid_set,
+                    first_packet_time=conn.first_packet_time,
+                    last_packet_time=conn.last_packet_time,
+                    packet_count=conn.packet_count,
+                    client_ttl=conn.server_ttl,  # Swap TTLs
+                    server_ttl=conn.client_ttl,
+                )
+                improved_connections.append(improved_conn)
+                logger.debug(
+                    f"Swapped server/client for stream {conn.stream_id}: "
+                    f"{conn.client_ip}:{conn.client_port} <-> {conn.server_ip}:{conn.server_port} "
+                    f"-> {improved_conn.client_ip}:{improved_conn.client_port} <-> "
+                    f"{improved_conn.server_ip}:{improved_conn.server_port} "
+                    f"(method: {server_info.method}, confidence: {server_info.confidence})"
+                )
+            else:
+                # No swap needed, keep original connection
+                improved_connections.append(conn)
+
+        return improved_connections
 
     def _write_to_database(
         self,

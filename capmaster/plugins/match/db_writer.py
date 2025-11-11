@@ -440,7 +440,8 @@ class MatchDatabaseWriter:
 
             # File A - Network device between client and capture point (type=1001)
             # Only insert if client_hops_a > 0
-            if stat.client_hops_a > 0:
+            # Skip A-side client->capture device node when topology is Client->B->A->Server
+            if stat.client_hops_a > 0 and position != "B_CLOSER_TO_CLIENT":
                 self.insert_node(
                     pcap_id=pcap_id_a,
                     group_id=group_id,
@@ -458,6 +459,7 @@ class MatchDatabaseWriter:
 
             # File A - Server node (type=2, with port)
             # stream_cnt is set to stat.count for server nodes (type=2-5)
+            # pktlen is set to total_bytes_a for server nodes (type=2-5)
             self.insert_node(
                 pcap_id=pcap_id_a,
                 group_id=group_id,
@@ -468,14 +470,15 @@ class MatchDatabaseWriter:
                 is_capture=False,
                 net_area=net_area_a_server,
                 stream_cnt=stat.count,  # Use count from endpoint pair
-                pktlen=0,
+                pktlen=stat.total_bytes_a,  # Total bytes for this endpoint pair
                 display_name="",
             )
             records_inserted += 1
 
             # File A - Network device between capture point and server (type=1002)
             # Only insert if server_hops_a > 0
-            if stat.server_hops_a > 0:
+            # Skip A-side capture->server device node when topology is Client->A->B->Server
+            if stat.server_hops_a > 0 and position != "A_CLOSER_TO_CLIENT":
                 self.insert_node(
                     pcap_id=pcap_id_a,
                     group_id=group_id,
@@ -510,7 +513,8 @@ class MatchDatabaseWriter:
 
             # File B - Network device between client and capture point (type=1001)
             # Only insert if client_hops_b > 0
-            if stat.client_hops_b > 0:
+            # Skip B-side client->capture device node when topology is Client->A->B->Server
+            if stat.client_hops_b > 0 and position != "A_CLOSER_TO_CLIENT":
                 self.insert_node(
                     pcap_id=pcap_id_b,
                     group_id=group_id,
@@ -528,6 +532,7 @@ class MatchDatabaseWriter:
 
             # File B - Server node (type=2, with port)
             # stream_cnt is set to stat.count for server nodes (type=2-5)
+            # pktlen is set to total_bytes_b for server nodes (type=2-5)
             self.insert_node(
                 pcap_id=pcap_id_b,
                 group_id=group_id,
@@ -538,14 +543,15 @@ class MatchDatabaseWriter:
                 is_capture=False,
                 net_area=net_area_b_server,
                 stream_cnt=stat.count,  # Use count from endpoint pair
-                pktlen=0,
+                pktlen=stat.total_bytes_b,  # Total bytes for this endpoint pair
                 display_name="",
             )
             records_inserted += 1
 
             # File B - Network device between capture point and server (type=1002)
             # Only insert if server_hops_b > 0
-            if stat.server_hops_b > 0:
+            # Skip B-side capture->server device node when topology is Client->B->A->Server
+            if stat.server_hops_b > 0 and position != "B_CLOSER_TO_CLIENT":
                 self.insert_node(
                     pcap_id=pcap_id_b,
                     group_id=group_id,

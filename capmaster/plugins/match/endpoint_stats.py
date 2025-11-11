@@ -76,6 +76,12 @@ class EndpointPairStats:
     server_hops_b: int = 0
     """Number of network hops for server in file B (calculated from TTL)"""
 
+    total_bytes_a: int = 0
+    """Total bytes (sum of frame lengths) for all matched connections in file A"""
+
+    total_bytes_b: int = 0
+    """Total bytes (sum of frame lengths) for all matched connections in file B"""
+
     def __str__(self) -> str:
         """String representation."""
         ttl_info = ""
@@ -123,6 +129,10 @@ class EndpointStatsCollector:
         self.server_ttls_a: dict[tuple[EndpointTuple, EndpointTuple], list[int]] = defaultdict(list)
         self.client_ttls_b: dict[tuple[EndpointTuple, EndpointTuple], list[int]] = defaultdict(list)
         self.server_ttls_b: dict[tuple[EndpointTuple, EndpointTuple], list[int]] = defaultdict(list)
+
+        # Track total bytes for each endpoint pair
+        self.total_bytes_a: dict[tuple[EndpointTuple, EndpointTuple], int] = defaultdict(int)
+        self.total_bytes_b: dict[tuple[EndpointTuple, EndpointTuple], int] = defaultdict(int)
 
         # Store all matches for cardinality analysis
         self.matches: list[ConnectionMatch] = []
@@ -205,6 +215,10 @@ class EndpointStatsCollector:
         if match.conn2.server_ttl > 0:
             self.server_ttls_b[pair_key].append(match.conn2.server_ttl)
 
+        # Track total bytes
+        self.total_bytes_a[pair_key] += match.conn1.total_bytes
+        self.total_bytes_b[pair_key] += match.conn2.total_bytes
+
         # For VERY_LOW confidence, also add the reversed interpretation
         # This helps avoid missing connections due to incorrect server detection
         if confidence == "VERY_LOW":
@@ -237,6 +251,10 @@ class EndpointStatsCollector:
             if match.conn2.client_ttl > 0:
                 self.server_ttls_b[pair_key_reversed].append(match.conn2.client_ttl)
 
+            # Track total bytes for reversed pair
+            self.total_bytes_a[pair_key_reversed] += match.conn1.total_bytes
+            self.total_bytes_b[pair_key_reversed] += match.conn2.total_bytes
+
     def get_stats(self) -> list[EndpointPairStats]:
         """
         Get aggregated statistics.
@@ -262,6 +280,10 @@ class EndpointStatsCollector:
             client_hops_b = most_common_hops(self.client_ttls_b[(tuple_a, tuple_b)])
             server_hops_b = most_common_hops(self.server_ttls_b[(tuple_a, tuple_b)])
 
+            # Get total bytes for this endpoint pair
+            total_bytes_a = self.total_bytes_a[(tuple_a, tuple_b)]
+            total_bytes_b = self.total_bytes_b[(tuple_a, tuple_b)]
+
             results.append(
                 EndpointPairStats(
                     tuple_a=tuple_a,
@@ -276,6 +298,8 @@ class EndpointStatsCollector:
                     server_hops_a=server_hops_a,
                     client_hops_b=client_hops_b,
                     server_hops_b=server_hops_b,
+                    total_bytes_a=total_bytes_a,
+                    total_bytes_b=total_bytes_b,
                 )
             )
 
