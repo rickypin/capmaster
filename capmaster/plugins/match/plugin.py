@@ -216,6 +216,8 @@ class MatchPlugin(PluginBase):
 
               When --db-connection and --kase-id are provided, endpoint statistics
               will also be written to the database table public.kase_{kase_id}_topological_graph.
+              Note: Existing data in the table will be cleared before writing new data.
+              If the table doesn't exist, it will be created automatically.
 
             \b
             Database Output:
@@ -715,8 +717,11 @@ class MatchPlugin(PluginBase):
 
         try:
             with MatchDatabaseWriter(db_connection, kase_id) as db:
-                # Ensure table exists
+                # Ensure table exists (create if not exists)
                 db.ensure_table_exists()
+
+                # Clear existing data from table before writing new data
+                db.clear_table_data()
 
                 # Write endpoint statistics
                 records_inserted = db.write_endpoint_stats(
