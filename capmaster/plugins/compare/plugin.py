@@ -23,23 +23,22 @@ from capmaster.utils.errors import (
 logger = logging.getLogger(__name__)
 
 
-def round_to_microseconds(timestamp_seconds: float) -> int:
+def to_nanoseconds(timestamp_seconds: float) -> int:
     """
-    Convert timestamp from seconds to nanoseconds and round to microsecond precision.
+    Convert timestamp from seconds to nanoseconds with full precision.
 
     Args:
         timestamp_seconds: Unix timestamp in seconds (float)
 
     Returns:
-        Timestamp in nanoseconds (int), rounded to microsecond precision
+        Timestamp in nanoseconds (int), preserving full nanosecond precision
 
     Example:
         Input:  1.757441703689601024 seconds
-        Output: 1757441703689601000 nanoseconds (rounded to nearest microsecond)
+        Output: 1757441703689601024 nanoseconds (full precision preserved)
     """
-    # Convert to microseconds first, round, then convert to nanoseconds
-    timestamp_microseconds = round(timestamp_seconds * 1_000_000)
-    timestamp_nanoseconds = timestamp_microseconds * 1_000
+    # Convert to nanoseconds directly, preserving full precision
+    timestamp_nanoseconds = int(timestamp_seconds * 1_000_000_000)
     return timestamp_nanoseconds
 
 
@@ -703,8 +702,8 @@ class ComparePlugin(PluginBase):
             first_time_str = "N/A"
             last_time_str = "N/A"
             if packets_a:
-                first_time_ns = round_to_microseconds(packets_a[0].timestamp)
-                last_time_ns = round_to_microseconds(packets_a[-1].timestamp)
+                first_time_ns = to_nanoseconds(packets_a[0].timestamp)
+                last_time_ns = to_nanoseconds(packets_a[-1].timestamp)
                 first_time_str = str(first_time_ns)
                 last_time_str = str(last_time_ns)
 
@@ -760,8 +759,8 @@ class ComparePlugin(PluginBase):
             first_time_str = "N/A"
             last_time_str = "N/A"
             if packets_b:
-                first_time_ns = round_to_microseconds(packets_b[0].timestamp)
-                last_time_ns = round_to_microseconds(packets_b[-1].timestamp)
+                first_time_ns = to_nanoseconds(packets_b[0].timestamp)
+                last_time_ns = to_nanoseconds(packets_b[-1].timestamp)
                 first_time_str = str(first_time_ns)
                 last_time_str = str(last_time_ns)
 
@@ -1013,8 +1012,8 @@ class ComparePlugin(PluginBase):
                         first_timestamp = packets_a[0].timestamp
                         last_timestamp = packets_a[-1].timestamp
 
-                        first_time_ns = round_to_microseconds(first_timestamp)
-                        last_time_ns = round_to_microseconds(last_timestamp)
+                        first_time_ns = to_nanoseconds(first_timestamp)
+                        last_time_ns = to_nanoseconds(last_timestamp)
 
                         # Update group's time range
                         if group['first_time'] is None or first_time_ns < group['first_time']:
