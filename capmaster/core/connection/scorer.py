@@ -269,7 +269,10 @@ class ConnectionScorer:
         # 7. IPID (already matched, add weight)
         raw_score += self.WEIGHT_IPID
         available_weight += self.WEIGHT_IPID
-        evidence_parts.append("ipid*" if force_accept else "ipid")
+        # Include IPID stats in evidence for observability
+        ipid_evi = f"ipid*" if force_accept else "ipid"
+        ipid_evi += f"(n={overlap_count},r={overlap_ratio:.2f},j={jaccard:.2f})"
+        evidence_parts.append(ipid_evi)
 
         # Calculate normalized score
         if available_weight > 0:
