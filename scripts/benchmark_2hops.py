@@ -42,9 +42,9 @@ def find_case_dirs(base_dir: Path) -> list[Path]:
     for entry in sorted(base_dir.iterdir()):
         if not entry.is_dir():
             continue
-        # Check at least 2 pcap files inside
+        # Require exactly 2 pcap files inside (capmaster match expects two files)
         pcaps = list(entry.glob("*.pcap")) + list(entry.glob("*.pcapng"))
-        if len(pcaps) >= 2:
+        if len(pcaps) == 2:
             case_dirs.append(entry)
     return case_dirs
 
