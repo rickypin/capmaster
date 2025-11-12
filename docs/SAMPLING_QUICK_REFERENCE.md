@@ -3,47 +3,53 @@
 ## TL;DR
 
 ```bash
-# Disable sampling (process all connections)
-capmaster match -i captures/ --no-sampling
+# Default: No sampling (process all connections)
+capmaster match -i captures/
+
+# Enable sampling for large datasets
+capmaster match -i captures/ --enable-sampling
 
 # Custom threshold (sample only if > 5000 connections)
-capmaster match -i captures/ --sampling-threshold 5000
+capmaster match -i captures/ --enable-sampling --sample-threshold 5000
 
 # Custom rate (keep 70% when sampling)
-capmaster match -i captures/ --sampling-rate 0.7
+capmaster match -i captures/ --enable-sampling --sample-rate 0.7
 
 # Combined
-capmaster match -i captures/ --sampling-threshold 2000 --sampling-rate 0.8
+capmaster match -i captures/ --enable-sampling --sample-threshold 2000 --sample-rate 0.8
 ```
 
 ## Default Behavior
 
+**⚠️ IMPORTANT: Sampling is DISABLED by default!**
+
 | Parameter | Default Value | Description |
 |-----------|---------------|-------------|
-| Threshold | 1000 | Sampling triggers when connections > 1000 |
-| Rate | 0.5 (50%) | Keeps half of the connections |
-| Protected | Always | Header-only + special ports preserved |
+| Sampling | Disabled | All connections are processed |
+| Threshold | 1000 | When enabled, sampling triggers when connections > 1000 |
+| Rate | 0.5 (50%) | When enabled, keeps half of the connections |
+| Protected | Always | Header-only + special ports preserved when sampling |
 
-## New CLI Options
+## CLI Options
 
-### `--no-sampling`
+### `--enable-sampling`
 - **Type**: Flag
-- **Default**: False
-- **Effect**: Disables all sampling
-- **Use when**: You need 100% accuracy
+- **Default**: False (disabled)
+- **Effect**: Enables sampling for large datasets
+- **Use when**: You have very large datasets and want faster processing
 
-### `--sampling-threshold <number>`
+### `--sample-threshold <number>`
 - **Type**: Integer
 - **Default**: 1000
 - **Range**: >= 1
-- **Effect**: Sets when sampling kicks in
+- **Effect**: Sets when sampling kicks in (only when --enable-sampling is used)
 - **Use when**: Adjusting for dataset size
 
-### `--sampling-rate <decimal>`
+### `--sample-rate <decimal>`
 - **Type**: Float
 - **Default**: 0.5
 - **Range**: 0.0 < rate <= 1.0
-- **Effect**: Sets retention percentage
+- **Effect**: Sets retention percentage (only when --enable-sampling is used)
 - **Use when**: Balancing speed vs accuracy
 
 ## Decision Tree
@@ -51,45 +57,52 @@ capmaster match -i captures/ --sampling-threshold 2000 --sampling-rate 0.8
 ```
 How many connections?
 ├─ < 1,000
-│  └─ Use default (no sampling occurs)
+│  └─ Use default (no sampling, all connections processed)
 │
 ├─ 1,000 - 5,000
-│  ├─ Need 100% accuracy? → --no-sampling
-│  └─ Default is fine → (no flags needed)
+│  ├─ Need 100% accuracy? → Use default (no flags needed)
+│  └─ Want faster processing? → --enable-sampling
 │
 ├─ 5,000 - 10,000
-│  ├─ Need high accuracy? → --sampling-rate 0.7 or --no-sampling
-│  └─ Speed matters? → --sampling-rate 0.3
+│  ├─ Need high accuracy? → Use default or --enable-sampling --sample-rate 0.7
+│  └─ Speed matters? → --enable-sampling --sample-rate 0.3
 │
 └─ > 10,000
-   ├─ Need accuracy? → --sampling-threshold 20000 --sampling-rate 0.5
-   └─ Need speed? → --sampling-rate 0.2
+   ├─ Need accuracy? → Use default or --enable-sampling --sample-threshold 20000 --sample-rate 0.5
+   └─ Need speed? → --enable-sampling --sample-rate 0.2
 ```
 
 ## Common Scenarios
 
-### Scenario 1: Production Analysis (Accuracy Critical)
+### Scenario 1: Production Analysis (Accuracy Critical - DEFAULT)
+
 ```bash
-capmaster match -i evidence/ --no-sampling -o report.txt
+# Default behavior: no sampling, all connections processed
+capmaster match -i evidence/ -o report.txt
 ```
 
 ### Scenario 2: Quick Exploration (Speed Matters)
+
 ```bash
-capmaster match -i dataset/ --sampling-rate 0.3
+capmaster match -i dataset/ --enable-sampling --sample-rate 0.3
 ```
 
 ### Scenario 3: Large Dataset (Balance)
+
 ```bash
 capmaster match -i large_capture/ \
-  --sampling-threshold 5000 \
-  --sampling-rate 0.5
+  --enable-sampling \
+  --sample-threshold 5000 \
+  --sample-rate 0.5
 ```
 
 ### Scenario 4: Very Large Dataset (Aggressive)
+
 ```bash
 capmaster match -i huge_dataset/ \
-  --sampling-threshold 10000 \
-  --sampling-rate 0.2
+  --enable-sampling \
+  --sample-threshold 10000 \
+  --sample-rate 0.2
 ```
 
 ## What Gets Preserved?
@@ -143,8 +156,9 @@ capmaster match -i captures/ --sampling-threshold 0
 
 ## Logging Output
 
-### With Sampling
-```
+### With Sampling Enabled
+
+```text
 INFO: Found 2500 connections in file1.pcap
 INFO: Found 3000 connections in file2.pcap
 INFO: Applying sampling to first file (threshold=1000, rate=0.5)...
@@ -153,11 +167,12 @@ INFO: Applying sampling to second file (threshold=1000, rate=0.5)...
 INFO: Sampled from 3000 to 1500 connections (50.0% retained)
 ```
 
-### Without Sampling
-```
+### Without Sampling (Default)
+
+```text
 INFO: Found 2500 connections in file1.pcap
 INFO: Found 3000 connections in file2.pcap
-INFO: Sampling disabled by --no-sampling flag
+INFO: Sampling disabled (default behavior). Use --enable-sampling to enable.
 ```
 
 ## Combining with Other Options
@@ -166,7 +181,9 @@ All sampling options work with other match options:
 
 ```bash
 capmaster match -i captures/ \
-  --no-sampling \                    # Sampling control
+  --enable-sampling \                # Enable sampling
+  --sample-threshold 2000 \          # Sampling threshold
+  --sample-rate 0.5 \                # Sampling rate
   --threshold 0.70 \                 # Match score threshold
   --match-mode one-to-many \         # Match mode
   --bucket server \                  # Bucketing strategy
@@ -178,16 +195,19 @@ capmaster match -i captures/ \
 ## Troubleshooting
 
 ### "Out of memory" error
-- Use more aggressive sampling: `--sampling-rate 0.2`
-- Or increase threshold: `--sampling-threshold 20000`
+
+- Enable aggressive sampling: `--enable-sampling --sample-rate 0.2`
+- Or increase threshold: `--enable-sampling --sample-threshold 20000`
 
 ### "Too few matches found"
-- Disable sampling: `--no-sampling`
-- Or increase rate: `--sampling-rate 0.8`
+
+- Use default (no sampling): remove `--enable-sampling` flag
+- Or increase rate: `--enable-sampling --sample-rate 0.8`
 
 ### "Taking too long"
-- Enable/increase sampling: `--sampling-rate 0.3`
-- Or lower threshold: `--sampling-threshold 500`
+
+- Enable sampling: `--enable-sampling --sample-rate 0.3`
+- Or lower threshold: `--enable-sampling --sample-threshold 500`
 
 ## See Also
 

@@ -101,22 +101,23 @@ class MatchPlugin(PluginBase):
             help="Output file for endpoint statistics (default: stdout)",
         )
         @click.option(
-            "--no-sampling",
+            "--enable-sampling",
             is_flag=True,
             default=False,
-            help="Disable connection sampling (process all connections regardless of dataset size)",
+            help="Enable connection sampling for large datasets. When enabled, sampling is triggered "
+            "when connection count exceeds --sample-threshold (default: 1000 connections).",
         )
         @click.option(
-            "--sampling-threshold",
+            "--sample-threshold",
             type=int,
             default=1000,
-            help="Number of connections above which sampling is triggered (default: 1000)",
+            help="Number of connections above which sampling is triggered when --enable-sampling is used (default: 1000)",
         )
         @click.option(
-            "--sampling-rate",
+            "--sample-rate",
             type=float,
             default=0.5,
-            help="Fraction of connections to keep when sampling (0.0-1.0, default: 0.5)",
+            help="Fraction of connections to keep when sampling is enabled (0.0-1.0, default: 0.5)",
         )
         @click.option(
             "--db-connection",
@@ -163,6 +164,12 @@ class MatchPlugin(PluginBase):
             "Format: {\"8000\": 1, \"8080\": 1, \"443\": 2}. "
             "Only used when service aggregation is enabled (default behavior).",
         )
+        @click.option(
+            "--match-json",
+            type=click.Path(path_type=Path),
+            help="Output JSON file for match results. This file can be used as input to the compare command "
+            "to ensure consistent matching between match and compare operations.",
+        )
         @click.pass_context
         def match_command(
             ctx: click.Context,
@@ -178,9 +185,9 @@ class MatchPlugin(PluginBase):
             match_mode: str,
             endpoint_stats: bool,
             endpoint_stats_output: Path | None,
-            no_sampling: bool,
-            sampling_threshold: int,
-            sampling_rate: float,
+            enable_sampling: bool,
+            sample_threshold: int,
+            sample_rate: float,
             db_connection: str | None,
             kase_id: int | None,
             endpoint_stats_json: Path | None,
@@ -188,6 +195,7 @@ class MatchPlugin(PluginBase):
             disable_very_low_dual_output: bool,
             endpoint_pair_mode: bool,
             service_group_mapping: Path | None,
+            match_json: Path | None,
         ) -> None:
             """
             Match TCP connections between PCAP files.
@@ -223,11 +231,11 @@ class MatchPlugin(PluginBase):
               # Save results to file
               capmaster match -i captures/ -o matches.txt
 
-              # Disable sampling (process all connections)
-              capmaster match -i captures/ --no-sampling
+              # Enable sampling for large datasets (default: disabled)
+              capmaster match -i captures/ --enable-sampling
 
               # Custom sampling parameters
-              capmaster match -i captures/ --sampling-threshold 5000 --sampling-rate 0.3
+              capmaster match -i captures/ --enable-sampling --sample-threshold 5000 --sample-rate 0.3
 
             \b
             Bucketing Strategies:
@@ -238,10 +246,11 @@ class MatchPlugin(PluginBase):
 
             \b
             Sampling:
-              By default, sampling is applied when connection count exceeds 1000.
-              Use --no-sampling to disable, or customize with --sampling-threshold
-              and --sampling-rate. Sampling uses time-based stratified sampling
-              and always preserves header-only connections and special ports.
+              By default, sampling is DISABLED and all connections are processed.
+              Use --enable-sampling to enable sampling for large datasets.
+              When enabled, sampling is triggered when connection count exceeds
+              --sample-threshold (default: 1000). Sampling uses time-based stratified
+              sampling and always preserves header-only connections and special ports.
 
             \b
             Input:
@@ -295,9 +304,9 @@ class MatchPlugin(PluginBase):
                 match_mode=match_mode,
                 endpoint_stats=endpoint_stats,
                 endpoint_stats_output=endpoint_stats_output,
-                no_sampling=no_sampling,
-                sampling_threshold=sampling_threshold,
-                sampling_rate=sampling_rate,
+                enable_sampling=enable_sampling,
+                sample_threshold=sample_threshold,
+                sample_rate=sample_rate,
                 db_connection=db_connection,
                 kase_id=kase_id,
                 endpoint_stats_json=endpoint_stats_json,
@@ -305,6 +314,7 @@ class MatchPlugin(PluginBase):
                 disable_very_low_dual_output=disable_very_low_dual_output,
                 endpoint_pair_mode=endpoint_pair_mode,
                 service_group_mapping=service_group_mapping,
+                match_json=match_json,
             )
             ctx.exit(exit_code)
 
@@ -322,9 +332,9 @@ class MatchPlugin(PluginBase):
         match_mode: str = "one-to-one",
         endpoint_stats: bool = False,
         endpoint_stats_output: Path | None = None,
-        no_sampling: bool = False,
-        sampling_threshold: int = 1000,
-        sampling_rate: float = 0.5,
+        enable_sampling: bool = False,
+        sample_threshold: int = 1000,
+        sample_rate: float = 0.5,
         db_connection: str | None = None,
         kase_id: int | None = None,
         endpoint_stats_json: Path | None = None,
@@ -332,6 +342,7 @@ class MatchPlugin(PluginBase):
         disable_very_low_dual_output: bool = False,
         endpoint_pair_mode: bool = False,
         service_group_mapping: Path | None = None,
+        match_json: Path | None = None,
     ) -> int:
         """
         Execute the match plugin.
@@ -349,9 +360,9 @@ class MatchPlugin(PluginBase):
             match_mode: Matching mode (one-to-one or one-to-many)
             endpoint_stats: Generate endpoint statistics
             endpoint_stats_output: Output file for endpoint statistics
-            no_sampling: Disable sampling
-            sampling_threshold: Connection count threshold for sampling
-            sampling_rate: Fraction of connections to keep when sampling
+            enable_sampling: Enable sampling for large datasets (default: False)
+            sample_threshold: Connection count threshold for sampling
+            sample_rate: Fraction of connections to keep when sampling
             db_connection: Database connection string
             kase_id: Case ID for database table name
             endpoint_stats_json: Output JSON file for endpoint statistics
@@ -359,6 +370,7 @@ class MatchPlugin(PluginBase):
             disable_very_low_dual_output: Disable dual output for VERY_LOW confidence pairs
             endpoint_pair_mode: Use endpoint pair mode instead of service aggregation (default: False)
             service_group_mapping: JSON file mapping service ports to group IDs
+            match_json: Output JSON file for match results (can be used as input to compare command)
 
         Returns:
             Exit code (0 for success, non-zero for failure)
@@ -371,12 +383,12 @@ class MatchPlugin(PluginBase):
             logger.error(f"Invalid score threshold: {score_threshold}. Must be between 0.0 and 1.0")
             return 1
 
-        if not 0.0 < sampling_rate <= 1.0:
-            logger.error(f"Invalid sampling rate: {sampling_rate}. Must be between 0.0 and 1.0")
+        if not 0.0 < sample_rate <= 1.0:
+            logger.error(f"Invalid sample rate: {sample_rate}. Must be between 0.0 and 1.0")
             return 1
 
-        if sampling_threshold <= 0:
-            logger.error(f"Invalid sampling threshold: {sampling_threshold}. Must be positive")
+        if sample_threshold <= 0:
+            logger.error(f"Invalid sample threshold: {sample_threshold}. Must be positive")
             return 1
 
         try:
@@ -425,28 +437,26 @@ class MatchPlugin(PluginBase):
                     logger.info("  (merged by direction-independent 5-tuple)")
                 progress.update(extract_task, advance=1)
 
-                # Apply sampling if needed (unless disabled)
-                if no_sampling:
-                    logger.info("Sampling disabled by --no-sampling flag")
-                else:
+                # Apply sampling if enabled
+                if enable_sampling:
                     # Validate sampling parameters
-                    if sampling_rate <= 0.0 or sampling_rate > 1.0:
-                        logger.warning(f"Invalid sampling rate {sampling_rate}, using default 0.5")
-                        sampling_rate = 0.5
+                    if sample_rate <= 0.0 or sample_rate > 1.0:
+                        logger.warning(f"Invalid sample rate {sample_rate}, using default 0.5")
+                        sample_rate = 0.5
 
-                    if sampling_threshold < 1:
-                        logger.warning(f"Invalid sampling threshold {sampling_threshold}, using default 1000")
-                        sampling_threshold = 1000
+                    if sample_threshold < 1:
+                        logger.warning(f"Invalid sample threshold {sample_threshold}, using default 1000")
+                        sample_threshold = 1000
 
                     sampler = ConnectionSampler(
-                        threshold=sampling_threshold,
-                        sample_rate=sampling_rate,
+                        threshold=sample_threshold,
+                        sample_rate=sample_rate,
                     )
 
                     if sampler.should_sample(connections1):
                         sample_task = progress.add_task("[yellow]Sampling connections...", total=1)
                         logger.info(
-                            f"Applying sampling to first file (threshold={sampling_threshold}, rate={sampling_rate})..."
+                            f"Applying sampling to first file (threshold={sample_threshold}, rate={sample_rate})..."
                         )
                         original_count1 = len(connections1)
                         connections1 = sampler.sample(connections1)
@@ -459,7 +469,7 @@ class MatchPlugin(PluginBase):
                     if sampler.should_sample(connections2):
                         sample_task = progress.add_task("[yellow]Sampling connections...", total=1)
                         logger.info(
-                            f"Applying sampling to second file (threshold={sampling_threshold}, rate={sampling_rate})..."
+                            f"Applying sampling to second file (threshold={sample_threshold}, rate={sample_rate})..."
                         )
                         original_count2 = len(connections2)
                         connections2 = sampler.sample(connections2)
@@ -468,6 +478,8 @@ class MatchPlugin(PluginBase):
                             f"({len(connections2)/original_count2:.1%} retained)"
                         )
                         progress.update(sample_task, advance=1)
+                else:
+                    logger.info("Sampling disabled (default behavior). Use --enable-sampling to enable.")
 
                 # Improve server detection using cardinality analysis
                 detector_task = progress.add_task("[yellow]Analyzing server/client roles...", total=1)
@@ -511,6 +523,18 @@ class MatchPlugin(PluginBase):
                 output_task = progress.add_task("[green]Writing results...", total=1)
                 self._output_results(matches, stats, output_file)
                 progress.update(output_task, advance=1)
+
+                # Save matches to JSON if requested
+                if match_json:
+                    json_task = progress.add_task("[green]Saving matches to JSON...", total=1)
+                    self._save_matches_json(
+                        matches,
+                        match_json,
+                        match_file1,
+                        match_file2,
+                        stats,
+                    )
+                    progress.update(json_task, advance=1)
 
                 # Generate endpoint statistics if requested
                 if endpoint_stats:
@@ -591,6 +615,81 @@ class MatchPlugin(PluginBase):
             # Unexpected errors - show traceback in debug mode
             return handle_error(e, show_traceback=logger.level <= logging.DEBUG)
 
+    def match_connections_in_memory(
+        self,
+        connections1: list,
+        connections2: list,
+        bucket_strategy: str = "auto",
+        score_threshold: float = 0.60,
+        match_mode: str = "one-to-one",
+    ) -> list:
+        """
+        Match connections in memory with full ServerDetector processing.
+
+        This method provides the same matching logic as the execute() method,
+        but operates on pre-extracted connections in memory without file I/O.
+        It includes the complete ServerDetector cardinality analysis pipeline.
+
+        This is designed to be called by other plugins (e.g., compare plugin)
+        to ensure consistent matching results.
+
+        Args:
+            connections1: List of TcpConnection objects from first PCAP
+            connections2: List of TcpConnection objects from second PCAP
+            bucket_strategy: Bucketing strategy (auto, server, port, none)
+            score_threshold: Minimum normalized score threshold (0.0-1.0)
+            match_mode: Matching mode (one-to-one or one-to-many)
+
+        Returns:
+            List of ConnectionMatch objects
+
+        Example:
+            >>> plugin = MatchPlugin()
+            >>> connections1 = extract_connections_from_pcap(file1)
+            >>> connections2 = extract_connections_from_pcap(file2)
+            >>> matches = plugin.match_connections_in_memory(
+            ...     connections1, connections2,
+            ...     bucket_strategy="auto",
+            ...     score_threshold=0.60,
+            ...     match_mode="one-to-many"
+            ... )
+        """
+        logger.info("Matching connections in memory...")
+        logger.info(f"Connections: {len(connections1)} vs {len(connections2)}")
+
+        # Step 1: Improve server detection using cardinality analysis
+        logger.info("Performing cardinality analysis for server detection...")
+        detector = ServerDetector()
+
+        # Collect all connections for cardinality analysis
+        for conn in connections1:
+            detector.collect_connection(conn)
+        for conn in connections2:
+            detector.collect_connection(conn)
+
+        # Finalize cardinality analysis
+        detector.finalize_cardinality()
+
+        # Re-detect server/client roles with improved detection
+        connections1 = self._improve_server_detection(connections1, detector)
+        connections2 = self._improve_server_detection(connections2, detector)
+        logger.info("Server detection improved using cardinality analysis")
+
+        # Step 2: Match connections
+        logger.info("Matching connections...")
+        bucket_enum = BucketStrategy(bucket_strategy)
+        match_mode_enum = MatchMode(match_mode)
+        matcher = ConnectionMatcher(
+            bucket_strategy=bucket_enum,
+            score_threshold=score_threshold,
+            match_mode=match_mode_enum,
+        )
+
+        matches = matcher.match(connections1, connections2)
+        logger.info(f"Found {len(matches)} matches")
+
+        return matches
+
     def _extract_connections(self, pcap_file: Path, merge_by_5tuple: bool = False) -> list:
         """
         Extract TCP connections from a PCAP file.
@@ -662,6 +761,47 @@ class MatchPlugin(PluginBase):
         else:
             print(output_text)
 
+    def _save_matches_json(
+        self,
+        matches: list,
+        output_file: Path,
+        file1: Path,
+        file2: Path,
+        stats: dict,
+    ) -> None:
+        """
+        Save match results to JSON file.
+
+        Args:
+            matches: List of ConnectionMatch objects
+            output_file: Path to output JSON file
+            file1: Path to first PCAP file
+            file2: Path to second PCAP file
+            stats: Statistics dictionary
+        """
+        from capmaster.core.connection.match_serializer import MatchSerializer
+
+        # Prepare metadata
+        metadata = {
+            "total_connections_1": stats["total_connections_1"],
+            "total_connections_2": stats["total_connections_2"],
+            "matched_pairs": stats["matched_pairs"],
+            "unmatched_1": stats["unmatched_1"],
+            "unmatched_2": stats["unmatched_2"],
+            "match_rate_1": stats["match_rate_1"],
+            "match_rate_2": stats["match_rate_2"],
+            "average_score": stats["average_score"],
+            "match_mode": stats["match_mode"],
+        }
+
+        # Save to JSON
+        MatchSerializer.save_matches(
+            matches=matches,
+            output_file=output_file,
+            file1_path=str(file1),
+            file2_path=str(file2),
+            metadata=metadata,
+        )
 
     def _output_endpoint_stats(
         self,

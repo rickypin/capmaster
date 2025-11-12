@@ -8,7 +8,6 @@ import click
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
 from capmaster.core.connection.connection_extractor import extract_connections_from_pcap
-from capmaster.core.connection.matcher import BucketStrategy, ConnectionMatcher, MatchMode
 from capmaster.core.file_scanner import PcapScanner
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
@@ -267,6 +266,13 @@ class ComparePlugin(PluginBase):
             help="Matching mode (one-to-one: each connection matches at most once, "
             "one-to-many: allow one connection to match multiple connections based on time overlap)",
         )
+        @click.option(
+            "--match-file",
+            type=click.Path(exists=True, path_type=Path),
+            help="JSON file containing match results from the match command. "
+            "When provided, compare will use these matches instead of performing its own matching. "
+            "This ensures consistency between match and compare results.",
+        )
         @click.pass_context
         def compare_command(
             ctx: click.Context,
@@ -284,6 +290,7 @@ class ComparePlugin(PluginBase):
             kase_id: int | None,
             silent: bool,
             match_mode: str,
+            match_file: Path | None,
         ) -> None:
             """
             Compare TCP connections at packet level between PCAP files.
@@ -371,6 +378,7 @@ class ComparePlugin(PluginBase):
                 kase_id=kase_id,
                 silent=silent,
                 match_mode=match_mode,
+                match_file=match_file,
             )
             ctx.exit(exit_code)
 
@@ -390,6 +398,7 @@ class ComparePlugin(PluginBase):
         kase_id: int | None = None,
         silent: bool = False,
         match_mode: str = "one-to-one",
+        match_file: Path | None = None,
     ) -> int:
         """
         Execute the compare plugin.
@@ -411,6 +420,7 @@ class ComparePlugin(PluginBase):
             db_connection: Database connection string (optional)
             kase_id: Case ID for database table name (optional)
             silent: Silent mode - suppress progress bars and screen output
+            match_file: JSON file containing match results from match command (optional)
 
         Returns:
             Exit code (0 for success, non-zero for failure)
@@ -483,16 +493,32 @@ class ComparePlugin(PluginBase):
                 # Step 2: Match connections
                 match_task = progress.add_task("[yellow]Matching connections...", total=1) if not silent else None
 
-                bucket_enum = BucketStrategy(bucket_strategy)
-                match_mode_enum = MatchMode(match_mode)
-                matcher = ConnectionMatcher(
-                    bucket_strategy=bucket_enum,
-                    score_threshold=score_threshold,
-                    match_mode=match_mode_enum,
-                )
+                if match_file:
+                    # Load matches from file
+                    matches = self._load_matches_from_file(
+                        match_file,
+                        baseline_file,
+                        compare_file,
+                        baseline_connections,
+                        compare_connections,
+                    )
+                    logger.info(f"Loaded {len(matches)} matches from {match_file}")
+                else:
+                    # Perform matching using match plugin's in-memory method
+                    # This ensures we use the same logic as the match plugin,
+                    # including ServerDetector cardinality analysis
+                    from capmaster.plugins.match.plugin import MatchPlugin
 
-                matches = matcher.match(baseline_connections, compare_connections)
-                logger.info(f"Found {len(matches)} matched connection pairs")
+                    match_plugin = MatchPlugin()
+                    matches = match_plugin.match_connections_in_memory(
+                        baseline_connections,
+                        compare_connections,
+                        bucket_strategy=bucket_strategy,
+                        score_threshold=score_threshold,
+                        match_mode=match_mode,
+                    )
+                    logger.info(f"Found {len(matches)} matched connection pairs")
+
                 if not silent:
                     progress.update(match_task, advance=1)
 
@@ -604,6 +630,86 @@ class ComparePlugin(PluginBase):
     def _extract_connections(self, pcap_file: Path):
         """Extract TCP connections from a PCAP file."""
         return extract_connections_from_pcap(pcap_file)
+
+    def _load_matches_from_file(
+        self,
+        match_file: Path,
+        baseline_file: Path,
+        compare_file: Path,
+        baseline_connections: list,
+        compare_connections: list,
+    ) -> list:
+        """
+        Load matches from a JSON file and validate against current connections.
+
+        Args:
+            match_file: Path to JSON file containing match results
+            baseline_file: Path to baseline PCAP file
+            compare_file: Path to compare PCAP file
+            baseline_connections: List of connections from baseline file
+            compare_connections: List of connections from compare file
+
+        Returns:
+            List of ConnectionMatch objects
+
+        Raises:
+            ValueError: If match file is invalid or doesn't match current files
+        """
+        from capmaster.core.connection.match_serializer import MatchSerializer
+
+        # Load matches from file
+        matches, metadata = MatchSerializer.load_matches(match_file)
+
+        # Validate file paths
+        expected_file1 = str(baseline_file)
+        expected_file2 = str(compare_file)
+        actual_file1 = metadata.get("file1")
+        actual_file2 = metadata.get("file2")
+
+        # Check if files match (allow for different paths to same file)
+        if Path(actual_file1).name != baseline_file.name or Path(actual_file2).name != compare_file.name:
+            logger.warning(
+                f"Match file was created for different files:\n"
+                f"  Expected: {baseline_file.name}, {compare_file.name}\n"
+                f"  Actual:   {Path(actual_file1).name}, {Path(actual_file2).name}\n"
+                f"Proceeding anyway, but results may be incorrect."
+            )
+
+        # Create lookup maps for connections by stream_id
+        baseline_map = {conn.stream_id: conn for conn in baseline_connections}
+        compare_map = {conn.stream_id: conn for conn in compare_connections}
+
+        # Validate and filter matches
+        valid_matches = []
+        invalid_count = 0
+
+        for match in matches:
+            stream_id1 = match.conn1.stream_id
+            stream_id2 = match.conn2.stream_id
+
+            # Check if both streams exist in current connections
+            if stream_id1 not in baseline_map or stream_id2 not in compare_map:
+                invalid_count += 1
+                logger.debug(
+                    f"Skipping match: stream {stream_id1} or {stream_id2} not found in current connections"
+                )
+                continue
+
+            valid_matches.append(match)
+
+        if invalid_count > 0:
+            logger.warning(
+                f"Skipped {invalid_count} matches that don't exist in current connections. "
+                f"Using {len(valid_matches)} valid matches."
+            )
+
+        if not valid_matches:
+            raise ValueError(
+                "No valid matches found in match file. "
+                "The match file may be for different PCAP files."
+            )
+
+        return valid_matches
 
     def _output_results(
         self,

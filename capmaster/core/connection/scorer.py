@@ -518,12 +518,13 @@ class ConnectionScorer:
         Returns:
             Tuple of (score, available_weight)
         """
-        # NOTE: ISN can be 0 (relative sequence number), so we check syn_options
-        # to determine if SYN packet was present. If no SYN packet, ISN is not available.
+        # ISN is only available if SYN packet was captured
+        # We use syn_options as a proxy to check if SYN packet exists
+        # (ISN=0 is valid when no SYN packet, not when using absolute sequence numbers)
         if not conn1.syn_options or not conn2.syn_options:
             return 0.0, 0.0
 
-        # Exact match
+        # Exact match (32-bit ISN should match exactly for same connection)
         if conn1.client_isn == conn2.client_isn:
             return self.WEIGHT_ISN_CLIENT, self.WEIGHT_ISN_CLIENT
 
@@ -540,12 +541,13 @@ class ConnectionScorer:
         Returns:
             Tuple of (score, available_weight)
         """
-        # NOTE: ISN can be 0 (relative sequence number), so we check syn_options
-        # to determine if SYN packet was present. If no SYN packet, ISN is not available.
+        # Server ISN is only available if SYN-ACK packet was captured
+        # We use syn_options as a proxy to check if handshake was captured
+        # (ISN=0 is valid when no SYN-ACK packet, not when using absolute sequence numbers)
         if not conn1.syn_options or not conn2.syn_options:
             return 0.0, 0.0
 
-        # Exact match
+        # Exact match (32-bit ISN should match exactly for same connection)
         if conn1.server_isn == conn2.server_isn:
             return self.WEIGHT_ISN_SERVER, self.WEIGHT_ISN_SERVER
 
@@ -555,9 +557,10 @@ class ConnectionScorer:
         """
         Score TCP timestamp similarity.
 
-        Matching original script logic:
+        Improved logic to avoid false positives:
         - If either connection has timestamp, count as available
         - Match if TSval OR TSecr matches
+        - Exclude TSecr=0 matches (SYN packets always have TSecr=0, causing false positives)
 
         Args:
             conn1: First connection
@@ -566,7 +569,7 @@ class ConnectionScorer:
         Returns:
             Tuple of (score, available_weight)
         """
-        # Check if either connection has timestamp (matching original script)
+        # Check if either connection has timestamp
         has_ts1 = bool(conn1.tcp_timestamp_tsval or conn1.tcp_timestamp_tsecr)
         has_ts2 = bool(conn2.tcp_timestamp_tsval or conn2.tcp_timestamp_tsecr)
 
@@ -574,16 +577,19 @@ class ConnectionScorer:
         if not has_ts1 and not has_ts2:
             return 0.0, 0.0
 
-        # If at least one has timestamp, count as available (matching original script)
+        # If at least one has timestamp, count as available
         # Match if either TSval or TSecr matches
         tsval_match = (
             conn1.tcp_timestamp_tsval
             and conn2.tcp_timestamp_tsval
             and conn1.tcp_timestamp_tsval == conn2.tcp_timestamp_tsval
         )
+        # Exclude TSecr=0 to avoid false positives from SYN packets
+        # (all SYN packets have TSecr=0 since they haven't received a timestamp yet)
         tsecr_match = (
             conn1.tcp_timestamp_tsecr
             and conn2.tcp_timestamp_tsecr
+            and conn1.tcp_timestamp_tsecr != "0"  # Exclude TSecr=0
             and conn1.tcp_timestamp_tsecr == conn2.tcp_timestamp_tsecr
         )
 
@@ -764,6 +770,7 @@ class ConnectionScorer:
                 evidence_parts.append("isnC")
 
         # TCP timestamp exact match (stricter than normal availability rule)
+        # Exclude TSecr=0 to avoid false positives from SYN packets
         has_ts1 = bool(conn1.tcp_timestamp_tsval or conn1.tcp_timestamp_tsecr)
         has_ts2 = bool(conn2.tcp_timestamp_tsval or conn2.tcp_timestamp_tsecr)
         if has_ts1 and has_ts2:
@@ -773,9 +780,11 @@ class ConnectionScorer:
                 and conn2.tcp_timestamp_tsval
                 and conn1.tcp_timestamp_tsval == conn2.tcp_timestamp_tsval
             )
+            # Exclude TSecr=0 to avoid false positives from SYN packets
             tsecr_match = (
                 conn1.tcp_timestamp_tsecr
                 and conn2.tcp_timestamp_tsecr
+                and conn1.tcp_timestamp_tsecr != "0"  # Exclude TSecr=0
                 and conn1.tcp_timestamp_tsecr == conn2.tcp_timestamp_tsecr
             )
             if tsval_match or tsecr_match:

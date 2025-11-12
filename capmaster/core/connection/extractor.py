@@ -64,9 +64,11 @@ class TcpFieldExtractor:
             str(pcap_file),
             "-Y",
             "tcp",  # Filter for TCP packets only
-            # NOTE: Use relative sequence numbers to match original script behavior
-            # Original script uses tcp.seq which defaults to relative sequence numbers
-            # This means SYN packets have seq=0, making ISN matching work correctly
+            # Use absolute sequence numbers for accurate ISN matching
+            # This allows ISN to serve as a strong distinguishing feature (32-bit random number)
+            # instead of all connections having ISN=0 in relative mode
+            "-o",
+            "tcp.relative_sequence_numbers:false",  # Use absolute sequence numbers
             "-o",
             "tcp.desegment_tcp_streams:false",  # Disable TCP reassembly
             "-T",
@@ -87,8 +89,11 @@ class TcpFieldExtractor:
         # This avoids temporary file I/O overhead
         result = self.tshark.execute(args)
 
-        if result.returncode != 0:
-            raise RuntimeError(f"tshark extraction failed: {result.stderr}")
+        # Note: TsharkWrapper.execute() already handles exit codes:
+        # - Exit code 0: Success
+        # - Exit code 2: Warning (e.g., truncated PCAP) - logs warning but continues
+        # - Other codes: Raises CalledProcessError
+        # So if we reach here, the command succeeded or had only warnings
 
         # Parse the TSV output from stdout
         yield from self._parse_tsv_string(result.stdout)
@@ -241,5 +246,8 @@ class TcpFieldExtractor:
         # Execute tshark
         result = self.tshark.execute(args, output_file=output_file)
 
-        if result.returncode != 0:
-            raise RuntimeError(f"tshark extraction failed: {result.stderr}")
+        # Note: TsharkWrapper.execute() already handles exit codes:
+        # - Exit code 0: Success
+        # - Exit code 2: Warning (e.g., truncated PCAP) - logs warning but continues
+        # - Other codes: Raises CalledProcessError
+        # So if we reach here, the command succeeded or had only warnings
