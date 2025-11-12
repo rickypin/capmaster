@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from capmaster.plugins.match.matcher import BucketStrategy
+from capmaster.core.connection.matcher import BucketStrategy
 from capmaster.plugins.match.plugin import MatchPlugin
 from capmaster.plugins.match.sampler import ConnectionSampler
 

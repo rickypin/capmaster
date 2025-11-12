@@ -7,15 +7,15 @@ from pathlib import Path
 import click
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
+from capmaster.core.connection.connection_extractor import extract_connections_from_pcap
+from capmaster.core.connection.matcher import BucketStrategy, ConnectionMatcher, MatchMode
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
-from capmaster.plugins.match.connection_extractor import extract_connections_from_pcap
 from capmaster.plugins.match.endpoint_stats import (
     EndpointStatsCollector,
     format_endpoint_stats,
     format_endpoint_stats_table,
 )
-from capmaster.plugins.match.matcher import BucketStrategy, ConnectionMatcher, MatchMode
 from capmaster.plugins.match.sampler import ConnectionSampler
 from capmaster.plugins.match.server_detector import ServerDetector
 from capmaster.utils.cli_options import (
@@ -148,6 +148,21 @@ class MatchPlugin(PluginBase):
             help="Disable dual output for VERY_LOW confidence endpoint pairs. "
             "By default, VERY_LOW confidence pairs output both original and reversed interpretations.",
         )
+        @click.option(
+            "--endpoint-pair-mode",
+            is_flag=True,
+            default=False,
+            help="Use endpoint pair mode instead of service aggregation. "
+            "By default, endpoint pairs are aggregated by service (server port + protocol). "
+            "Use this flag to output individual endpoint pairs with separate group_ids.",
+        )
+        @click.option(
+            "--service-group-mapping",
+            type=click.Path(exists=True, path_type=Path),
+            help="JSON file mapping service ports to group IDs for custom grouping. "
+            "Format: {\"8000\": 1, \"8080\": 1, \"443\": 2}. "
+            "Only used when service aggregation is enabled (default behavior).",
+        )
         @click.pass_context
         def match_command(
             ctx: click.Context,
@@ -171,6 +186,8 @@ class MatchPlugin(PluginBase):
             endpoint_stats_json: Path | None,
             merge_by_5tuple: bool,
             disable_very_low_dual_output: bool,
+            endpoint_pair_mode: bool,
+            service_group_mapping: Path | None,
         ) -> None:
             """
             Match TCP connections between PCAP files.
@@ -286,6 +303,8 @@ class MatchPlugin(PluginBase):
                 endpoint_stats_json=endpoint_stats_json,
                 merge_by_5tuple=merge_by_5tuple,
                 disable_very_low_dual_output=disable_very_low_dual_output,
+                endpoint_pair_mode=endpoint_pair_mode,
+                service_group_mapping=service_group_mapping,
             )
             ctx.exit(exit_code)
 
@@ -311,6 +330,8 @@ class MatchPlugin(PluginBase):
         endpoint_stats_json: Path | None = None,
         merge_by_5tuple: bool = False,
         disable_very_low_dual_output: bool = False,
+        endpoint_pair_mode: bool = False,
+        service_group_mapping: Path | None = None,
     ) -> int:
         """
         Execute the match plugin.
@@ -336,6 +357,8 @@ class MatchPlugin(PluginBase):
             endpoint_stats_json: Output JSON file for endpoint statistics
             merge_by_5tuple: Merge connections by direction-independent 5-tuple
             disable_very_low_dual_output: Disable dual output for VERY_LOW confidence pairs
+            endpoint_pair_mode: Use endpoint pair mode instead of service aggregation (default: False)
+            service_group_mapping: JSON file mapping service ports to group IDs
 
         Returns:
             Exit code (0 for success, non-zero for failure)
@@ -501,6 +524,18 @@ class MatchPlugin(PluginBase):
                     )
                     progress.update(endpoint_task, advance=1)
 
+                    # Aggregate by service by default (unless endpoint_pair_mode is enabled)
+                    service_stats_list = None
+                    if not endpoint_pair_mode:
+                        service_task = progress.add_task("[green]Aggregating by service...", total=1)
+                        service_stats_list = self._aggregate_and_output_service_stats(
+                            endpoint_stats_list,
+                            match_file1,
+                            match_file2,
+                            endpoint_stats_output,
+                        )
+                        progress.update(service_task, advance=1)
+
                     # Write to database if connection parameters provided
                     if db_connection and kase_id is not None:
                         db_task = progress.add_task("[green]Writing to database...", total=1)
@@ -511,6 +546,8 @@ class MatchPlugin(PluginBase):
                             match_file1,
                             match_file2,
                             pcap_id_mapping,
+                            service_stats_list=service_stats_list,
+                            service_group_mapping_file=service_group_mapping,
                         )
                         progress.update(db_task, advance=1)
 
@@ -523,6 +560,8 @@ class MatchPlugin(PluginBase):
                             match_file1,
                             match_file2,
                             pcap_id_mapping,
+                            service_stats_list=service_stats_list,
+                            service_group_mapping_file=service_group_mapping,
                         )
                         progress.update(json_task, advance=1)
 
@@ -678,6 +717,86 @@ class MatchPlugin(PluginBase):
         # Return stats for database writing
         return stats
 
+    def _aggregate_and_output_service_stats(
+        self,
+        endpoint_stats_list: list,
+        file1: Path,
+        file2: Path,
+        output_file: Path | None,
+    ) -> list:
+        """
+        Aggregate endpoint statistics by service and output.
+
+        Args:
+            endpoint_stats_list: List of EndpointPairStats objects
+            file1: Path to first PCAP file
+            file2: Path to second PCAP file
+            output_file: Output file for statistics (None for stdout)
+
+        Returns:
+            List of ServiceStats objects
+        """
+        from capmaster.plugins.match.endpoint_stats import aggregate_by_service, format_service_stats
+
+        # Aggregate by service
+        service_stats = aggregate_by_service(endpoint_stats_list)
+
+        # Format output
+        output_text = format_service_stats(
+            service_stats,
+            file1_name=file1.name,
+            file2_name=file2.name,
+        )
+
+        # Write output
+        if output_file:
+            # Append to existing file or create new one
+            with output_file.open("a") as f:
+                f.write("\n\n")
+                f.write(output_text)
+            logger.info(f"Service statistics appended to: {output_file}")
+        else:
+            print("\n")
+            print(output_text)
+
+        return service_stats
+
+    def _load_service_group_mapping(self, mapping_file: Path) -> dict:
+        """
+        Load service to group ID mapping from JSON file.
+
+        Args:
+            mapping_file: Path to JSON file with mapping
+
+        Returns:
+            Dictionary mapping ServiceKey to group_id
+
+        Raises:
+            ValueError: If JSON file is invalid
+        """
+        import json
+        from capmaster.plugins.match.endpoint_stats import ServiceKey
+
+        try:
+            with mapping_file.open("r") as f:
+                port_to_group = json.load(f)
+
+            # Convert port strings to ServiceKey objects
+            # Assume TCP (protocol 6) by default
+            service_to_group = {}
+            for port_str, group_id in port_to_group.items():
+                port = int(port_str)
+                service_key = ServiceKey(server_port=port, protocol=6)
+                service_to_group[service_key] = int(group_id)
+
+            logger.info(f"Loaded service group mapping from {mapping_file}")
+            logger.info(f"  Mappings: {len(service_to_group)} services")
+
+            return service_to_group
+
+        except (json.JSONDecodeError, ValueError) as e:
+            raise ValueError(f"Invalid service group mapping file: {e}")
+
     def _improve_server_detection(
         self,
         connections: list[TcpConnection],
@@ -697,7 +816,7 @@ class MatchPlugin(PluginBase):
         Returns:
             List of connections with improved server/client detection
         """
-        from capmaster.plugins.match.connection import TcpConnection
+        from capmaster.core.connection.models import TcpConnection
 
         improved_connections = []
 
@@ -762,6 +881,8 @@ class MatchPlugin(PluginBase):
         file1: Path,
         file2: Path,
         pcap_id_mapping: dict[str, int] | None = None,
+        service_stats_list: list | None = None,
+        service_group_mapping_file: Path | None = None,
     ) -> None:
         """
         Write endpoint statistics to database.
@@ -773,18 +894,20 @@ class MatchPlugin(PluginBase):
             file1: Path to first PCAP file
             file2: Path to second PCAP file
             pcap_id_mapping: Mapping from file path to pcap_id (optional)
+            service_stats_list: List of ServiceStats objects (optional, for service aggregation)
+            service_group_mapping_file: JSON file with service to group mapping (optional)
         """
         from capmaster.plugins.match.db_writer import MatchDatabaseWriter
 
-        # Skip database operations if no endpoint pairs were matched
-        if not endpoint_stats:
+        # Skip database operations if no endpoint pairs or service stats were matched
+        if not endpoint_stats and not service_stats_list:
             logger.warning(
                 "No endpoint pairs found in match results. "
                 "Skipping database write operation to preserve existing data."
             )
             return
 
-        logger.info(f"Writing endpoint statistics to database (kase_id={kase_id})...")
+        logger.info(f"Writing statistics to database (kase_id={kase_id})...")
 
         try:
             with MatchDatabaseWriter(db_connection, kase_id) as db:
@@ -794,13 +917,30 @@ class MatchPlugin(PluginBase):
                 # Clear existing data from table before writing new data
                 db.clear_table_data()
 
-                # Write endpoint statistics
-                records_inserted = db.write_endpoint_stats(
-                    endpoint_stats=endpoint_stats,
-                    pcap_id_mapping=pcap_id_mapping or {},
-                    file1_path=str(file1),
-                    file2_path=str(file2),
-                )
+                # Write service statistics if available
+                if service_stats_list:
+                    # Load service group mapping if provided
+                    service_to_group_mapping = None
+                    if service_group_mapping_file:
+                        service_to_group_mapping = self._load_service_group_mapping(
+                            service_group_mapping_file
+                        )
+
+                    records_inserted = db.write_service_stats(
+                        service_stats=service_stats_list,
+                        pcap_id_mapping=pcap_id_mapping or {},
+                        file1_path=str(file1),
+                        file2_path=str(file2),
+                        service_to_group_mapping=service_to_group_mapping,
+                    )
+                else:
+                    # Write endpoint statistics (original behavior)
+                    records_inserted = db.write_endpoint_stats(
+                        endpoint_stats=endpoint_stats,
+                        pcap_id_mapping=pcap_id_mapping or {},
+                        file1_path=str(file1),
+                        file2_path=str(file2),
+                    )
 
                 # Commit all inserts
                 db.commit()
@@ -821,6 +961,8 @@ class MatchPlugin(PluginBase):
         file1: Path,
         file2: Path,
         pcap_id_mapping: dict[str, int] | None = None,
+        service_stats_list: list | None = None,
+        service_group_mapping_file: Path | None = None,
     ) -> None:
         """
         Write endpoint statistics to JSON file.
@@ -831,28 +973,48 @@ class MatchPlugin(PluginBase):
             file1: Path to first PCAP file
             file2: Path to second PCAP file
             pcap_id_mapping: Mapping from file path to pcap_id (optional)
+            service_stats_list: List of ServiceStats objects (optional, for service aggregation)
+            service_group_mapping_file: JSON file with service to group mapping (optional)
         """
         from capmaster.plugins.match.db_writer import MatchDatabaseWriter
 
-        # Skip JSON write if no endpoint pairs were matched
-        if not endpoint_stats:
+        # Skip JSON write if no endpoint pairs or service stats were matched
+        if not endpoint_stats and not service_stats_list:
             logger.warning(
                 "No endpoint pairs found in match results. "
                 "Skipping JSON file write operation."
             )
             return
 
-        logger.info(f"Writing endpoint statistics to JSON file: {output_file}")
+        logger.info(f"Writing statistics to JSON file: {output_file}")
 
         try:
-            # Write endpoint statistics to JSON
-            records_written = MatchDatabaseWriter.write_endpoint_stats_to_json(
-                endpoint_stats=endpoint_stats,
-                pcap_id_mapping=pcap_id_mapping or {},
-                file1_path=str(file1),
-                file2_path=str(file2),
-                output_file=output_file,
-            )
+            # Write service statistics if available
+            if service_stats_list:
+                # Load service group mapping if provided
+                service_to_group_mapping = None
+                if service_group_mapping_file:
+                    service_to_group_mapping = self._load_service_group_mapping(
+                        service_group_mapping_file
+                    )
+
+                records_written = MatchDatabaseWriter.write_service_stats_to_json(
+                    service_stats=service_stats_list,
+                    pcap_id_mapping=pcap_id_mapping or {},
+                    file1_path=str(file1),
+                    file2_path=str(file2),
+                    output_file=output_file,
+                    service_to_group_mapping=service_to_group_mapping,
+                )
+            else:
+                # Write endpoint statistics (original behavior)
+                records_written = MatchDatabaseWriter.write_endpoint_stats_to_json(
+                    endpoint_stats=endpoint_stats,
+                    pcap_id_mapping=pcap_id_mapping or {},
+                    file1_path=str(file1),
+                    file2_path=str(file2),
+                    output_file=output_file,
+                )
 
             logger.info(f"Successfully wrote {records_written} records to {output_file}")
 

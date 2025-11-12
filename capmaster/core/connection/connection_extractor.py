@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from capmaster.plugins.match.connection import (
+from capmaster.core.connection.models import (
     ConnectionBuilder,
     FiveTupleConnectionBuilder,
     TcpConnection,
 )
-from capmaster.plugins.match.extractor import TcpFieldExtractor
+from capmaster.core.connection.extractor import TcpFieldExtractor
 
 
 def extract_connections_from_pcap(

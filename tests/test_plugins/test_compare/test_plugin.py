@@ -203,8 +203,8 @@ class TestComparePlugin:
              patch("capmaster.plugins.compare.plugin.ConnectionMatcher") as mock_matcher:
 
             # Mock to return at least one match so output is generated
-            from capmaster.plugins.match.matcher import ConnectionMatch
-            from capmaster.plugins.match.connection import TcpConnection
+            from capmaster.core.connection.matcher import ConnectionMatch
+            from capmaster.core.connection.models import TcpConnection
 
             mock_conn = TcpConnection(
                 stream_id=0,
@@ -338,7 +338,7 @@ class TestComparePlugin:
             assert exit_code == 0
 
             # Verify ConnectionMatcher was called with correct match_mode
-            from capmaster.plugins.match.matcher import MatchMode
+            from capmaster.core.connection.matcher import MatchMode
             mock_matcher.assert_called_once()
             call_kwargs = mock_matcher.call_args[1]
             assert call_kwargs["match_mode"] == MatchMode.ONE_TO_MANY
@@ -366,7 +366,7 @@ class TestComparePlugin:
              patch("capmaster.plugins.compare.plugin.PacketExtractor") as mock_extractor_class:
 
             # Create mock connections
-            from capmaster.plugins.match.connection import TcpConnection
+            from capmaster.core.connection.models import TcpConnection
             mock_conn1 = MagicMock(spec=TcpConnection)
             mock_conn1.stream_id = 1
             mock_conn2 = MagicMock(spec=TcpConnection)
@@ -374,7 +374,8 @@ class TestComparePlugin:
             mock_extract.return_value = [mock_conn1, mock_conn2]
 
             # Create mock matches
-            from capmaster.plugins.match.matcher import ConnectionMatch, MatchScore
+            from capmaster.core.connection.matcher import ConnectionMatch
+            from capmaster.core.connection.scorer import MatchScore
             mock_score = MagicMock(spec=MatchScore)
             mock_score.normalized_score = 0.95
             mock_match = ConnectionMatch(conn1=mock_conn1, conn2=mock_conn2, score=mock_score)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from capmaster.plugins.match.connection import TcpConnection
+from capmaster.core.connection.models import TcpConnection
 
 
 class ConnectionSampler:

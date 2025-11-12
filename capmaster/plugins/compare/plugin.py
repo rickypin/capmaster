@@ -7,13 +7,13 @@ from pathlib import Path
 import click
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
+from capmaster.core.connection.connection_extractor import extract_connections_from_pcap
+from capmaster.core.connection.matcher import BucketStrategy, ConnectionMatcher, MatchMode
 from capmaster.core.file_scanner import PcapScanner
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
 from capmaster.plugins.compare.packet_comparator import PacketComparator
 from capmaster.plugins.compare.packet_extractor import PacketExtractor
-from capmaster.plugins.match.connection_extractor import extract_connections_from_pcap
-from capmaster.plugins.match.matcher import BucketStrategy, ConnectionMatcher, MatchMode
 from capmaster.utils.cli_options import validate_database_params, validate_dual_file_input
 from capmaster.utils.errors import (
     InsufficientFilesError,
@@ -540,7 +540,12 @@ class ComparePlugin(PluginBase):
                     )
 
                     # Compare packets (baseline vs compare)
-                    result = comparator.compare(baseline_packets, compare_packets, conn_id, matched_only)
+                    result = comparator.compare(
+                        baseline_packets,
+                        compare_packets,
+                        conn_id,
+                        matched_only
+                    )
                     results.append((match, baseline_packets, compare_packets, result))
 
                     if not silent:

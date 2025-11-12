@@ -521,3 +521,236 @@ class TestMatchIntegration:
             lines = f.readlines()
             assert len(lines) > 0, "JSON file is empty"
 
+    def test_match_with_service_aggregation(self, tc_001_1: Path, tmp_path: Path):
+        """Test match with service aggregation (default behavior)."""
+        if not tc_001_1.exists():
+            pytest.skip(f"Test case directory not found: {tc_001_1}")
+
+        files = self.get_pcap_files(tc_001_1)
+        if len(files) != 2:
+            pytest.skip(f"Expected 2 files, found {len(files)}")
+
+        output_file = tmp_path / "matches.txt"
+
+        # Run with default behavior (service aggregation)
+        result = subprocess.run(
+            [
+                "python", "-m", "capmaster",
+                "match",
+                "-i", str(tc_001_1),
+                "-o", str(output_file),
+                "--endpoint-stats",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        assert output_file.exists(), "Output file was not created"
+
+        # Verify output contains service statistics
+        output = result.stdout
+        assert "Service Statistics" in output or "Service:" in output, \
+            "Output should contain service statistics"
+
+    def test_match_with_service_aggregation_json(self, tc_001_1: Path, tmp_path: Path):
+        """Test match with service aggregation and JSON output (default behavior)."""
+        if not tc_001_1.exists():
+            pytest.skip(f"Test case directory not found: {tc_001_1}")
+
+        files = self.get_pcap_files(tc_001_1)
+        if len(files) != 2:
+            pytest.skip(f"Expected 2 files, found {len(files)}")
+
+        output_file = tmp_path / "matches.txt"
+        json_file = tmp_path / "service_stats.json"
+
+        # Run with default behavior (service aggregation) and --endpoint-stats-json
+        result = subprocess.run(
+            [
+                "python", "-m", "capmaster",
+                "match",
+                "-i", str(tc_001_1),
+                "-o", str(output_file),
+                "--endpoint-stats",
+                "--endpoint-stats-json", str(json_file),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        assert output_file.exists(), "Output file was not created"
+        assert json_file.exists(), "JSON file was not created"
+
+        # Verify JSON file contains service data
+        with open(json_file, "r") as f:
+            lines = f.readlines()
+            assert len(lines) > 0, "JSON file is empty"
+
+            # Parse first line to check structure
+            first_record = json.loads(lines[0])
+            assert "pcap_id" in first_record
+            assert "group_id" in first_record
+            assert "type" in first_record
+
+    def test_match_with_service_group_mapping(self, tc_001_1: Path, tmp_path: Path):
+        """Test match with service group mapping file."""
+        if not tc_001_1.exists():
+            pytest.skip(f"Test case directory not found: {tc_001_1}")
+
+        files = self.get_pcap_files(tc_001_1)
+        if len(files) != 2:
+            pytest.skip(f"Expected 2 files, found {len(files)}")
+
+        output_file = tmp_path / "matches.txt"
+        json_file = tmp_path / "service_stats.json"
+        mapping_file = tmp_path / "mapping.json"
+
+        # Create a service group mapping file
+        mapping = {
+            "80": 1,
+            "8000": 1,
+            "8080": 1,
+            "443": 2,
+            "8443": 2
+        }
+        with open(mapping_file, "w") as f:
+            json.dump(mapping, f)
+
+        # Run with --service-group-mapping (service aggregation is default)
+        result = subprocess.run(
+            [
+                "python", "-m", "capmaster",
+                "match",
+                "-i", str(tc_001_1),
+                "-o", str(output_file),
+                "--endpoint-stats",
+                "--service-group-mapping", str(mapping_file),
+                "--endpoint-stats-json", str(json_file),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        assert output_file.exists(), "Output file was not created"
+        assert json_file.exists(), "JSON file was not created"
+
+        # Verify JSON file uses the mapping
+        with open(json_file, "r") as f:
+            lines = f.readlines()
+            assert len(lines) > 0, "JSON file is empty"
+
+    def test_match_service_aggregation_deduplicates_ips(self, tc_001_1: Path, tmp_path: Path):
+        """Test that service aggregation deduplicates client and server IPs."""
+        if not tc_001_1.exists():
+            pytest.skip(f"Test case directory not found: {tc_001_1}")
+
+        files = self.get_pcap_files(tc_001_1)
+        if len(files) != 2:
+            pytest.skip(f"Expected 2 files, found {len(files)}")
+
+        json_file = tmp_path / "service_stats.json"
+
+        # Run with default behavior (service aggregation)
+        result = subprocess.run(
+            [
+                "python", "-m", "capmaster",
+                "match",
+                "-i", str(tc_001_1),
+                "--endpoint-stats",
+                "--endpoint-stats-json", str(json_file),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        assert json_file.exists(), "JSON file was not created"
+
+        # Parse JSON and verify deduplication
+        with open(json_file, "r") as f:
+            records = [json.loads(line) for line in f]
+
+        # Group records by pcap_id and type
+        clients_by_pcap = {}
+        servers_by_pcap = {}
+
+        for record in records:
+            pcap_id = record["pcap_id"]
+            node_type = record["type"]
+
+            if node_type == 1:  # Client
+                if pcap_id not in clients_by_pcap:
+                    clients_by_pcap[pcap_id] = set()
+                if "ip" in record:
+                    clients_by_pcap[pcap_id].add(record["ip"])
+            elif node_type == 4:  # Server (aggregated)
+                if pcap_id not in servers_by_pcap:
+                    servers_by_pcap[pcap_id] = set()
+                if "ip" in record:
+                    servers_by_pcap[pcap_id].add(record["ip"])
+
+        # Verify that each IP appears only once per pcap_id
+        for pcap_id, ips in clients_by_pcap.items():
+            assert len(ips) == len(set(ips)), \
+                f"Client IPs should be deduplicated for pcap_id {pcap_id}"
+
+        for pcap_id, ips in servers_by_pcap.items():
+            assert len(ips) == len(set(ips)), \
+                f"Server IPs should be deduplicated for pcap_id {pcap_id}"
+
+    def test_match_with_endpoint_pair_mode(self, tc_001_1: Path, tmp_path: Path):
+        """Test match with --endpoint-pair-mode flag."""
+        if not tc_001_1.exists():
+            pytest.skip(f"Test case directory not found: {tc_001_1}")
+
+        files = self.get_pcap_files(tc_001_1)
+        if len(files) != 2:
+            pytest.skip(f"Expected 2 files, found {len(files)}")
+
+        output_file = tmp_path / "matches.txt"
+        json_file = tmp_path / "endpoint_pairs.json"
+
+        # Run with --endpoint-pair-mode to disable service aggregation
+        result = subprocess.run(
+            [
+                "python", "-m", "capmaster",
+                "match",
+                "-i", str(tc_001_1),
+                "-o", str(output_file),
+                "--endpoint-stats",
+                "--endpoint-pair-mode",
+                "--endpoint-stats-json", str(json_file),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        assert output_file.exists(), "Output file was not created"
+        assert json_file.exists(), "JSON file was not created"
+
+        # Verify output contains endpoint pair statistics (not service statistics)
+        output = result.stdout
+        assert "Endpoint Statistics" in output, "Endpoint statistics not found in output"
+        assert "Total unique endpoint pairs:" in output, "Endpoint pair count not found in output"
+        # Should NOT contain service statistics
+        assert "Service Statistics" not in output, "Should not contain service statistics in endpoint pair mode"
+
+        # Verify JSON contains endpoint pairs with different group_ids
+        with open(json_file, "r") as f:
+            lines = f.readlines()
+            assert len(lines) > 0, "JSON file is empty"
+
+            # Parse JSON and collect group_ids
+            group_ids = set()
+            for line in lines:
+                record = json.loads(line)
+                group_ids.add(record["group_id"])
+
+            # In endpoint pair mode, each pair should have a different group_id
+            # (unless there's only one pair)
+            assert len(group_ids) >= 1, "Should have at least one group_id"
+

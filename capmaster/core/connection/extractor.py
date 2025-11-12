@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from capmaster.core.tshark_wrapper import TsharkWrapper
-from capmaster.plugins.match.connection import TcpPacket
+from capmaster.core.connection.models import TcpPacket
 
 
 class TcpFieldExtractor:

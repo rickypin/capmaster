@@ -7,8 +7,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 
-from capmaster.plugins.match.connection import TcpConnection
-from capmaster.plugins.match.scorer import ConnectionScorer, MatchScore
+from capmaster.core.connection.models import TcpConnection
+from capmaster.core.connection.scorer import ConnectionScorer, MatchScore
 
 
 class BucketStrategy(Enum):
