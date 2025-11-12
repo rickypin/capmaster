@@ -407,231 +407,548 @@ class MatchDatabaseWriter:
 
         # Process each endpoint pair
         for group_id, stat in enumerate(endpoint_stats, start=1):
-            # Get protocol numbers from endpoint tuples
-            proto_a = stat.tuple_a.protocol
-            proto_b = stat.tuple_b.protocol
-
-            # Determine network position based on TTL deltas
-            position = self._determine_network_position(
-                client_hops_a=stat.client_hops_a,
-                server_hops_a=stat.server_hops_a,
-                client_hops_b=stat.client_hops_b,
-                server_hops_b=stat.server_hops_b,
-            )
-
-            # Debug logging for TTL-based topology detection
-            logger.debug(
-                f"TTL Topology Detection - Group {group_id}: "
-                f"client_hops_a={stat.client_hops_a}, server_hops_a={stat.server_hops_a}, "
-                f"client_hops_b={stat.client_hops_b}, server_hops_b={stat.server_hops_b}, "
-                f"position={position}"
-            )
-
-            # Determine net_area for each node based on position
-            # Constraint: Each pcap_id must have exactly ONE net_area marked (either client or server side)
-            # to indicate the relative position between the two capture points.
-            # The symmetric counterpart on the other pcap_id should also be marked.
-            net_area_a_client = []
-            net_area_a_server = []
-            net_area_b_client = []
-            net_area_b_server = []
-
-            if position == "A_CLOSER_TO_CLIENT":
-                # Client -> File A -> File B -> Server
-                # File A (pcap_id=0): mark server side -> points to pcap_id_b
-                # File B (pcap_id=1): mark client side -> points to pcap_id_a
-                net_area_a_server = [pcap_id_b]
-                net_area_b_client = [pcap_id_a]
-
-            elif position == "B_CLOSER_TO_CLIENT":
-                # Client -> File B -> File A -> Server
-                # File B (pcap_id=1): mark server side -> points to pcap_id_a
-                # File A (pcap_id=0): mark client side -> points to pcap_id_b
-                net_area_b_server = [pcap_id_a]
-                net_area_a_client = [pcap_id_b]
-
-            # position == "SAME_POSITION": all net_area remain empty []
-
-            # File A - Client node (type=1, no port)
-            # stream_cnt is 0 for client nodes (type=1)
-            self.insert_node(
-                pcap_id=pcap_id_a,
+            records_inserted += self._write_endpoint_pair_nodes(
                 group_id=group_id,
-                ip=stat.tuple_a.client_ip,
-                port=None,
-                proto=None,
-                node_type=1,  # Client type
-                is_capture=False,
-                net_area=net_area_a_client,
-                stream_cnt=0,  # Client nodes always have stream_cnt=0
-                pktlen=0,
-                display_name="",
+                stat=stat,
+                pcap_id_a=pcap_id_a,
+                pcap_id_b=pcap_id_b,
             )
-            records_inserted += 1
 
-            # File A - Network device between client and capture point (type=1001)
-            # Only insert if client_hops_a > 0
-            # Skip A-side client->capture device node when topology is Client->B->A->Server
-            if stat.client_hops_a > 0 and position != "B_CLOSER_TO_CLIENT":
-                self.insert_node(
-                    pcap_id=pcap_id_a,
-                    group_id=group_id,
-                    ip=None,
-                    port=None,
-                    proto=None,
-                    node_type=1001,  # Network device between client and capture point
-                    is_capture=False,
-                    net_area=[],
-                    stream_cnt=0,
-                    pktlen=0,
-                    display_name=f"Network Device (Client-Capture, {stat.client_hops_a} hops)",
-                )
-                records_inserted += 1
+        return records_inserted
 
-            # File A - Server node (type=2, with port)
-            # stream_cnt is set to stat.count for server nodes (type=2-5)
-            # pktlen is set to total_bytes_a for server nodes (type=2-5)
-            self.insert_node(
-                pcap_id=pcap_id_a,
-                group_id=group_id,
-                ip=stat.tuple_a.server_ip,
-                port=stat.tuple_a.server_port,
-                proto=proto_a,  # Use actual protocol from connection
-                node_type=2,  # Server type
-                is_capture=False,
-                net_area=net_area_a_server,
-                stream_cnt=stat.count,  # Use count from endpoint pair
-                pktlen=stat.total_bytes_a,  # Total bytes for this endpoint pair
-                display_name="",
-            )
-            records_inserted += 1
+    def write_service_stats(
+        self,
+        service_stats: list,  # list[ServiceStats]
+        pcap_id_mapping: dict[str, int],
+        file1_path: str,
+        file2_path: str,
+        service_to_group_mapping: dict | None = None,  # dict[ServiceKey, int]
+    ) -> int:
+        """
+        Write service statistics to database.
 
-            # File A - Network device between capture point and server (type=1002)
-            # Only insert if server_hops_a > 0
-            # Skip A-side capture->server device node when topology is Client->A->B->Server
-            if stat.server_hops_a > 0 and position != "A_CLOSER_TO_CLIENT":
-                self.insert_node(
-                    pcap_id=pcap_id_a,
-                    group_id=group_id,
-                    ip=None,
-                    port=None,
-                    proto=None,
-                    node_type=1002,  # Network device between capture point and server
-                    is_capture=False,
-                    net_area=[],
-                    stream_cnt=0,
-                    pktlen=0,
-                    display_name=f"Network Device (Capture-Server, {stat.server_hops_a} hops)",
-                )
-                records_inserted += 1
+        Each service gets one group_id. All unique client IPs and server IPs
+        within the service are written as separate nodes, but without preserving
+        the client-server pairing relationship.
 
-            # File B - Client node (type=1, no port)
-            # stream_cnt is 0 for client nodes (type=1)
-            self.insert_node(
-                pcap_id=pcap_id_b,
-                group_id=group_id,
-                ip=stat.tuple_b.client_ip,
-                port=None,
-                proto=None,
-                node_type=1,  # Client type
-                is_capture=False,
-                net_area=net_area_b_client,
-                stream_cnt=0,  # Client nodes always have stream_cnt=0
-                pktlen=0,
-                display_name="",
-            )
-            records_inserted += 1
+        Args:
+            service_stats: List of ServiceStats objects
+            pcap_id_mapping: Mapping from file path to pcap_id
+            file1_path: Path to file A (as string)
+            file2_path: Path to file B (as string)
+            service_to_group_mapping: Optional mapping from ServiceKey to group_id.
+                                      If None, auto-assign group_id sequentially.
 
-            # File B - Network device between client and capture point (type=1001)
-            # Only insert if client_hops_b > 0
-            # Skip B-side client->capture device node when topology is Client->A->B->Server
-            if stat.client_hops_b > 0 and position != "A_CLOSER_TO_CLIENT":
-                self.insert_node(
-                    pcap_id=pcap_id_b,
-                    group_id=group_id,
-                    ip=None,
-                    port=None,
-                    proto=None,
-                    node_type=1001,  # Network device between client and capture point
-                    is_capture=False,
-                    net_area=[],
-                    stream_cnt=0,
-                    pktlen=0,
-                    display_name=f"Network Device (Client-Capture, {stat.client_hops_b} hops)",
-                )
-                records_inserted += 1
+        Returns:
+            Number of records inserted
+        """
+        if not self._cursor or not self._conn:
+            raise RuntimeError("Database not connected")
 
-            # File B - Server node (type=2, with port)
-            # stream_cnt is set to stat.count for server nodes (type=2-5)
-            # pktlen is set to total_bytes_b for server nodes (type=2-5)
-            self.insert_node(
-                pcap_id=pcap_id_b,
-                group_id=group_id,
-                ip=stat.tuple_b.server_ip,
-                port=stat.tuple_b.server_port,
-                proto=proto_b,  # Use actual protocol from connection
-                node_type=2,  # Server type
-                is_capture=False,
-                net_area=net_area_b_server,
-                stream_cnt=stat.count,  # Use count from endpoint pair
-                pktlen=stat.total_bytes_b,  # Total bytes for this endpoint pair
-                display_name="",
-            )
-            records_inserted += 1
+        # Get pcap_ids for both files
+        pcap_id_a = pcap_id_mapping.get(file1_path, 0)
+        pcap_id_b = pcap_id_mapping.get(file2_path, 1)
 
-            # File B - Network device between capture point and server (type=1002)
-            # Only insert if server_hops_b > 0
-            # Skip B-side capture->server device node when topology is Client->B->A->Server
-            if stat.server_hops_b > 0 and position != "B_CLOSER_TO_CLIENT":
-                self.insert_node(
-                    pcap_id=pcap_id_b,
-                    group_id=group_id,
-                    ip=None,
-                    port=None,
-                    proto=None,
-                    node_type=1002,  # Network device between capture point and server
-                    is_capture=False,
-                    net_area=[],
-                    stream_cnt=0,
-                    pktlen=0,
-                    display_name=f"Network Device (Capture-Server, {stat.server_hops_b} hops)",
-                )
-                records_inserted += 1
+        logger.info("Writing service statistics to database...")
+        logger.info(f"  File A pcap_id: {pcap_id_a}")
+        logger.info(f"  File B pcap_id: {pcap_id_b}")
+        logger.info(f"  Total services: {len(service_stats)}")
 
-            # Format protocol name for logging
-            proto_name_a = "TCP" if proto_a == 6 else "UDP" if proto_a == 17 else f"Proto{proto_a}"
-            proto_name_b = "TCP" if proto_b == 6 else "UDP" if proto_b == 17 else f"Proto{proto_b}"
+        records_inserted = 0
 
-            # Build network device info for logging
-            net_devices_a = []
-            if stat.client_hops_a > 0:
-                net_devices_a.append(f"Client-Capture:{stat.client_hops_a}h")
-            if stat.server_hops_a > 0:
-                net_devices_a.append(f"Capture-Server:{stat.server_hops_a}h")
+        # Auto-assign group_id if no mapping provided
+        if service_to_group_mapping is None:
+            service_to_group_mapping = {}
+            for idx, service in enumerate(service_stats, start=1):
+                service_to_group_mapping[service.service_key] = idx
+        else:
+            # If mapping is provided, ensure all services have a group_id
+            # Auto-assign for services not in the mapping
+            max_group_id = max(service_to_group_mapping.values()) if service_to_group_mapping else 0
+            next_group_id = max_group_id + 1
+            for service in service_stats:
+                if service.service_key not in service_to_group_mapping:
+                    service_to_group_mapping[service.service_key] = next_group_id
+                    next_group_id += 1
 
-            net_devices_b = []
-            if stat.client_hops_b > 0:
-                net_devices_b.append(f"Client-Capture:{stat.client_hops_b}h")
-            if stat.server_hops_b > 0:
-                net_devices_b.append(f"Capture-Server:{stat.server_hops_b}h")
+        # Process each service
+        for service in service_stats:
+            group_id = service_to_group_mapping[service.service_key]
 
-            net_info_a = f" +{','.join(net_devices_a)}" if net_devices_a else ""
-            net_info_b = f" +{','.join(net_devices_b)}" if net_devices_b else ""
-
-            # Format position description for logging
-            position_desc = {
-                "A_CLOSER_TO_CLIENT": "Client→A→B→Server",
-                "B_CLOSER_TO_CLIENT": "Client→B→A→Server",
-                "A_CLOSER_TO_SERVER": "A closer to Server",
-                "B_CLOSER_TO_SERVER": "B closer to Server",
-                "SAME_POSITION": "Same position/Unknown",
-            }.get(position, position)
+            proto_str = "TCP" if service.service_key.protocol == 6 else "UDP" if service.service_key.protocol == 17 else f"Proto{service.service_key.protocol}"
 
             logger.info(
-                f"  Group {group_id} (count={stat.count}, proto={proto_name_a}/{proto_name_b}, position={position_desc}): "
-                f"A({stat.tuple_a.client_ip} → {stat.tuple_a.server_ip}:{stat.tuple_a.server_port}{net_info_a}) | "
-                f"B({stat.tuple_b.client_ip} → {stat.tuple_b.server_ip}:{stat.tuple_b.server_port}{net_info_b})"
+                f"  Service: Port {service.service_key.server_port} ({proto_str}) -> Group {group_id}"
             )
+            logger.info(f"    Total connections: {service.total_connections}")
+            logger.info(
+                f"    Server IPs: A={sorted(service.unique_server_ips_a)}, "
+                f"B={sorted(service.unique_server_ips_b)}"
+            )
+            logger.info(
+                f"    Client IPs: A={sorted(service.unique_client_ips_a)}, "
+                f"B={sorted(service.unique_client_ips_b)}"
+            )
+
+            # Write deduplicated nodes for this service
+            records_inserted += self._write_service_nodes(
+                group_id=group_id,
+                service=service,
+                pcap_id_a=pcap_id_a,
+                pcap_id_b=pcap_id_b,
+            )
+
+        return records_inserted
+
+    def _write_service_nodes(
+        self,
+        group_id: int,
+        service,  # ServiceStats
+        pcap_id_a: int,
+        pcap_id_b: int,
+    ) -> int:
+        """
+        Write deduplicated nodes for a service to database.
+
+        This method writes unique client and server IPs without preserving
+        the client-server pairing relationship.
+
+        Args:
+            group_id: Group ID for this service
+            service: ServiceStats object
+            pcap_id_a: PCAP ID for file A
+            pcap_id_b: PCAP ID for file B
+
+        Returns:
+            Number of records inserted
+        """
+        records_inserted = 0
+
+        # Get protocol number
+        protocol = service.service_key.protocol
+        server_port = service.service_key.server_port
+
+        # Calculate total bytes for the service (sum across all endpoint pairs)
+        total_bytes_a = sum(pair.total_bytes_a for pair in service.endpoint_pairs)
+        total_bytes_b = sum(pair.total_bytes_b for pair in service.endpoint_pairs)
+
+        # Determine network position based on the first endpoint pair
+        # (all pairs in the same service should have similar topology)
+        first_pair = service.endpoint_pairs[0]
+        position = self._determine_network_position(
+            client_hops_a=first_pair.client_hops_a,
+            server_hops_a=first_pair.server_hops_a,
+            client_hops_b=first_pair.client_hops_b,
+            server_hops_b=first_pair.server_hops_b,
+        )
+
+        # Determine net_area based on position
+        net_area_a_client = []
+        net_area_a_server = []
+        net_area_b_client = []
+        net_area_b_server = []
+
+        if position == "A_CLOSER_TO_CLIENT":
+            net_area_a_server = [pcap_id_b]
+            net_area_b_client = [pcap_id_a]
+        elif position == "B_CLOSER_TO_CLIENT":
+            net_area_b_server = [pcap_id_a]
+            net_area_a_client = [pcap_id_b]
+
+        # Write File A client nodes (type=1, no port)
+        for client_ip in sorted(service.unique_client_ips_a):
+            self._cursor.execute(
+                """
+                INSERT INTO {table_name} (pcap_id, group_id, ip, type, is_capture, net_area, stream_cnt, pktlen, display_name)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """.format(table_name=self.table_name),
+                (
+                    pcap_id_a,
+                    group_id,
+                    client_ip,
+                    1,  # type=1 for client
+                    False,
+                    net_area_a_client,
+                    0,
+                    0,
+                    "",
+                ),
+            )
+            records_inserted += 1
+
+        # Write File A network device between client and capture point (type=1001)
+        # Only if there are hops and position is not B_CLOSER_TO_CLIENT
+        if first_pair.client_hops_a > 0 and position != "B_CLOSER_TO_CLIENT":
+            self._cursor.execute(
+                """
+                INSERT INTO {table_name} (pcap_id, group_id, type, is_capture, net_area, stream_cnt, pktlen, display_name)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """.format(table_name=self.table_name),
+                (
+                    pcap_id_a,
+                    group_id,
+                    1001,  # type=1001 for network device
+                    False,
+                    [],
+                    0,
+                    0,
+                    "",
+                ),
+            )
+            records_inserted += 1
+
+        # Write File A server nodes (type=2, with port)
+        for server_ip in sorted(service.unique_server_ips_a):
+            self._cursor.execute(
+                """
+                INSERT INTO {table_name} (pcap_id, group_id, ip, port, proto, type, is_capture, net_area, stream_cnt, pktlen, display_name)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """.format(table_name=self.table_name),
+                (
+                    pcap_id_a,
+                    group_id,
+                    server_ip,
+                    server_port,
+                    protocol,
+                    2,  # type=2 for server (same as endpoint pair mode)
+                    False,
+                    net_area_a_server,
+                    service.total_connections,
+                    total_bytes_a,
+                    "",
+                ),
+            )
+            records_inserted += 1
+
+        # Write File A network device between capture point and server (type=1002)
+        if first_pair.server_hops_a > 0 and position != "A_CLOSER_TO_CLIENT":
+            self._cursor.execute(
+                """
+                INSERT INTO {table_name} (pcap_id, group_id, type, is_capture, net_area, stream_cnt, pktlen, display_name)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """.format(table_name=self.table_name),
+                (
+                    pcap_id_a,
+                    group_id,
+                    1002,  # type=1002 for network device
+                    False,
+                    [],
+                    0,
+                    0,
+                    "",
+                ),
+            )
+            records_inserted += 1
+
+        # Write File B client nodes (type=1, no port)
+        for client_ip in sorted(service.unique_client_ips_b):
+            self._cursor.execute(
+                """
+                INSERT INTO {table_name} (pcap_id, group_id, ip, type, is_capture, net_area, stream_cnt, pktlen, display_name)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """.format(table_name=self.table_name),
+                (
+                    pcap_id_b,
+                    group_id,
+                    client_ip,
+                    1,  # type=1 for client
+                    False,
+                    net_area_b_client,
+                    0,
+                    0,
+                    "",
+                ),
+            )
+            records_inserted += 1
+
+        # Write File B network device between client and capture point (type=1001)
+        if first_pair.client_hops_b > 0 and position != "A_CLOSER_TO_CLIENT":
+            self._cursor.execute(
+                """
+                INSERT INTO {table_name} (pcap_id, group_id, type, is_capture, net_area, stream_cnt, pktlen, display_name)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """.format(table_name=self.table_name),
+                (
+                    pcap_id_b,
+                    group_id,
+                    1001,  # type=1001 for network device
+                    False,
+                    [],
+                    0,
+                    0,
+                    "",
+                ),
+            )
+            records_inserted += 1
+
+        # Write File B server nodes (type=2, with port)
+        for server_ip in sorted(service.unique_server_ips_b):
+            self._cursor.execute(
+                """
+                INSERT INTO {table_name} (pcap_id, group_id, ip, port, proto, type, is_capture, net_area, stream_cnt, pktlen, display_name)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """.format(table_name=self.table_name),
+                (
+                    pcap_id_b,
+                    group_id,
+                    server_ip,
+                    server_port,
+                    protocol,
+                    2,  # type=2 for server (same as endpoint pair mode)
+                    False,
+                    net_area_b_server,
+                    service.total_connections,
+                    total_bytes_b,
+                    "",
+                ),
+            )
+            records_inserted += 1
+
+        # Write File B network device between capture point and server (type=1002)
+        if first_pair.server_hops_b > 0 and position != "B_CLOSER_TO_CLIENT":
+            self._cursor.execute(
+                """
+                INSERT INTO {table_name} (pcap_id, group_id, type, is_capture, net_area, stream_cnt, pktlen, display_name)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """.format(table_name=self.table_name),
+                (
+                    pcap_id_b,
+                    group_id,
+                    1002,  # type=1002 for network device
+                    False,
+                    [],
+                    0,
+                    0,
+                    "",
+                ),
+            )
+            records_inserted += 1
+
+        return records_inserted
+
+    def _write_endpoint_pair_nodes(
+        self,
+        group_id: int,
+        stat,  # EndpointPairStats
+        pcap_id_a: int,
+        pcap_id_b: int,
+    ) -> int:
+        """
+        Write nodes for a single endpoint pair.
+
+        This method is extracted from write_endpoint_stats to be reusable
+        for both endpoint-based and service-based aggregation.
+
+        Args:
+            group_id: Group identifier for this endpoint pair
+            stat: EndpointPairStats object
+            pcap_id_a: PCAP ID for file A
+            pcap_id_b: PCAP ID for file B
+
+        Returns:
+            Number of records inserted
+        """
+        records_inserted = 0
+
+        # Get protocol numbers from endpoint tuples
+        proto_a = stat.tuple_a.protocol
+        proto_b = stat.tuple_b.protocol
+
+        # Determine network position based on TTL deltas
+        position = self._determine_network_position(
+            client_hops_a=stat.client_hops_a,
+            server_hops_a=stat.server_hops_a,
+            client_hops_b=stat.client_hops_b,
+            server_hops_b=stat.server_hops_b,
+        )
+
+        # Debug logging for TTL-based topology detection
+        logger.debug(
+            f"TTL Topology Detection - Group {group_id}: "
+            f"client_hops_a={stat.client_hops_a}, server_hops_a={stat.server_hops_a}, "
+            f"client_hops_b={stat.client_hops_b}, server_hops_b={stat.server_hops_b}, "
+            f"position={position}"
+        )
+
+        # Determine net_area for each node based on position
+        net_area_a_client = []
+        net_area_a_server = []
+        net_area_b_client = []
+        net_area_b_server = []
+
+        if position == "A_CLOSER_TO_CLIENT":
+            net_area_a_server = [pcap_id_b]
+            net_area_b_client = [pcap_id_a]
+        elif position == "B_CLOSER_TO_CLIENT":
+            net_area_b_server = [pcap_id_a]
+            net_area_a_client = [pcap_id_b]
+
+        # File A - Client node (type=1, no port)
+        self.insert_node(
+            pcap_id=pcap_id_a,
+            group_id=group_id,
+            ip=stat.tuple_a.client_ip,
+            port=None,
+            proto=None,
+            node_type=1,
+            is_capture=False,
+            net_area=net_area_a_client,
+            stream_cnt=0,
+            pktlen=0,
+            display_name="",
+        )
+        records_inserted += 1
+
+        # File A - Network device between client and capture point (type=1001)
+        if stat.client_hops_a > 0 and position != "B_CLOSER_TO_CLIENT":
+            self.insert_node(
+                pcap_id=pcap_id_a,
+                group_id=group_id,
+                ip=None,
+                port=None,
+                proto=None,
+                node_type=1001,
+                is_capture=False,
+                net_area=[],
+                stream_cnt=0,
+                pktlen=0,
+                display_name=f"Network Device (Client-Capture, {stat.client_hops_a} hops)",
+            )
+            records_inserted += 1
+
+        # File A - Server node (type=2, with port)
+        self.insert_node(
+            pcap_id=pcap_id_a,
+            group_id=group_id,
+            ip=stat.tuple_a.server_ip,
+            port=stat.tuple_a.server_port,
+            proto=proto_a,
+            node_type=2,
+            is_capture=False,
+            net_area=net_area_a_server,
+            stream_cnt=stat.count,
+            pktlen=stat.total_bytes_a,
+            display_name="",
+        )
+        records_inserted += 1
+
+        # File A - Network device between capture point and server (type=1002)
+        if stat.server_hops_a > 0 and position != "A_CLOSER_TO_CLIENT":
+            self.insert_node(
+                pcap_id=pcap_id_a,
+                group_id=group_id,
+                ip=None,
+                port=None,
+                proto=None,
+                node_type=1002,
+                is_capture=False,
+                net_area=[],
+                stream_cnt=0,
+                pktlen=0,
+                display_name=f"Network Device (Capture-Server, {stat.server_hops_a} hops)",
+            )
+            records_inserted += 1
+
+        # File B - Client node (type=1, no port)
+        self.insert_node(
+            pcap_id=pcap_id_b,
+            group_id=group_id,
+            ip=stat.tuple_b.client_ip,
+            port=None,
+            proto=None,
+            node_type=1,
+            is_capture=False,
+            net_area=net_area_b_client,
+            stream_cnt=0,
+            pktlen=0,
+            display_name="",
+        )
+        records_inserted += 1
+
+        # File B - Network device between client and capture point (type=1001)
+        if stat.client_hops_b > 0 and position != "A_CLOSER_TO_CLIENT":
+            self.insert_node(
+                pcap_id=pcap_id_b,
+                group_id=group_id,
+                ip=None,
+                port=None,
+                proto=None,
+                node_type=1001,
+                is_capture=False,
+                net_area=[],
+                stream_cnt=0,
+                pktlen=0,
+                display_name=f"Network Device (Client-Capture, {stat.client_hops_b} hops)",
+            )
+            records_inserted += 1
+
+        # File B - Server node (type=2, with port)
+        self.insert_node(
+            pcap_id=pcap_id_b,
+            group_id=group_id,
+            ip=stat.tuple_b.server_ip,
+            port=stat.tuple_b.server_port,
+            proto=proto_b,
+            node_type=2,
+            is_capture=False,
+            net_area=net_area_b_server,
+            stream_cnt=stat.count,
+            pktlen=stat.total_bytes_b,
+            display_name="",
+        )
+        records_inserted += 1
+
+        # File B - Network device between capture point and server (type=1002)
+        if stat.server_hops_b > 0 and position != "B_CLOSER_TO_CLIENT":
+            self.insert_node(
+                pcap_id=pcap_id_b,
+                group_id=group_id,
+                ip=None,
+                port=None,
+                proto=None,
+                node_type=1002,
+                is_capture=False,
+                net_area=[],
+                stream_cnt=0,
+                pktlen=0,
+                display_name=f"Network Device (Capture-Server, {stat.server_hops_b} hops)",
+            )
+            records_inserted += 1
+
+        # Format protocol name for logging
+        proto_name_a = "TCP" if proto_a == 6 else "UDP" if proto_a == 17 else f"Proto{proto_a}"
+        proto_name_b = "TCP" if proto_b == 6 else "UDP" if proto_b == 17 else f"Proto{proto_b}"
+
+        # Build network device info for logging
+        net_devices_a = []
+        if stat.client_hops_a > 0:
+            net_devices_a.append(f"Client-Capture:{stat.client_hops_a}h")
+        if stat.server_hops_a > 0:
+            net_devices_a.append(f"Capture-Server:{stat.server_hops_a}h")
+
+        net_devices_b = []
+        if stat.client_hops_b > 0:
+            net_devices_b.append(f"Client-Capture:{stat.client_hops_b}h")
+        if stat.server_hops_b > 0:
+            net_devices_b.append(f"Capture-Server:{stat.server_hops_b}h")
+
+        net_info_a = f" +{','.join(net_devices_a)}" if net_devices_a else ""
+        net_info_b = f" +{','.join(net_devices_b)}" if net_devices_b else ""
+
+        # Format position description for logging
+        position_desc = {
+            "A_CLOSER_TO_CLIENT": "Client→A→B→Server",
+            "B_CLOSER_TO_CLIENT": "Client→B→A→Server",
+            "A_CLOSER_TO_SERVER": "A closer to Server",
+            "B_CLOSER_TO_SERVER": "B closer to Server",
+            "SAME_POSITION": "Same position/Unknown",
+        }.get(position, position)
+
+        logger.info(
+            f"  Group {group_id} (count={stat.count}, proto={proto_name_a}/{proto_name_b}, position={position_desc}): "
+            f"A({stat.tuple_a.client_ip} → {stat.tuple_a.server_ip}:{stat.tuple_a.server_port}{net_info_a}) | "
+            f"B({stat.tuple_b.client_ip} → {stat.tuple_b.server_ip}:{stat.tuple_b.server_port}{net_info_b})"
+        )
 
         return records_inserted
 
@@ -813,6 +1130,235 @@ class MatchDatabaseWriter:
 
             # File B - Network device between capture point and server (type=1002)
             if stat.server_hops_b > 0 and position != "B_CLOSER_TO_CLIENT":
+                records.append({
+                    "pcap_id": pcap_id_b,
+                    "group_id": group_id,
+                    "type": 1002,
+                    "is_capture": False,
+                    "net_area": [],
+                    "stream_cnt": 0,
+                    "pktlen": 0,
+                    "display_name": "",
+                    "metrics": {"stream_cnt": 0},
+                })
+                records_count += 1
+
+        # Create parent directory if it doesn't exist
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write to file (one JSON object per line)
+        with open(output_file, 'w', encoding='utf-8') as f:
+            for record in records:
+                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+
+        logger.info(f"Successfully wrote {records_count} records to {output_file}")
+        return records_count
+
+    @staticmethod
+    def write_service_stats_to_json(
+        service_stats: list,  # list[ServiceStats]
+        pcap_id_mapping: dict[str, int],
+        file1_path: str,
+        file2_path: str,
+        output_file: Path,
+        service_to_group_mapping: dict | None = None,  # dict[ServiceKey, int]
+    ) -> int:
+        """
+        Write service statistics to JSON file.
+
+        Each service gets one group_id. All unique client IPs and server IPs
+        within the service are written as separate nodes, but without preserving
+        the client-server pairing relationship.
+
+        Args:
+            service_stats: List of ServiceStats objects
+            pcap_id_mapping: Mapping from file path to pcap_id
+            file1_path: Path to file A (as string)
+            file2_path: Path to file B (as string)
+            output_file: Path to output JSON file
+            service_to_group_mapping: Optional mapping from ServiceKey to group_id.
+                                      If None, auto-assign group_id sequentially.
+
+        Returns:
+            Number of records written
+        """
+        # Get pcap_ids for both files
+        pcap_id_a = pcap_id_mapping.get(file1_path, 0)
+        pcap_id_b = pcap_id_mapping.get(file2_path, 1)
+
+        logger.info(f"Writing service statistics to JSON file: {output_file}")
+        logger.info(f"  File A pcap_id: {pcap_id_a}")
+        logger.info(f"  File B pcap_id: {pcap_id_b}")
+        logger.info(f"  Total services: {len(service_stats)}")
+
+        # Auto-assign group_id if no mapping provided
+        if service_to_group_mapping is None:
+            service_to_group_mapping = {}
+            for idx, service in enumerate(service_stats, start=1):
+                service_to_group_mapping[service.service_key] = idx
+        else:
+            # If mapping is provided, ensure all services have a group_id
+            # Auto-assign for services not in the mapping
+            max_group_id = max(service_to_group_mapping.values()) if service_to_group_mapping else 0
+            next_group_id = max_group_id + 1
+            for service in service_stats:
+                if service.service_key not in service_to_group_mapping:
+                    service_to_group_mapping[service.service_key] = next_group_id
+                    next_group_id += 1
+
+        records = []
+        records_count = 0
+
+        # Process each service
+        for service in service_stats:
+            group_id = service_to_group_mapping[service.service_key]
+
+            # Get protocol and port
+            protocol = service.service_key.protocol
+            server_port = service.service_key.server_port
+
+            # Calculate total bytes for the service
+            total_bytes_a = sum(pair.total_bytes_a for pair in service.endpoint_pairs)
+            total_bytes_b = sum(pair.total_bytes_b for pair in service.endpoint_pairs)
+
+            # Determine network position based on the first endpoint pair
+            first_pair = service.endpoint_pairs[0]
+            position = MatchDatabaseWriter._determine_network_position_static(
+                client_hops_a=first_pair.client_hops_a,
+                server_hops_a=first_pair.server_hops_a,
+                client_hops_b=first_pair.client_hops_b,
+                server_hops_b=first_pair.server_hops_b,
+            )
+
+            # Determine net_area for each node based on position
+            net_area_a_client = []
+            net_area_a_server = []
+            net_area_b_client = []
+            net_area_b_server = []
+
+            if position == "A_CLOSER_TO_CLIENT":
+                net_area_a_server = [pcap_id_b]
+                net_area_b_client = [pcap_id_a]
+            elif position == "B_CLOSER_TO_CLIENT":
+                net_area_b_server = [pcap_id_a]
+                net_area_a_client = [pcap_id_b]
+
+            # Write File A client nodes (type=1, no port)
+            for client_ip in sorted(service.unique_client_ips_a):
+                records.append({
+                    "pcap_id": pcap_id_a,
+                    "group_id": group_id,
+                    "type": 1,
+                    "is_capture": False,
+                    "net_area": net_area_a_client,
+                    "stream_cnt": 0,
+                    "pktlen": 0,
+                    "display_name": "",
+                    "metrics": {"stream_cnt": 0},
+                    "ip": client_ip,
+                })
+                records_count += 1
+
+            # File A - Network device between client and capture point (type=1001)
+            if first_pair.client_hops_a > 0 and position != "B_CLOSER_TO_CLIENT":
+                records.append({
+                    "pcap_id": pcap_id_a,
+                    "group_id": group_id,
+                    "type": 1001,
+                    "is_capture": False,
+                    "net_area": [],
+                    "stream_cnt": 0,
+                    "pktlen": 0,
+                    "display_name": "",
+                    "metrics": {"stream_cnt": 0},
+                })
+                records_count += 1
+
+            # Write File A server nodes (type=2, with port)
+            for server_ip in sorted(service.unique_server_ips_a):
+                records.append({
+                    "pcap_id": pcap_id_a,
+                    "group_id": group_id,
+                    "ip": server_ip,
+                    "port": server_port,
+                    "proto": protocol,
+                    "type": 2,  # type=2 for server (same as endpoint pair mode)
+                    "is_capture": False,
+                    "net_area": net_area_a_server,
+                    "stream_cnt": service.total_connections,
+                    "pktlen": total_bytes_a,
+                    "display_name": "",
+                    "metrics": {"stream_cnt": service.total_connections},
+                })
+                records_count += 1
+
+            # File A - Network device between capture point and server (type=1002)
+            if first_pair.server_hops_a > 0 and position != "A_CLOSER_TO_CLIENT":
+                records.append({
+                    "pcap_id": pcap_id_a,
+                    "group_id": group_id,
+                    "type": 1002,
+                    "is_capture": False,
+                    "net_area": [],
+                    "stream_cnt": 0,
+                    "pktlen": 0,
+                    "display_name": "",
+                    "metrics": {"stream_cnt": 0},
+                })
+                records_count += 1
+
+            # Write File B client nodes (type=1, no port)
+            for client_ip in sorted(service.unique_client_ips_b):
+                records.append({
+                    "pcap_id": pcap_id_b,
+                    "group_id": group_id,
+                    "type": 1,
+                    "is_capture": False,
+                    "net_area": net_area_b_client,
+                    "stream_cnt": 0,
+                    "pktlen": 0,
+                    "display_name": "",
+                    "metrics": {"stream_cnt": 0},
+                    "ip": client_ip,
+                })
+                records_count += 1
+
+            # File B - Network device between client and capture point (type=1001)
+            if first_pair.client_hops_b > 0 and position != "A_CLOSER_TO_CLIENT":
+                records.append({
+                    "pcap_id": pcap_id_b,
+                    "group_id": group_id,
+                    "type": 1001,
+                    "is_capture": False,
+                    "net_area": [],
+                    "stream_cnt": 0,
+                    "pktlen": 0,
+                    "display_name": "",
+                    "metrics": {"stream_cnt": 0},
+                })
+                records_count += 1
+
+            # Write File B server nodes (type=2, with port)
+            for server_ip in sorted(service.unique_server_ips_b):
+                records.append({
+                    "pcap_id": pcap_id_b,
+                    "group_id": group_id,
+                    "ip": server_ip,
+                    "port": server_port,
+                    "proto": protocol,
+                    "type": 2,  # type=2 for server (same as endpoint pair mode)
+                    "is_capture": False,
+                    "net_area": net_area_b_server,
+                    "stream_cnt": service.total_connections,
+                    "pktlen": total_bytes_b,
+                    "display_name": "",
+                    "metrics": {"stream_cnt": service.total_connections},
+                })
+                records_count += 1
+
+            # File B - Network device between capture point and server (type=1002)
+            if first_pair.server_hops_b > 0 and position != "B_CLOSER_TO_CLIENT":
                 records.append({
                     "pcap_id": pcap_id_b,
                     "group_id": group_id,

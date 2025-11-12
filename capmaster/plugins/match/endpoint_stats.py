@@ -100,6 +100,69 @@ class EndpointPairStats:
         )
 
 
+@dataclass(frozen=True)
+class ServiceKey:
+    """
+    Service identifier based on server port and protocol.
+
+    A service is defined by its server port and protocol, aggregating
+    all endpoint pairs that share these characteristics.
+    """
+
+    server_port: int
+    """Server port number"""
+
+    protocol: int
+    """IP protocol number (6=TCP, 17=UDP, etc.)"""
+
+    def __str__(self) -> str:
+        """String representation."""
+        proto_str = f"TCP" if self.protocol == 6 else f"UDP" if self.protocol == 17 else f"Proto{self.protocol}"
+        return f"Port {self.server_port} ({proto_str})"
+
+
+@dataclass
+class ServiceStats:
+    """
+    Statistics for a service (aggregated by server port and protocol).
+
+    A service groups multiple endpoint pairs that share the same server port
+    and protocol, representing different client/server IP combinations accessing
+    the same service.
+    """
+
+    service_key: ServiceKey
+    """Service identifier (port + protocol)"""
+
+    endpoint_pairs: list[EndpointPairStats]
+    """List of endpoint pairs belonging to this service"""
+
+    total_connections: int
+    """Total number of matched connections across all endpoint pairs"""
+
+    unique_server_ips_a: set[str]
+    """Unique server IPs in file A"""
+
+    unique_server_ips_b: set[str]
+    """Unique server IPs in file B"""
+
+    unique_client_ips_a: set[str]
+    """Unique client IPs in file A"""
+
+    unique_client_ips_b: set[str]
+    """Unique client IPs in file B"""
+
+    def __str__(self) -> str:
+        """String representation."""
+        return (
+            f"Service: {self.service_key}\n"
+            f"  Total connections: {self.total_connections}\n"
+            f"  Endpoint pairs: {len(self.endpoint_pairs)}\n"
+            f"  Server IPs: A={len(self.unique_server_ips_a)}, B={len(self.unique_server_ips_b)}\n"
+            f"  Client IPs: A={len(self.unique_client_ips_a)}, B={len(self.unique_client_ips_b)}"
+        )
+
+
 class EndpointStatsCollector:
     """
     Collect and aggregate endpoint statistics for matched connections.
@@ -500,6 +563,147 @@ def format_endpoint_stats_table(
 
     lines.append("")
     lines.append("=" * 210)
+
+    return "\n".join(lines)
+
+
+def aggregate_by_service(
+    endpoint_stats: list[EndpointPairStats],
+) -> list[ServiceStats]:
+    """
+    Aggregate endpoint pairs by service (server port + protocol).
+
+    This function groups endpoint pairs that share the same server port and protocol,
+    treating them as different client/server IP combinations accessing the same service.
+
+    Args:
+        endpoint_stats: List of EndpointPairStats to aggregate
+
+    Returns:
+        List of ServiceStats, sorted by total connections (descending)
+
+    Example:
+        >>> # Multiple endpoint pairs with port 8000 will be grouped into one service
+        >>> service_stats = aggregate_by_service(endpoint_pairs)
+        >>> for service in service_stats:
+        ...     print(f"Service on port {service.service_key.server_port}")
+        ...     print(f"  Total connections: {service.total_connections}")
+        ...     print(f"  Endpoint pairs: {len(service.endpoint_pairs)}")
+    """
+    # Group by service key (server port + protocol)
+    service_map: dict[ServiceKey, list[EndpointPairStats]] = defaultdict(list)
+
+    for stat in endpoint_stats:
+        # Use file A's server port and protocol as the service identifier
+        # (assuming both files represent the same service)
+        service_key = ServiceKey(
+            server_port=stat.tuple_a.server_port,
+            protocol=stat.tuple_a.protocol,
+        )
+        service_map[service_key].append(stat)
+
+    # Build ServiceStats for each service
+    results = []
+    for service_key, pairs in service_map.items():
+        # Calculate total connections
+        total_connections = sum(p.count for p in pairs)
+
+        # Collect unique IPs
+        unique_server_ips_a = {p.tuple_a.server_ip for p in pairs}
+        unique_server_ips_b = {p.tuple_b.server_ip for p in pairs}
+        unique_client_ips_a = {p.tuple_a.client_ip for p in pairs}
+        unique_client_ips_b = {p.tuple_b.client_ip for p in pairs}
+
+        # Sort endpoint pairs by count (descending)
+        sorted_pairs = sorted(pairs, key=lambda p: p.count, reverse=True)
+
+        results.append(
+            ServiceStats(
+                service_key=service_key,
+                endpoint_pairs=sorted_pairs,
+                total_connections=total_connections,
+                unique_server_ips_a=unique_server_ips_a,
+                unique_server_ips_b=unique_server_ips_b,
+                unique_client_ips_a=unique_client_ips_a,
+                unique_client_ips_b=unique_client_ips_b,
+            )
+        )
+
+    # Sort by total connections (descending)
+    results.sort(key=lambda x: x.total_connections, reverse=True)
+    return results
+
+
+def format_service_stats(
+    service_stats: list[ServiceStats],
+    file1_name: str,
+    file2_name: str,
+) -> str:
+    """
+    Format service statistics for display.
+
+    Args:
+        service_stats: List of service statistics
+        file1_name: Name of file A
+        file2_name: Name of file B
+
+    Returns:
+        Formatted string for display
+    """
+    lines = []
+
+    # Header
+    lines.append("=" * 80)
+    lines.append("Service Statistics (Aggregated by Server Port)")
+    lines.append("=" * 80)
+    lines.append("")
+    lines.append(f"File A: {file1_name}")
+    lines.append(f"File B: {file2_name}")
+    lines.append("")
+    lines.append(f"Total services: {len(service_stats)}")
+    lines.append(f"Total matched connections: {sum(s.total_connections for s in service_stats)}")
+    lines.append("")
+
+    # Services
+    lines.append("Services:")
+    lines.append("-" * 80)
+    lines.append("")
+
+    for idx, service in enumerate(service_stats, start=1):
+        proto_str = "TCP" if service.service_key.protocol == 6 else "UDP" if service.service_key.protocol == 17 else f"Proto{service.service_key.protocol}"
+        lines.append(f"[{idx}] Service: Port {service.service_key.server_port} ({proto_str})")
+        lines.append(f"    Total connections: {service.total_connections}")
+        lines.append(f"    Endpoint pairs: {len(service.endpoint_pairs)}")
+        lines.append(f"    Server IPs: A={sorted(service.unique_server_ips_a)}, B={sorted(service.unique_server_ips_b)}")
+        lines.append(f"    Client IPs: A={sorted(service.unique_client_ips_a)}, B={sorted(service.unique_client_ips_b)}")
+        lines.append("")
+
+        # Show each endpoint pair
+        for pair_idx, pair in enumerate(service.endpoint_pairs, start=1):
+            lines.append(f"      [{pair_idx}] Count: {pair.count} | Confidence: {pair.confidence}")
+            lines.append(f"          A: {pair.tuple_a.client_ip} → {pair.tuple_a.server_ip}:{pair.tuple_a.server_port}")
+
+            # Add TTL and hops info for File A if available
+            if pair.client_ttl_a or pair.server_ttl_a:
+                lines.append(
+                    f"             TTL: Client={pair.client_ttl_a} (hops={pair.client_hops_a}), "
+                    f"Server={pair.server_ttl_a} (hops={pair.server_hops_a})"
+                )
+
+            lines.append(f"          B: {pair.tuple_b.client_ip} → {pair.tuple_b.server_ip}:{pair.tuple_b.server_port}")
+
+            # Add TTL and hops info for File B if available
+            if pair.client_ttl_b or pair.server_ttl_b:
+                lines.append(
+                    f"             TTL: Client={pair.client_ttl_b} (hops={pair.client_hops_b}), "
+                    f"Server={pair.server_ttl_b} (hops={pair.server_hops_b})"
+                )
+
+            lines.append("")
+
+        lines.append("")
+
+    lines.append("=" * 80)
 
     return "\n".join(lines)
 

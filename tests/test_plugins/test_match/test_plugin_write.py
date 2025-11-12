@@ -289,3 +289,169 @@ class TestMatchPluginEmptyStatsScenarios:
             assert "No endpoint pairs found" in caplog.text
             assert "Skipping JSON file write" in caplog.text
 
+
+@pytest.mark.unit
+class TestMatchPluginServiceAggregation:
+    """Test MatchPlugin service aggregation functionality."""
+
+    @pytest.fixture
+    def plugin(self) -> MatchPlugin:
+        """Create a MatchPlugin instance."""
+        return MatchPlugin()
+
+    @pytest.fixture
+    def mock_db_writer(self) -> MagicMock:
+        """Create a mock MatchDatabaseWriter."""
+        mock_writer = MagicMock()
+        mock_writer.__enter__ = MagicMock(return_value=mock_writer)
+        mock_writer.__exit__ = MagicMock(return_value=None)
+        return mock_writer
+
+    def test_write_to_database_with_service_stats(
+        self, plugin: MatchPlugin, mock_db_writer: MagicMock
+    ):
+        """Test database write with service statistics."""
+        mock_service_stats = [MagicMock()]
+
+        with patch('capmaster.plugins.match.db_writer.MatchDatabaseWriter', return_value=mock_db_writer):
+            plugin._write_to_database(
+                db_connection="postgresql://user:pass@localhost:5432/testdb",
+                kase_id=137,
+                endpoint_stats=[],
+                service_stats_list=mock_service_stats,
+                file1=Path("file1.pcap"),
+                file2=Path("file2.pcap"),
+                pcap_id_mapping={},
+            )
+
+            # Verify that database operations were called
+            mock_db_writer.ensure_table_exists.assert_called_once()
+            mock_db_writer.clear_table_data.assert_called_once()
+            mock_db_writer.write_service_stats.assert_called_once()
+            mock_db_writer.commit.assert_called_once()
+
+    def test_write_to_database_with_service_group_mapping(
+        self, plugin: MatchPlugin, mock_db_writer: MagicMock, tmp_path: Path
+    ):
+        """Test database write with service group mapping."""
+        from capmaster.plugins.match.endpoint_stats import ServiceKey
+
+        mock_service_stats = [MagicMock()]
+
+        # Create a mapping file
+        mapping_file = tmp_path / "mapping.json"
+        mapping_file.write_text('{"8000": 1, "8080": 1, "443": 2}')
+
+        with patch('capmaster.plugins.match.db_writer.MatchDatabaseWriter', return_value=mock_db_writer):
+            plugin._write_to_database(
+                db_connection="postgresql://user:pass@localhost:5432/testdb",
+                kase_id=137,
+                endpoint_stats=[],
+                service_stats_list=mock_service_stats,
+                file1=Path("file1.pcap"),
+                file2=Path("file2.pcap"),
+                pcap_id_mapping={},
+                service_group_mapping_file=mapping_file,  # Pass Path object, not string
+            )
+
+            # Verify write_service_stats was called with mapping
+            call_args = mock_db_writer.write_service_stats.call_args
+            mapping = call_args[1]['service_to_group_mapping']
+
+            # Verify the mapping contains the expected ServiceKeys
+            assert ServiceKey(8000, 6) in mapping  # TCP = 6
+            assert ServiceKey(8080, 6) in mapping
+            assert ServiceKey(443, 6) in mapping
+            assert mapping[ServiceKey(8000, 6)] == 1
+            assert mapping[ServiceKey(8080, 6)] == 1
+            assert mapping[ServiceKey(443, 6)] == 2
+
+    def test_write_to_json_with_service_stats(
+        self, plugin: MatchPlugin, tmp_path: Path
+    ):
+        """Test JSON write with service statistics."""
+        output_file = tmp_path / "output.json"
+        mock_service_stats = [MagicMock()]
+
+        with patch('capmaster.plugins.match.db_writer.MatchDatabaseWriter') as mock_writer_class:
+            mock_writer_class.write_service_stats_to_json.return_value = 8
+
+            plugin._write_to_json(
+                output_file=output_file,
+                endpoint_stats=[],
+                service_stats_list=mock_service_stats,
+                file1=Path("file1.pcap"),
+                file2=Path("file2.pcap"),
+                pcap_id_mapping={},
+            )
+
+            # Verify that write_service_stats_to_json was called
+            mock_writer_class.write_service_stats_to_json.assert_called_once()
+
+    def test_write_to_database_prefers_service_stats_over_endpoint_stats(
+        self, plugin: MatchPlugin, mock_db_writer: MagicMock
+    ):
+        """Test that service stats takes precedence over endpoint stats."""
+        mock_endpoint_stats = [MagicMock()]
+        mock_service_stats = [MagicMock()]
+
+        with patch('capmaster.plugins.match.db_writer.MatchDatabaseWriter', return_value=mock_db_writer):
+            plugin._write_to_database(
+                db_connection="postgresql://user:pass@localhost:5432/testdb",
+                kase_id=137,
+                endpoint_stats=mock_endpoint_stats,
+                service_stats_list=mock_service_stats,
+                file1=Path("file1.pcap"),
+                file2=Path("file2.pcap"),
+                pcap_id_mapping={},
+            )
+
+            # Verify that write_service_stats was called, not write_endpoint_stats
+            mock_db_writer.write_service_stats.assert_called_once()
+            mock_db_writer.write_endpoint_stats.assert_not_called()
+
+    def test_write_to_json_prefers_service_stats_over_endpoint_stats(
+        self, plugin: MatchPlugin, tmp_path: Path
+    ):
+        """Test that service stats takes precedence over endpoint stats in JSON."""
+        output_file = tmp_path / "output.json"
+        mock_endpoint_stats = [MagicMock()]
+        mock_service_stats = [MagicMock()]
+
+        with patch('capmaster.plugins.match.db_writer.MatchDatabaseWriter') as mock_writer_class:
+            mock_writer_class.write_service_stats_to_json.return_value = 8
+
+            plugin._write_to_json(
+                output_file=output_file,
+                endpoint_stats=mock_endpoint_stats,
+                service_stats_list=mock_service_stats,
+                file1=Path("file1.pcap"),
+                file2=Path("file2.pcap"),
+                pcap_id_mapping={},
+            )
+
+            # Verify that write_service_stats_to_json was called
+            mock_writer_class.write_service_stats_to_json.assert_called_once()
+            mock_writer_class.write_endpoint_stats_to_json.assert_not_called()
+
+    def test_empty_service_stats_skips_database_write(
+        self, plugin: MatchPlugin, caplog
+    ):
+        """Test that empty service stats skips database write."""
+        with patch('capmaster.plugins.match.db_writer.MatchDatabaseWriter') as mock_writer_class:
+            plugin._write_to_database(
+                db_connection="postgresql://user:pass@localhost:5432/testdb",
+                kase_id=137,
+                endpoint_stats=[],
+                service_stats_list=[],
+                file1=Path("file1.pcap"),
+                file2=Path("file2.pcap"),
+                pcap_id_mapping={},
+            )
+
+            # Verify that MatchDatabaseWriter was NOT instantiated
+            mock_writer_class.assert_not_called()
+
+            # Verify warning was logged
+            assert "No endpoint pairs found in match results" in caplog.text
+
