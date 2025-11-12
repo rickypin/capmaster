@@ -430,6 +430,7 @@ class QualityAnalyzer:
 def parse_matched_connections(matched_file: Path) -> list[ConnectionPair]:
     """
     Parse matched_connections.txt file to extract connection pairs.
+    Supports both old multi-line format and new table format.
 
     Args:
         matched_file: Path to matched_connections.txt file
@@ -438,43 +439,46 @@ def parse_matched_connections(matched_file: Path) -> list[ConnectionPair]:
         List of ConnectionPair objects
     """
     pairs = []
-    # Pattern to match connection pair entries like:
-    # [1] A (stream 7): 10.93.137.244:43803 <-> 10.93.75.130:8443
-    #     B (stream 33): 172.68.164.118:51891 <-> 10.93.136.244:443
-    #     Confidence: 1.00 | Evidence: ...
-
-    pair_pattern = re.compile(r'\[(\d+)\]\s+A\s+\(stream\s+(\d+)\):\s+(.+)')
-    stream_b_pattern = re.compile(r'\s+B\s+\(stream\s+(\d+)\):\s+(.+)')
-    confidence_pattern = re.compile(r'\s+Confidence:\s+([\d.]+)')
 
     try:
         with open(matched_file, 'r') as f:
             lines = f.readlines()
 
-        i = 0
-        while i < len(lines):
-            line = lines[i]
+        # Try to detect format by looking for table header
+        is_table_format = False
+        for line in lines:
+            if 'Stream A' in line and 'Stream B' in line and 'Client A' in line:
+                is_table_format = True
+                break
 
-            # Look for pair start
-            match_a = pair_pattern.match(line)
-            if match_a:
-                pair_id = int(match_a.group(1))
-                stream_a = int(match_a.group(2))
-                connection_a = match_a.group(3).strip()
+        if is_table_format:
+            # Parse new table format
+            # Table row format: No. Stream_A Client_A Server_A Stream_B Client_B Server_B Conf Evidence
+            for line in lines:
+                line = line.strip()
+                # Skip headers, separators, and empty lines
+                if not line or line.startswith('=') or line.startswith('-') or \
+                   line.startswith('TCP Connection') or line.startswith('Statistics') or \
+                   line.startswith('Matched Connections') or line.startswith('Total') or \
+                   line.startswith('No.') or 'Stream A' in line:
+                    continue
 
-                # Next line should be stream B
-                if i + 1 < len(lines):
-                    match_b = stream_b_pattern.match(lines[i + 1])
-                    if match_b:
-                        stream_b = int(match_b.group(1))
-                        connection_b = match_b.group(2).strip()
+                # Parse table row
+                parts = line.split()
+                if len(parts) >= 8:
+                    try:
+                        pair_id = int(parts[0])
+                        stream_a = int(parts[1])
+                        client_a = parts[2]
+                        server_a = parts[3]
+                        stream_b = int(parts[4])
+                        client_b = parts[5]
+                        server_b = parts[6]
+                        confidence = float(parts[7])
 
-                        # Next line should be confidence
-                        confidence = 1.0  # Default
-                        if i + 2 < len(lines):
-                            match_conf = confidence_pattern.match(lines[i + 2])
-                            if match_conf:
-                                confidence = float(match_conf.group(1))
+                        # Reconstruct connection strings
+                        connection_a = f"{client_a} <-> {server_a}"
+                        connection_b = f"{client_b} <-> {server_b}"
 
                         pair = ConnectionPair(
                             pair_id=pair_id,
@@ -485,10 +489,58 @@ def parse_matched_connections(matched_file: Path) -> list[ConnectionPair]:
                             confidence=confidence,
                         )
                         pairs.append(pair)
-                        i += 3  # Skip the lines we just processed
+                    except (ValueError, IndexError):
+                        # Skip malformed lines
                         continue
+        else:
+            # Parse old multi-line format
+            # Pattern to match connection pair entries like:
+            # [1] A (stream 7): 10.93.137.244:43803 <-> 10.93.75.130:8443
+            #     B (stream 33): 172.68.164.118:51891 <-> 10.93.136.244:443
+            #     Confidence: 1.00 | Evidence: ...
 
-            i += 1
+            pair_pattern = re.compile(r'\[(\d+)\]\s+A\s+\(stream\s+(\d+)\):\s+(.+)')
+            stream_b_pattern = re.compile(r'\s+B\s+\(stream\s+(\d+)\):\s+(.+)')
+            confidence_pattern = re.compile(r'\s+Confidence:\s+([\d.]+)')
+
+            i = 0
+            while i < len(lines):
+                line = lines[i]
+
+                # Look for pair start
+                match_a = pair_pattern.match(line)
+                if match_a:
+                    pair_id = int(match_a.group(1))
+                    stream_a = int(match_a.group(2))
+                    connection_a = match_a.group(3).strip()
+
+                    # Next line should be stream B
+                    if i + 1 < len(lines):
+                        match_b = stream_b_pattern.match(lines[i + 1])
+                        if match_b:
+                            stream_b = int(match_b.group(1))
+                            connection_b = match_b.group(2).strip()
+
+                            # Next line should be confidence
+                            confidence = 1.0  # Default
+                            if i + 2 < len(lines):
+                                match_conf = confidence_pattern.match(lines[i + 2])
+                                if match_conf:
+                                    confidence = float(match_conf.group(1))
+
+                            pair = ConnectionPair(
+                                pair_id=pair_id,
+                                stream_a=stream_a,
+                                connection_a=connection_a,
+                                stream_b=stream_b,
+                                connection_b=connection_b,
+                                confidence=confidence,
+                            )
+                            pairs.append(pair)
+                            i += 3  # Skip the lines we just processed
+                            continue
+
+                i += 1
 
         logger.info(f"Extracted {len(pairs)} connection pairs from matched connections file")
         return pairs
@@ -544,7 +596,7 @@ def format_quality_report(
     file2_name: str,
 ) -> str:
     """
-    Format quality analysis results as a human-readable report.
+    Format quality analysis results as a table report.
 
     Args:
         results: Dictionary mapping services to (metrics1, metrics2)
@@ -556,9 +608,9 @@ def format_quality_report(
     """
     lines = []
     lines.append("")
-    lines.append("=" * 80)
+    lines.append("=" * 180)
     lines.append("Network Quality Analysis Report")
-    lines.append("=" * 80)
+    lines.append("=" * 180)
     lines.append("")
     lines.append(f"File A: {file1_name}")
     lines.append(f"File B: {file2_name}")
@@ -570,61 +622,99 @@ def format_quality_report(
 
     # Summary statistics
     lines.append("Summary:")
-    lines.append("-" * 80)
+    lines.append("-" * 180)
     lines.append(f"Total services analyzed: {len(results)}")
     lines.append("")
 
-    # Detailed per-service metrics
-    lines.append("Per-Service Quality Metrics:")
-    lines.append("=" * 80)
+    # Service Quality Metrics Table
+    lines.append("Service Quality Metrics:")
+    lines.append("-" * 180)
 
+    # Table header
+    header = (
+        f"{'Service':<22} "
+        f"{'File':<6} "
+        f"{'Direction':<15} "
+        f"{'Packets':<10} "
+        f"{'Retrans':<12} "
+        f"{'Dup ACK':<12} "
+        f"{'Lost Seg':<12}"
+    )
+    lines.append(header)
+    lines.append("-" * 180)
+
+    # Table rows
     for service, (metrics1, metrics2) in sorted(results.items()):
         server_ip, server_port = service
-        lines.append("")
-        lines.append(f"Service: {server_ip}:{server_port}")
-        lines.append("-" * 80)
+        service_str = f"{server_ip}:{server_port}"
 
-        # Check if metrics1 has any data
+        # Check if metrics have data
         has_metrics1_data = (metrics1.client_total_packets > 0 or metrics1.server_total_packets > 0)
-        # Check if metrics2 has any data
         has_metrics2_data = (metrics2.client_total_packets > 0 or metrics2.server_total_packets > 0)
 
-        # Only output File A metrics if there's actual data
-        if has_metrics1_data:
-            lines.append(f"\n  File A ({file1_name}):")
-            lines.append(f"    Client -> Server:")
-            lines.append(f"      Total Packets:        {metrics1.client_total_packets:,}")
-            lines.append(f"      Retransmissions:      {metrics1.client_retransmissions:,} ({metrics1.client_retransmission_rate:.2f}%)")
-            lines.append(f"      Duplicate ACKs:       {metrics1.client_duplicate_acks:,} ({metrics1.client_duplicate_ack_rate:.2f}%)")
-            lines.append(f"      Lost Segments:        {metrics1.client_lost_segments:,} ({metrics1.client_loss_rate:.2f}%)")
-
-            lines.append(f"\n    Server -> Client:")
-            lines.append(f"      Total Packets:        {metrics1.server_total_packets:,}")
-            lines.append(f"      Retransmissions:      {metrics1.server_retransmissions:,} ({metrics1.server_retransmission_rate:.2f}%)")
-            lines.append(f"      Duplicate ACKs:       {metrics1.server_duplicate_acks:,} ({metrics1.server_duplicate_ack_rate:.2f}%)")
-            lines.append(f"      Lost Segments:        {metrics1.server_lost_segments:,} ({metrics1.server_loss_rate:.2f}%)")
-
-        # Only output File B metrics if there's actual data
-        if has_metrics2_data:
-            lines.append(f"\n  File B ({file2_name}):")
-            lines.append(f"    Client -> Server:")
-            lines.append(f"      Total Packets:        {metrics2.client_total_packets:,}")
-            lines.append(f"      Retransmissions:      {metrics2.client_retransmissions:,} ({metrics2.client_retransmission_rate:.2f}%)")
-            lines.append(f"      Duplicate ACKs:       {metrics2.client_duplicate_acks:,} ({metrics2.client_duplicate_ack_rate:.2f}%)")
-            lines.append(f"      Lost Segments:        {metrics2.client_lost_segments:,} ({metrics2.client_loss_rate:.2f}%)")
-
-            lines.append(f"\n    Server -> Client:")
-            lines.append(f"      Total Packets:        {metrics2.server_total_packets:,}")
-            lines.append(f"      Retransmissions:      {metrics2.server_retransmissions:,} ({metrics2.server_retransmission_rate:.2f}%)")
-            lines.append(f"      Duplicate ACKs:       {metrics2.server_duplicate_acks:,} ({metrics2.server_duplicate_ack_rate:.2f}%)")
-            lines.append(f"      Lost Segments:        {metrics2.server_lost_segments:,} ({metrics2.server_loss_rate:.2f}%)")
-
-        # If neither file has data for this service, show a note
         if not has_metrics1_data and not has_metrics2_data:
-            lines.append(f"\n  No traffic found for this service in either PCAP file.")
+            # No data for this service
+            row = f"{service_str:<22} {'N/A':<6} {'No traffic':<15} {'-':<10} {'-':<12} {'-':<12} {'-':<12}"
+            lines.append(row)
+            continue
 
-    lines.append("")
-    lines.append("=" * 80)
+        # File A metrics
+        if has_metrics1_data:
+            # Client -> Server
+            row = (
+                f"{service_str:<22} "
+                f"{'A':<6} "
+                f"{'Client->Server':<15} "
+                f"{metrics1.client_total_packets:<10,} "
+                f"{metrics1.client_retransmissions:>6,} ({metrics1.client_retransmission_rate:>4.1f}%) "
+                f"{metrics1.client_duplicate_acks:>6,} ({metrics1.client_duplicate_ack_rate:>4.1f}%) "
+                f"{metrics1.client_lost_segments:>6,} ({metrics1.client_loss_rate:>4.1f}%)"
+            )
+            lines.append(row)
+
+            # Server -> Client
+            row = (
+                f"{'':<22} "
+                f"{'':<6} "
+                f"{'Server->Client':<15} "
+                f"{metrics1.server_total_packets:<10,} "
+                f"{metrics1.server_retransmissions:>6,} ({metrics1.server_retransmission_rate:>4.1f}%) "
+                f"{metrics1.server_duplicate_acks:>6,} ({metrics1.server_duplicate_ack_rate:>4.1f}%) "
+                f"{metrics1.server_lost_segments:>6,} ({metrics1.server_loss_rate:>4.1f}%)"
+            )
+            lines.append(row)
+
+        # File B metrics
+        if has_metrics2_data:
+            # Client -> Server
+            row = (
+                f"{service_str if not has_metrics1_data else '':<22} "
+                f"{'B':<6} "
+                f"{'Client->Server':<15} "
+                f"{metrics2.client_total_packets:<10,} "
+                f"{metrics2.client_retransmissions:>6,} ({metrics2.client_retransmission_rate:>4.1f}%) "
+                f"{metrics2.client_duplicate_acks:>6,} ({metrics2.client_duplicate_ack_rate:>4.1f}%) "
+                f"{metrics2.client_lost_segments:>6,} ({metrics2.client_loss_rate:>4.1f}%)"
+            )
+            lines.append(row)
+
+            # Server -> Client
+            row = (
+                f"{'':<22} "
+                f"{'':<6} "
+                f"{'Server->Client':<15} "
+                f"{metrics2.server_total_packets:<10,} "
+                f"{metrics2.server_retransmissions:>6,} ({metrics2.server_retransmission_rate:>4.1f}%) "
+                f"{metrics2.server_duplicate_acks:>6,} ({metrics2.server_duplicate_ack_rate:>4.1f}%) "
+                f"{metrics2.server_lost_segments:>6,} ({metrics2.server_loss_rate:>4.1f}%)"
+            )
+            lines.append(row)
+
+        # Add separator between services
+        if len(results) > 1:
+            lines.append("-" * 180)
+
+    lines.append("=" * 180)
 
     return '\n'.join(lines)
 
@@ -666,7 +756,7 @@ def format_connection_pair_report(
     top_n: int | None = None,
 ) -> str:
     """
-    Format connection pair quality analysis results as a human-readable report.
+    Format connection pair quality analysis results as a table report.
 
     Args:
         results: List of ConnectionPairMetrics
@@ -679,9 +769,9 @@ def format_connection_pair_report(
     """
     lines = []
     lines.append("")
-    lines.append("=" * 80)
+    lines.append("=" * 200)
     lines.append("Connection Pair Quality Analysis Report")
-    lines.append("=" * 80)
+    lines.append("=" * 200)
     lines.append("")
     lines.append(f"File A: {file1_name}")
     lines.append(f"File B: {file2_name}")
@@ -699,7 +789,7 @@ def format_connection_pair_report(
         score_b = calculate_performance_score(pair_metrics.metrics_b)
         # Use the worse (lower) score
         combined_score = min(score_a, score_b)
-        scored_results.append((combined_score, pair_metrics))
+        scored_results.append((combined_score, score_a, score_b, pair_metrics))
 
     # Sort by score (ascending, so worst performance first)
     scored_results.sort(key=lambda x: x[0])
@@ -707,81 +797,136 @@ def format_connection_pair_report(
     # Filter to top N if specified
     if top_n is not None and top_n > 0:
         scored_results = scored_results[:top_n]
-        results_to_show = [pair_metrics for _, pair_metrics in scored_results]
-    else:
-        results_to_show = results
 
     # Summary statistics
     lines.append("Summary:")
-    lines.append("-" * 80)
+    lines.append("-" * 200)
     lines.append(f"Total connection pairs analyzed: {len(results)}")
     if top_n is not None and top_n > 0:
-        lines.append(f"Showing top {len(results_to_show)} worst performing connection pairs")
+        lines.append(f"Showing top {len(scored_results)} worst performing connection pairs")
     lines.append("")
 
-    # Detailed per-pair metrics
+    # Connection Pair Quality Metrics Table
     if top_n is not None and top_n > 0:
-        lines.append(f"Top {len(results_to_show)} Worst Performing Connection Pairs:")
+        lines.append(f"Top {len(scored_results)} Worst Performing Connection Pairs:")
     else:
-        lines.append("Per-Connection-Pair Quality Metrics:")
-    lines.append("=" * 80)
+        lines.append("Connection Pair Quality Metrics:")
+    lines.append("-" * 200)
 
-    for pair_metrics in results_to_show:
+    # Table header
+    header = (
+        f"{'Pair#':<7} "
+        f"{'Stream':<8} "
+        f"{'Connection':<45} "
+        f"{'File':<6} "
+        f"{'Dir':<15} "
+        f"{'Pkts':<8} "
+        f"{'Retrans':<12} "
+        f"{'DupACK':<12} "
+        f"{'LostSeg':<12} "
+        f"{'Score':<8} "
+        f"{'Conf':<6}"
+    )
+    lines.append(header)
+    lines.append("-" * 200)
+
+    # Table rows
+    for combined_score, score_a, score_b, pair_metrics in scored_results:
         pair = pair_metrics.pair
         metrics_a = pair_metrics.metrics_a
         metrics_b = pair_metrics.metrics_b
-
-        # Calculate performance scores
-        score_a = calculate_performance_score(metrics_a)
-        score_b = calculate_performance_score(metrics_b)
-        combined_score = min(score_a, score_b)
-
-        lines.append("")
-        lines.append(f"Connection Pair #{pair.pair_id} (Confidence: {pair.confidence:.2f}) - Performance Score: {combined_score:.1f}/100")
-        lines.append("-" * 80)
-        lines.append(f"  A (stream {pair.stream_a}): {pair.connection_a}")
-        lines.append(f"  B (stream {pair.stream_b}): {pair.connection_b}")
 
         # Check if metrics have any data
         has_metrics_a_data = (metrics_a.client_total_packets > 0 or metrics_a.server_total_packets > 0)
         has_metrics_b_data = (metrics_b.client_total_packets > 0 or metrics_b.server_total_packets > 0)
 
+        if not has_metrics_a_data and not has_metrics_b_data:
+            # No data for this pair
+            row = (
+                f"{pair.pair_id:<7} "
+                f"{pair.stream_a:<8} "
+                f"{pair.connection_a[:45]:<45} "
+                f"{'N/A':<6} "
+                f"{'No traffic':<15} "
+                f"{'-':<8} {'-':<12} {'-':<12} {'-':<12} {'-':<8} "
+                f"{pair.confidence:<6.2f}"
+            )
+            lines.append(row)
+            continue
+
         # File A metrics
         if has_metrics_a_data:
-            lines.append(f"\n  File A ({file1_name}) - Score: {score_a:.1f}/100:")
-            lines.append(f"    Client -> Server:")
-            lines.append(f"      Total Packets:        {metrics_a.client_total_packets:,}")
-            lines.append(f"      Retransmissions:      {metrics_a.client_retransmissions:,} ({metrics_a.client_retransmission_rate:.2f}%)")
-            lines.append(f"      Duplicate ACKs:       {metrics_a.client_duplicate_acks:,} ({metrics_a.client_duplicate_ack_rate:.2f}%)")
-            lines.append(f"      Lost Segments:        {metrics_a.client_lost_segments:,} ({metrics_a.client_loss_rate:.2f}%)")
+            # Client -> Server
+            row = (
+                f"{pair.pair_id:<7} "
+                f"{pair.stream_a:<8} "
+                f"{pair.connection_a[:45]:<45} "
+                f"{'A':<6} "
+                f"{'C->S':<15} "
+                f"{metrics_a.client_total_packets:<8,} "
+                f"{metrics_a.client_retransmissions:>5,}({metrics_a.client_retransmission_rate:>4.1f}%) "
+                f"{metrics_a.client_duplicate_acks:>5,}({metrics_a.client_duplicate_ack_rate:>4.1f}%) "
+                f"{metrics_a.client_lost_segments:>5,}({metrics_a.client_loss_rate:>4.1f}%) "
+                f"{score_a:<8.1f} "
+                f"{pair.confidence:<6.2f}"
+            )
+            lines.append(row)
 
-            lines.append(f"\n    Server -> Client:")
-            lines.append(f"      Total Packets:        {metrics_a.server_total_packets:,}")
-            lines.append(f"      Retransmissions:      {metrics_a.server_retransmissions:,} ({metrics_a.server_retransmission_rate:.2f}%)")
-            lines.append(f"      Duplicate ACKs:       {metrics_a.server_duplicate_acks:,} ({metrics_a.server_duplicate_ack_rate:.2f}%)")
-            lines.append(f"      Lost Segments:        {metrics_a.server_lost_segments:,} ({metrics_a.server_loss_rate:.2f}%)")
+            # Server -> Client
+            row = (
+                f"{'':<7} "
+                f"{'':<8} "
+                f"{'':<45} "
+                f"{'':<6} "
+                f"{'S->C':<15} "
+                f"{metrics_a.server_total_packets:<8,} "
+                f"{metrics_a.server_retransmissions:>5,}({metrics_a.server_retransmission_rate:>4.1f}%) "
+                f"{metrics_a.server_duplicate_acks:>5,}({metrics_a.server_duplicate_ack_rate:>4.1f}%) "
+                f"{metrics_a.server_lost_segments:>5,}({metrics_a.server_loss_rate:>4.1f}%) "
+                f"{'':<8} "
+                f"{'':<6}"
+            )
+            lines.append(row)
 
         # File B metrics
         if has_metrics_b_data:
-            lines.append(f"\n  File B ({file2_name}) - Score: {score_b:.1f}/100:")
-            lines.append(f"    Client -> Server:")
-            lines.append(f"      Total Packets:        {metrics_b.client_total_packets:,}")
-            lines.append(f"      Retransmissions:      {metrics_b.client_retransmissions:,} ({metrics_b.client_retransmission_rate:.2f}%)")
-            lines.append(f"      Duplicate ACKs:       {metrics_b.client_duplicate_acks:,} ({metrics_b.client_duplicate_ack_rate:.2f}%)")
-            lines.append(f"      Lost Segments:        {metrics_b.client_lost_segments:,} ({metrics_b.client_loss_rate:.2f}%)")
+            # Client -> Server
+            row = (
+                f"{pair.pair_id if not has_metrics_a_data else '':<7} "
+                f"{pair.stream_b:<8} "
+                f"{pair.connection_b[:45]:<45} "
+                f"{'B':<6} "
+                f"{'C->S':<15} "
+                f"{metrics_b.client_total_packets:<8,} "
+                f"{metrics_b.client_retransmissions:>5,}({metrics_b.client_retransmission_rate:>4.1f}%) "
+                f"{metrics_b.client_duplicate_acks:>5,}({metrics_b.client_duplicate_ack_rate:>4.1f}%) "
+                f"{metrics_b.client_lost_segments:>5,}({metrics_b.client_loss_rate:>4.1f}%) "
+                f"{score_b:<8.1f} "
+                f"{pair.confidence if not has_metrics_a_data else '':<6}"
+            )
+            lines.append(row)
 
-            lines.append(f"\n    Server -> Client:")
-            lines.append(f"      Total Packets:        {metrics_b.server_total_packets:,}")
-            lines.append(f"      Retransmissions:      {metrics_b.server_retransmissions:,} ({metrics_b.server_retransmission_rate:.2f}%)")
-            lines.append(f"      Duplicate ACKs:       {metrics_b.server_duplicate_acks:,} ({metrics_b.server_duplicate_ack_rate:.2f}%)")
-            lines.append(f"      Lost Segments:        {metrics_b.server_lost_segments:,} ({metrics_b.server_loss_rate:.2f}%)")
+            # Server -> Client
+            row = (
+                f"{'':<7} "
+                f"{'':<8} "
+                f"{'':<45} "
+                f"{'':<6} "
+                f"{'S->C':<15} "
+                f"{metrics_b.server_total_packets:<8,} "
+                f"{metrics_b.server_retransmissions:>5,}({metrics_b.server_retransmission_rate:>4.1f}%) "
+                f"{metrics_b.server_duplicate_acks:>5,}({metrics_b.server_duplicate_ack_rate:>4.1f}%) "
+                f"{metrics_b.server_lost_segments:>5,}({metrics_b.server_loss_rate:>4.1f}%) "
+                f"{'':<8} "
+                f"{'':<6}"
+            )
+            lines.append(row)
 
-        # If neither file has data for this pair, show a note
-        if not has_metrics_a_data and not has_metrics_b_data:
-            lines.append(f"\n  No traffic found for this connection pair in either PCAP file.")
+        # Add separator between pairs
+        lines.append("-" * 200)
 
-    lines.append("")
-    lines.append("=" * 80)
+    lines.append(f"Total: {len(scored_results)} connection pairs shown")
+    lines.append("=" * 200)
 
     return '\n'.join(lines)
 

@@ -164,9 +164,9 @@ def format_topology(topology: TopologyInfo) -> str:
     """
     lines = []
     lines.append("")
-    lines.append("=" * 80)
+    lines.append("=" * 20)
     lines.append("Network Topology")
-    lines.append("=" * 80)
+    lines.append("=" * 20)
     lines.append("")
     lines.append(f"Capture Point A: {topology.file1_name}")
     lines.append(f"Capture Point B: {topology.file2_name}")
@@ -189,7 +189,7 @@ def format_topology(topology: TopologyInfo) -> str:
         lines.append(f"File B: Clients {_format_ip_list(topology.client_ips_b)} -> Servers {_format_server_list(topology.server_ips_b, topology.server_ports_b)}")
 
     lines.append("")
-    lines.append("=" * 80)
+    lines.append("=" * 20)
     lines.append("")
 
     return "\n".join(lines)

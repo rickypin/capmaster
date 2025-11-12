@@ -469,9 +469,9 @@ def format_endpoint_stats(
     lines = []
 
     # Header
-    lines.append("=" * 80)
+    lines.append("=" * 20)
     lines.append("Endpoint Statistics (Matched Connections Only)")
-    lines.append("=" * 80)
+    lines.append("=" * 20)
     lines.append("")
     lines.append(f"File A: {file1_name}")
     lines.append(f"File B: {file2_name}")
@@ -482,7 +482,7 @@ def format_endpoint_stats(
 
     # Endpoint pairs
     lines.append("Endpoint Pairs:")
-    lines.append("-" * 80)
+    lines.append("-" * 20)
     lines.append("")
 
     for i, stat in enumerate(stats, 1):
@@ -531,9 +531,9 @@ def format_endpoint_stats_table(
     lines = []
 
     # Header
-    lines.append("=" * 80)
+    lines.append("=" * 20)
     lines.append("Endpoint Statistics Summary")
-    lines.append("=" * 80)
+    lines.append("=" * 20)
     lines.append("")
     lines.append(f"File A: {file1_name}")
     lines.append(f"File B: {file2_name}")
@@ -546,7 +546,7 @@ def format_endpoint_stats_table(
         f"{'Count':<6} | {'Conf':<8}"
     )
     lines.append(header)
-    lines.append("-" * 80)
+    lines.append("-" * 20)
 
     # Table rows
     for stat in stats:
@@ -562,7 +562,7 @@ def format_endpoint_stats_table(
         lines.append(row)
 
     lines.append("")
-    lines.append("=" * 80)
+    lines.append("=" * 20)
 
     return "\n".join(lines)
 
@@ -653,9 +653,9 @@ def format_service_stats(
     lines = []
 
     # Header
-    lines.append("=" * 80)
+    lines.append("=" * 20)
     lines.append("Service Statistics (Aggregated by Server Port)")
-    lines.append("=" * 80)
+    lines.append("=" * 20)
     lines.append("")
     lines.append(f"File A: {file1_name}")
     lines.append(f"File B: {file2_name}")
@@ -666,7 +666,7 @@ def format_service_stats(
 
     # Services
     lines.append("Services:")
-    lines.append("-" * 80)
+    lines.append("-" * 20)
     lines.append("")
 
     for idx, service in enumerate(service_stats, start=1):
@@ -703,7 +703,7 @@ def format_service_stats(
 
         lines.append("")
 
-    lines.append("=" * 80)
+    lines.append("=" * 20)
 
     return "\n".join(lines)
 
