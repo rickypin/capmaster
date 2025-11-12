@@ -95,8 +95,8 @@ class DatabaseWriter:
         The table schema is based on the reference table structure:
         - pcap_id: integer
         - flow_hash: bigint
-        - first_time: bigint (nanosecond timestamp)
-        - last_time: bigint (nanosecond timestamp)
+        - first_time: bigint (nanosecond timestamp with full precision)
+        - last_time: bigint (nanosecond timestamp with full precision)
         - tcp_flags_different_cnt: bigint
         - tcp_flags_different_type: text (e.g., "SYN (Local Side) -> ACK" or "SYN -> ACK (Local Side)")
         - tcp_flags_different_text: text (string, semicolon-separated)
@@ -230,8 +230,8 @@ class DatabaseWriter:
         Args:
             pcap_id: PCAP file identifier
             flow_hash: Flow hash value (signed 64-bit integer)
-            first_time: First packet timestamp in nanoseconds (optional)
-            last_time: Last packet timestamp in nanoseconds (optional)
+            first_time: First packet timestamp in nanoseconds with full precision (optional)
+            last_time: Last packet timestamp in nanoseconds with full precision (optional)
             tcp_flags_different_cnt: Count of TCP flags differences
             tcp_flags_different_type: TCP flags change type (e.g., "SYN (Local Side) -> ACK" or "SYN -> ACK (Local Side)")
             tcp_flags_different_text: String of TCP flags difference descriptions (semicolon-separated)
@@ -291,8 +291,8 @@ class DatabaseWriter:
             records: List of dictionaries, each containing:
                 - pcap_id: PCAP file identifier
                 - flow_hash: Flow hash value (signed 64-bit integer)
-                - first_time: First packet timestamp in nanoseconds (optional)
-                - last_time: Last packet timestamp in nanoseconds (optional)
+                - first_time: First packet timestamp in nanoseconds with full precision (optional)
+                - last_time: Last packet timestamp in nanoseconds with full precision (optional)
                 - tcp_flags_different_cnt: Count of TCP flags differences
                 - tcp_flags_different_type: TCP flags change type (optional)
                 - tcp_flags_different_text: TCP flags difference descriptions (optional)
