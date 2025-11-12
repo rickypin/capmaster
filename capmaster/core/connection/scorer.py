@@ -106,11 +106,20 @@ class ConnectionScorer:
     # Length signature similarity threshold
     LENGTH_SIG_THRESHOLD = 0.6
 
-    # IPID matching thresholds
+    # IPID matching thresholds (必要条件)
+    # We compute overlap on non-zero, de-duplicated IPID sets (direction-independent)
     MIN_IPID_OVERLAP = 2  # Absolute minimum number of overlapping IPIDs required
     MIN_IPID_OVERLAP_RATIO = 0.5  # Minimum overlap ratio (intersection / min(set1, set2))
     # Require at least half of the smaller IPID set to overlap
 
+    # Strong IPID acceptance thresholds (充分条件)
+    # When IPID evidence is overwhelming, we can accept even if normalized score is low.
+    # We enhance robustness by requiring Jaccard similarity in addition to count/coverage.
+    STRONG_IPID_MIN_OVERLAP = 10
+    STRONG_IPID_MIN_RATIO = 0.8
+    STRONG_IPID_MIN_JACCARD = 0.25  # Additional robustness: penalize subset-only overlaps
+    # Optional numeric-range density gate (disabled by default: 0.0 means skip)
+    STRONG_IPID_MIN_DENSITY = 0.0
 
     # Microflow (short-flow) matching configuration
     MICROFLOW_TRIGGER_MAX_PACKETS = 3
@@ -123,11 +132,6 @@ class ConnectionScorer:
     MICRO_W_TS = 0.20
     MICRO_W_TTL = 0.10
     MICRO_W_LEN = 0.10
-
-    # Strong IPID acceptance thresholds (sufficient condition)
-    # If overlap count and ratio exceed these, other features are NOT necessary
-    STRONG_IPID_MIN_OVERLAP = 10
-    STRONG_IPID_MIN_RATIO = 0.8
 
     def __init__(self) -> None:
         """Initialize the scorer."""
@@ -174,13 +178,32 @@ class ConnectionScorer:
             )
 
         # Determine if IPID overlap alone is a sufficient condition (强匹配)
-        # When the IPID overlap is overwhelming, other features are not necessary
-        intersection = conn1.ipid_set & conn2.ipid_set
-        overlap_count = len(intersection)
-        min_set_size = min(len(conn1.ipid_set), len(conn2.ipid_set)) if conn1.ipid_set and conn2.ipid_set else 0
+        # When the IPID overlap is overwhelming, other features are not necessary.
+        # Use non-zero, de-duplicated, direction-independent IPID sets.
+        s1 = {x for x in conn1.ipid_set if x != 0}
+        s2 = {x for x in conn2.ipid_set if x != 0}
+        inter = s1 & s2
+        union = s1 | s2
+        overlap_count = len(inter)
+        min_set_size = min(len(s1), len(s2)) if s1 and s2 else 0
         overlap_ratio = (overlap_count / min_set_size) if min_set_size > 0 else 0.0
+        jaccard = (len(inter) / len(union)) if union else 0.0
+        # Optional numeric-range density (disabled by default)
+        if s1 and s2:
+            r_lo = max(min(s1), min(s2))
+            r_hi = min(max(s1), max(s2))
+            if r_hi >= r_lo:
+                range_size = (r_hi - r_lo + 1)
+                density = (overlap_count / range_size) if range_size > 0 else 0.0
+            else:
+                density = 0.0
+        else:
+            density = 0.0
         force_accept = (
-            overlap_count >= self.STRONG_IPID_MIN_OVERLAP and overlap_ratio >= self.STRONG_IPID_MIN_RATIO
+            overlap_count >= self.STRONG_IPID_MIN_OVERLAP
+            and overlap_ratio >= self.STRONG_IPID_MIN_RATIO
+            and jaccard >= self.STRONG_IPID_MIN_JACCARD
+            and (self.STRONG_IPID_MIN_DENSITY <= 0.0 or density >= self.STRONG_IPID_MIN_DENSITY)
         )
 
         # Determine if we should use payload features
@@ -414,41 +437,36 @@ class ConnectionScorer:
         """
         Check if IPID overlap is sufficient.
 
+        We operate on non-zero, de-duplicated, direction-independent sets.
         Requires BOTH conditions to be met:
         1. Absolute minimum: at least MIN_IPID_OVERLAP (2) overlapping IPIDs
         2. Relative minimum: overlap ratio >= MIN_IPID_OVERLAP_RATIO (0.5)
            where overlap_ratio = overlap_count / min(len(set1), len(set2))
 
-        This adaptive threshold works well for connections of different lengths:
-        - Short connections (2-4 IPIDs): requires 2+ overlaps (50-100% ratio)
-        - Medium connections (5-10 IPIDs): requires 3-5 overlaps (50%+ ratio)
-        - Long connections (10+ IPIDs): requires 5+ overlaps (50%+ ratio)
-
-        Args:
-            intersection: Intersection of two IPID sets
-            set1: First IPID set
-            set2: Second IPID set
-
-        Returns:
-            True if overlap is sufficient, False otherwise
+        This adaptive threshold works well for connections of different lengths.
         """
-        if not intersection:
+        # Filter out zero IPIDs (defensive guard against builder fallback)
+        s1 = {x for x in set1 if x != 0}
+        s2 = {x for x in set2 if x != 0}
+        if not s1 or not s2:
             return False
 
-        overlap_count = len(intersection)
-        min_set_size = min(len(set1), len(set2)) if set1 and set2 else 0
+        # Recompute intersection on filtered sets
+        inter = s1 & s2
+        if not inter:
+            return False
+
+        overlap_count = len(inter)
+        min_set_size = min(len(s1), len(s2))
 
         # Condition 1: Require absolute minimum overlap count
         if overlap_count < self.MIN_IPID_OVERLAP:
             return False
 
         # Condition 2: Require minimum overlap ratio (to avoid random collisions)
-        # For connections with different IPID counts, we use the smaller set as denominator
-        # This ensures that at least half of the smaller sequence must overlap
-        if min_set_size > 0:
-            overlap_ratio = overlap_count / min_set_size
-            if overlap_ratio < self.MIN_IPID_OVERLAP_RATIO:
-                return False
+        overlap_ratio = overlap_count / min_set_size
+        if overlap_ratio < self.MIN_IPID_OVERLAP_RATIO:
+            return False
 
         return True
 
