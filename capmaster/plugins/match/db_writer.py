@@ -312,8 +312,8 @@ class MatchDatabaseWriter:
         """
         Determine the relative network position of two capture points based on TTL deltas.
 
-        This method analyzes the TTL hop counts from both client and server perspectives
-        to infer the relative positions of the two capture points in the network topology.
+        This simplified method uses server-side TTL as the primary judgment criterion,
+        with client-side TTL used only for consistency validation and logging.
 
         Args:
             client_hops_a: Number of hops from client to File A capture point
@@ -325,8 +325,6 @@ class MatchDatabaseWriter:
             One of the following position indicators:
             - "A_CLOSER_TO_CLIENT": File A is closer to client (Client -> A -> B -> Server)
             - "B_CLOSER_TO_CLIENT": File B is closer to client (Client -> B -> A -> Server)
-            - "A_CLOSER_TO_SERVER": File A is closer to server
-            - "B_CLOSER_TO_SERVER": File B is closer to server
             - "SAME_POSITION": Same position or cannot determine
 
         Logic:
@@ -334,44 +332,39 @@ class MatchDatabaseWriter:
                - client_delta_diff = client_hops_b - client_hops_a
                - server_delta_diff = server_hops_a - server_hops_b
 
-            2. Scenario 1: A closer to client, B closer to server
-               - client_delta_diff > 0 (B has more hops from client than A)
-               - server_delta_diff > 0 (A has more hops to server than B)
-               - Topology: Client -> A -> B -> Server
+            2. Detect NAT scenario (client and server deltas conflict)
 
-            3. Scenario 2: B closer to client, A closer to server
-               - client_delta_diff < 0 (A has more hops from client than B)
-               - server_delta_diff < 0 (B has more hops to server than A)
-               - Topology: Client -> B -> A -> Server
-
-            4. Scenario 3: Only server-side information available
-               - server_delta_diff > 0: A is farther from server
-               - server_delta_diff < 0: B is farther from server
-
-            5. Otherwise: Cannot determine or same position
+            3. Always use server-side TTL for final judgment:
+               - server_delta_diff > 0 → A_CLOSER_TO_CLIENT
+               - server_delta_diff < 0 → B_CLOSER_TO_CLIENT
+               - server_delta_diff == 0 → SAME_POSITION
         """
         # Calculate TTL delta differences
         client_delta_diff = client_hops_b - client_hops_a
         server_delta_diff = server_hops_a - server_hops_b
 
-        # Scenario 1: File A closer to client, File B closer to server
-        # Client -> File A -> File B -> Server
-        if client_delta_diff > 0 and server_delta_diff > 0:
-            return "A_CLOSER_TO_CLIENT"
+        # Detect potential NAT scenario (client and server deltas conflict)
+        is_nat_scenario = (
+            (client_delta_diff > 0 and server_delta_diff < 0) or
+            (client_delta_diff < 0 and server_delta_diff > 0)
+        )
 
-        # Scenario 2: File B closer to client, File A closer to server
-        # Client -> File B -> File A -> Server
-        if client_delta_diff < 0 and server_delta_diff < 0:
-            return "B_CLOSER_TO_CLIENT"
+        if is_nat_scenario:
+            logger.debug(
+                f"NAT scenario detected: client_delta={client_delta_diff}, "
+                f"server_delta={server_delta_diff}. Using server-side TTL only."
+            )
 
-        # Scenario 3: Only server-side judgment
+        # Always use server-side TTL for final judgment
         if server_delta_diff > 0:
-            return "A_CLOSER_TO_SERVER"
+            # A has more hops to server → A is farther from server → A closer to client
+            return "A_CLOSER_TO_CLIENT"
         elif server_delta_diff < 0:
-            return "B_CLOSER_TO_SERVER"
-
-        # Cannot determine or same position
-        return "SAME_POSITION"
+            # B has more hops to server → B is farther from server → B closer to client
+            return "B_CLOSER_TO_CLIENT"
+        else:
+            # Same distance to server or cannot determine
+            return "SAME_POSITION"
 
     def write_endpoint_stats(
         self,
@@ -426,7 +419,18 @@ class MatchDatabaseWriter:
                 server_hops_b=stat.server_hops_b,
             )
 
+            # Debug logging for TTL-based topology detection
+            logger.debug(
+                f"TTL Topology Detection - Group {group_id}: "
+                f"client_hops_a={stat.client_hops_a}, server_hops_a={stat.server_hops_a}, "
+                f"client_hops_b={stat.client_hops_b}, server_hops_b={stat.server_hops_b}, "
+                f"position={position}"
+            )
+
             # Determine net_area for each node based on position
+            # Constraint: Each pcap_id must have exactly ONE net_area marked (either client or server side)
+            # to indicate the relative position between the two capture points.
+            # The symmetric counterpart on the other pcap_id should also be marked.
             net_area_a_client = []
             net_area_a_server = []
             net_area_b_client = []
@@ -434,26 +438,16 @@ class MatchDatabaseWriter:
 
             if position == "A_CLOSER_TO_CLIENT":
                 # Client -> File A -> File B -> Server
-                # File A server points to File B (traffic flows to B)
-                # File B client points to File A (traffic comes from A)
+                # File A (pcap_id=0): mark server side -> points to pcap_id_b
+                # File B (pcap_id=1): mark client side -> points to pcap_id_a
                 net_area_a_server = [pcap_id_b]
                 net_area_b_client = [pcap_id_a]
 
             elif position == "B_CLOSER_TO_CLIENT":
                 # Client -> File B -> File A -> Server
-                # File B server points to File A (traffic flows to A)
-                # File A client points to File B (traffic comes from B)
+                # File B (pcap_id=1): mark server side -> points to pcap_id_a
+                # File A (pcap_id=0): mark client side -> points to pcap_id_b
                 net_area_b_server = [pcap_id_a]
-                net_area_a_client = [pcap_id_b]
-
-            elif position == "A_CLOSER_TO_SERVER":
-                # File A is closer to server
-                # File B client points to File A
-                net_area_b_client = [pcap_id_a]
-
-            elif position == "B_CLOSER_TO_SERVER":
-                # File B is closer to server
-                # File A client points to File B
                 net_area_a_client = [pcap_id_b]
 
             # position == "SAME_POSITION": all net_area remain empty []
@@ -854,6 +848,9 @@ class MatchDatabaseWriter:
         """
         Static version of _determine_network_position for use in static methods.
 
+        This simplified method uses server-side TTL as the primary judgment criterion,
+        with client-side TTL used only for consistency validation and logging.
+
         Args:
             client_hops_a: Number of hops from client to File A capture point
             server_hops_a: Number of hops from File A capture point to server
@@ -861,19 +858,35 @@ class MatchDatabaseWriter:
             server_hops_b: Number of hops from File B capture point to server
 
         Returns:
-            Position indicator string
+            Position indicator string:
+            - "A_CLOSER_TO_CLIENT": A is farther from server
+            - "B_CLOSER_TO_CLIENT": B is farther from server
+            - "SAME_POSITION": Same distance or cannot determine
         """
+        # Calculate TTL delta differences
         client_delta_diff = client_hops_b - client_hops_a
         server_delta_diff = server_hops_a - server_hops_b
 
-        if client_delta_diff > 0 and server_delta_diff > 0:
+        # Detect potential NAT scenario (client and server deltas conflict)
+        is_nat_scenario = (
+            (client_delta_diff > 0 and server_delta_diff < 0) or
+            (client_delta_diff < 0 and server_delta_diff > 0)
+        )
+
+        if is_nat_scenario:
+            logger.debug(
+                f"NAT scenario detected: client_delta={client_delta_diff}, "
+                f"server_delta={server_delta_diff}. Using server-side TTL only."
+            )
+
+        # Always use server-side TTL for final judgment
+        if server_delta_diff > 0:
+            # A has more hops to server → A is farther from server → A closer to client
             return "A_CLOSER_TO_CLIENT"
-        elif client_delta_diff < 0 and server_delta_diff < 0:
-            return "B_CLOSER_TO_CLIENT"
-        elif server_delta_diff > 0:
-            return "A_CLOSER_TO_SERVER"
         elif server_delta_diff < 0:
-            return "B_CLOSER_TO_SERVER"
+            # B has more hops to server → B is farther from server → B closer to client
+            return "B_CLOSER_TO_CLIENT"
         else:
+            # Same distance to server or cannot determine
             return "SAME_POSITION"
 
