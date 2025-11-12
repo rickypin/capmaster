@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 
-from capmaster.plugins.match.connection import TcpConnection
+from capmaster.core.connection.models import TcpConnection
 
 
 @dataclass

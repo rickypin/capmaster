@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from capmaster.plugins.match.connection import TcpConnection, TcpPacket
-from capmaster.plugins.match.extractor import TcpFieldExtractor
-from capmaster.plugins.match.matcher import BucketStrategy, ConnectionMatcher
+from capmaster.core.connection.extractor import TcpFieldExtractor
+from capmaster.core.connection.matcher import BucketStrategy, ConnectionMatcher
+from capmaster.core.connection.models import TcpConnection, TcpPacket
+from capmaster.core.connection.scorer import ConnectionScorer, MatchScore
 from capmaster.plugins.match.plugin import MatchPlugin
 from capmaster.plugins.match.sampler import ConnectionSampler
-from capmaster.plugins.match.scorer import ConnectionScorer, MatchScore
 
 
 def create_test_connection(**kwargs) -> TcpConnection:

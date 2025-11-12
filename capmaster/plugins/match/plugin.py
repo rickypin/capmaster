@@ -7,15 +7,15 @@ from pathlib import Path
 import click
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
+from capmaster.core.connection.connection_extractor import extract_connections_from_pcap
+from capmaster.core.connection.matcher import BucketStrategy, ConnectionMatcher, MatchMode
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
-from capmaster.plugins.match.connection_extractor import extract_connections_from_pcap
 from capmaster.plugins.match.endpoint_stats import (
     EndpointStatsCollector,
     format_endpoint_stats,
     format_endpoint_stats_table,
 )
-from capmaster.plugins.match.matcher import BucketStrategy, ConnectionMatcher, MatchMode
 from capmaster.plugins.match.sampler import ConnectionSampler
 from capmaster.plugins.match.server_detector import ServerDetector
 from capmaster.utils.cli_options import (
@@ -697,7 +697,7 @@ class MatchPlugin(PluginBase):
         Returns:
             List of connections with improved server/client detection
         """
-        from capmaster.plugins.match.connection import TcpConnection
+        from capmaster.core.connection.models import TcpConnection
 
         improved_connections = []
 

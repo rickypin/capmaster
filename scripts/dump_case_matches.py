@@ -18,11 +18,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from capmaster.plugins.match.connection_extractor import extract_connections_from_pcap
-from capmaster.plugins.match.matcher import ConnectionMatcher, BucketStrategy, MatchMode
-from capmaster.plugins.match.server_detector import ServerDetector
-from capmaster.plugins.match.scorer import MatchScore
+from capmaster.core.connection.connection_extractor import extract_connections_from_pcap
+from capmaster.core.connection.matcher import BucketStrategy, ConnectionMatcher, MatchMode
+from capmaster.core.connection.scorer import MatchScore
 from capmaster.plugins.match.plugin import MatchPlugin
+from capmaster.plugins.match.server_detector import ServerDetector
 
 
 def main() -> int:

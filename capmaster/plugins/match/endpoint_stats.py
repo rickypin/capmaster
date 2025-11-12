@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 
-from capmaster.plugins.match.matcher import ConnectionMatch
+from capmaster.core.connection.matcher import ConnectionMatch
 from capmaster.plugins.match.server_detector import ServerDetector, ServerInfo
 from capmaster.plugins.match.ttl_utils import most_common_hops
 
