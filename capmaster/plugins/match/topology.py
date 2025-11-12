@@ -163,11 +163,13 @@ def format_topology(topology: TopologyInfo) -> str:
         Formatted topology string
     """
     lines = []
+
+    # Markdown title
+    lines.append("## Network Topology")
     lines.append("")
-    lines.append("=" * 20)
-    lines.append("Network Topology")
-    lines.append("=" * 20)
-    lines.append("")
+
+    # Content in code block
+    lines.append("```text")
     lines.append(f"Capture Point A: {topology.file1_name}")
     lines.append(f"Capture Point B: {topology.file2_name}")
     lines.append("")
@@ -188,9 +190,7 @@ def format_topology(topology: TopologyInfo) -> str:
         lines.append(f"File A: Clients {_format_ip_list(topology.client_ips_a)} -> Servers {_format_server_list(topology.server_ips_a, topology.server_ports_a)}")
         lines.append(f"File B: Clients {_format_ip_list(topology.client_ips_b)} -> Servers {_format_server_list(topology.server_ips_b, topology.server_ports_b)}")
 
-    lines.append("")
-    lines.append("=" * 20)
-    lines.append("")
+    lines.append("```")
 
     return "\n".join(lines)
 
