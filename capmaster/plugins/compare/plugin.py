@@ -1012,6 +1012,8 @@ class ComparePlugin(PluginBase):
         output_text = "\n".join(lines)
 
         if output_file:
+            # Ensure parent directory exists
+            output_file.parent.mkdir(parents=True, exist_ok=True)
             output_file.write_text(output_text)
             logger.info(f"Results written to: {output_file}")
         elif not silent:

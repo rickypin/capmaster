@@ -8,6 +8,7 @@ import click
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
 from capmaster.core.connection.connection_extractor import extract_connections_from_pcap
+from capmaster.core.connection.f5_matcher import F5Matcher
 from capmaster.core.connection.matcher import BucketStrategy, ConnectionMatcher, MatchMode
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
@@ -170,6 +171,21 @@ class MatchPlugin(PluginBase):
             help="Output JSON file for match results. This file can be used as input to the compare command "
             "to ensure consistent matching between match and compare operations.",
         )
+        @click.option(
+            "--f5-mode",
+            is_flag=True,
+            default=False,
+            help="Use F5 Ethernet Trailer based matching. When enabled, TCP connections are matched "
+            "using F5 trailer information (peeraddr/peerport) instead of feature-based scoring. "
+            "This provides 100%% accurate matching when F5 trailers are present in both PCAP files.",
+        )
+        @click.option(
+            "--topology",
+            is_flag=True,
+            default=False,
+            help="Output network topology analysis based on matched connections. "
+            "Shows the relative positions of capture points and network devices.",
+        )
         @click.pass_context
         def match_command(
             ctx: click.Context,
@@ -196,6 +212,8 @@ class MatchPlugin(PluginBase):
             endpoint_pair_mode: bool,
             service_group_mapping: Path | None,
             match_json: Path | None,
+            f5_mode: bool,
+            topology: bool,
         ) -> None:
             """
             Match TCP connections between PCAP files.
@@ -315,6 +333,124 @@ class MatchPlugin(PluginBase):
                 endpoint_pair_mode=endpoint_pair_mode,
                 service_group_mapping=service_group_mapping,
                 match_json=match_json,
+                f5_mode=f5_mode,
+                topology=topology,
+            )
+            ctx.exit(exit_code)
+
+        # Add comparative-analysis subcommand
+        @cli_group.command(name="comparative-analysis")
+        @dual_file_input_options
+        @click.option(
+            "--service",
+            is_flag=True,
+            default=False,
+            help="Perform comparative analysis on services (network quality metrics)",
+        )
+        @click.option(
+            "--matched-connections",
+            type=click.Path(exists=True, path_type=Path),
+            help="Matched connections file for per-connection-pair analysis",
+        )
+        @click.option(
+            "--top-n",
+            type=int,
+            default=None,
+            help="Show top N worst performing connection pairs (only with --matched-connections)",
+        )
+        @click.option(
+            "--topology",
+            type=click.Path(exists=True, path_type=Path),
+            help="Topology file (topology.txt) containing service information (required for --service)",
+        )
+        @click.option(
+            "-o",
+            "--output",
+            "output_file",
+            type=click.Path(path_type=Path),
+            help="Output file for comparative analysis report (default: stdout)",
+        )
+        @click.pass_context
+        def comparative_analysis_command(
+            ctx: click.Context,
+            input_path: str | None,
+            file1: Path | None,
+            file1_pcapid: int | None,
+            file2: Path | None,
+            file2_pcapid: int | None,
+            service: bool,
+            matched_connections: Path | None,
+            top_n: int | None,
+            topology: Path | None,
+            output_file: Path | None,
+        ) -> None:
+            """
+            Perform comparative analysis between two PCAP files.
+
+            This command performs comparative analysis to identify differences
+            and quality metrics between two capture points.
+
+            \b
+            Examples:
+              # Comparative analysis on services using directory
+              capmaster comparative-analysis -i /path/to/pcaps/ --service --topology topology.txt
+
+              # Comparative analysis on connection pairs
+              capmaster comparative-analysis -i /path/to/pcaps/ --matched-connections matched.txt
+
+              # Combine both analyses
+              capmaster comparative-analysis -i /path/to/pcaps/ --service --topology topology.txt --matched-connections matched.txt
+
+            \b
+            Input:
+              The input can be a directory containing exactly 2 PCAP files,
+              or a comma-separated list of exactly 2 PCAP files,
+              or specified using --file1 and --file2.
+
+            \b
+            Analysis Types:
+              --service: Analyze network quality metrics aggregated by services
+                Requires: --topology file
+
+              --matched-connections: Analyze network quality metrics for each matched connection pair
+                Requires: matched connections file from 'capmaster match' command
+
+            \b
+            Output:
+              Comparative analysis report showing differences and metrics
+              between the two PCAP files.
+            """
+            # Validate input parameters
+            validate_dual_file_input(ctx, input_path, file1, file2, file1_pcapid, file2_pcapid)
+
+            # Validate analysis type parameters
+            if not service and not matched_connections:
+                ctx.fail("Please specify an analysis type: --service (requires --topology) or --matched-connections")
+
+            if service and not topology:
+                ctx.fail("--service analysis requires --topology file")
+
+            if top_n is not None and not matched_connections:
+                ctx.fail("--top-n can only be used with --matched-connections")
+
+            # Determine analysis type
+            analysis_type = None
+            if service and matched_connections:
+                analysis_type = "both"
+            elif service:
+                analysis_type = "service"
+            elif matched_connections:
+                analysis_type = "connections"
+
+            exit_code = self.execute_comparative_analysis(
+                input_path=input_path,
+                file1=file1,
+                file2=file2,
+                analysis_type=analysis_type,
+                topology_file=topology,
+                matched_connections_file=matched_connections,
+                top_n=top_n,
+                output_file=output_file,
             )
             ctx.exit(exit_code)
 
@@ -343,6 +479,8 @@ class MatchPlugin(PluginBase):
         endpoint_pair_mode: bool = False,
         service_group_mapping: Path | None = None,
         match_json: Path | None = None,
+        f5_mode: bool = False,
+        topology: bool = False,
     ) -> int:
         """
         Execute the match plugin.
@@ -371,6 +509,7 @@ class MatchPlugin(PluginBase):
             endpoint_pair_mode: Use endpoint pair mode instead of service aggregation (default: False)
             service_group_mapping: JSON file mapping service ports to group IDs
             match_json: Output JSON file for match results (can be used as input to compare command)
+            topology: Output network topology analysis
 
         Returns:
             Exit code (0 for success, non-zero for failure)
@@ -419,6 +558,33 @@ class MatchPlugin(PluginBase):
                         f"{match_file2.name} -> {pcap_id_mapping[str(match_file2)]}"
                     )
                 logger.info(f"Matching: {match_file1.name} <-> {match_file2.name}")
+
+                # Check for F5 mode (auto-detect or explicit)
+                if f5_mode:
+                    logger.info("F5 mode explicitly enabled")
+                    use_f5_matching = True
+                else:
+                    # Auto-detect F5 trailers
+                    detect_task = progress.add_task("[cyan]Detecting F5 trailers...", total=2)
+                    f5_matcher = F5Matcher()
+
+                    has_f5_file1 = f5_matcher.detect_f5_trailer(match_file1)
+                    progress.update(detect_task, advance=1)
+
+                    has_f5_file2 = f5_matcher.detect_f5_trailer(match_file2)
+                    progress.update(detect_task, advance=1)
+
+                    use_f5_matching = has_f5_file1 and has_f5_file2
+
+                    if use_f5_matching:
+                        logger.info("F5 Ethernet Trailer detected in both files - using F5 matching mode")
+                    else:
+                        if has_f5_file1 or has_f5_file2:
+                            logger.warning(
+                                f"F5 trailer found in {'file1' if has_f5_file1 else 'file2'} only - "
+                                "falling back to feature-based matching"
+                            )
+                        logger.info("Using feature-based matching mode")
 
                 # Extract connections from both files
                 extract_task = progress.add_task("[cyan]Extracting connections...", total=2)
@@ -481,48 +647,78 @@ class MatchPlugin(PluginBase):
                 else:
                     logger.info("Sampling disabled (default behavior). Use --enable-sampling to enable.")
 
-                # Improve server detection using cardinality analysis
-                detector_task = progress.add_task("[yellow]Analyzing server/client roles...", total=1)
-                logger.info("Performing cardinality analysis for server detection...")
-                detector = ServerDetector()
+                # Branch based on matching mode
+                if use_f5_matching:
+                    # F5-based matching
+                    match_task = progress.add_task("[green]Matching connections using F5 trailers...", total=1)
+                    logger.info("Matching connections using F5 Ethernet Trailer...")
 
-                # Collect all connections for cardinality analysis
-                for conn in connections1:
-                    detector.collect_connection(conn)
-                for conn in connections2:
-                    detector.collect_connection(conn)
+                    f5_matcher = F5Matcher()
+                    f5_matches = f5_matcher.match(match_file1, match_file2)
+                    logger.info(f"Found {len(f5_matches)} F5-based matches")
 
-                # Finalize cardinality analysis
-                detector.finalize_cardinality()
+                    # Convert F5 matches to standard ConnectionMatch format
+                    matches = self._convert_f5_matches_to_connection_matches(
+                        f5_matches, connections1, connections2
+                    )
+                    progress.update(match_task, advance=1)
 
-                # Re-detect server/client roles with improved detection
-                connections1 = self._improve_server_detection(connections1, detector)
-                connections2 = self._improve_server_detection(connections2, detector)
-                logger.info("Server detection improved using cardinality analysis")
-                progress.update(detector_task, advance=1)
+                    # Create a matcher instance for statistics calculation
+                    matcher = ConnectionMatcher(
+                        bucket_strategy=BucketStrategy("auto"),
+                        score_threshold=score_threshold,
+                        match_mode=MatchMode(match_mode),
+                    )
+                else:
+                    # Feature-based matching (original logic)
+                    # Improve server detection using cardinality analysis
+                    detector_task = progress.add_task("[yellow]Analyzing server/client roles...", total=1)
+                    logger.info("Performing cardinality analysis for server detection...")
+                    detector = ServerDetector()
 
-                # Match connections
-                match_task = progress.add_task("[green]Matching connections...", total=1)
-                logger.info("Matching connections...")
-                bucket_enum = BucketStrategy(bucket_strategy)
-                match_mode_enum = MatchMode(match_mode)
-                matcher = ConnectionMatcher(
-                    bucket_strategy=bucket_enum,
-                    score_threshold=score_threshold,
-                    match_mode=match_mode_enum,
-                )
+                    # Collect all connections for cardinality analysis
+                    for conn in connections1:
+                        detector.collect_connection(conn)
+                    for conn in connections2:
+                        detector.collect_connection(conn)
 
-                matches = matcher.match(connections1, connections2)
-                logger.info(f"Found {len(matches)} matches")
-                progress.update(match_task, advance=1)
+                    # Finalize cardinality analysis
+                    detector.finalize_cardinality()
+
+                    # Re-detect server/client roles with improved detection
+                    connections1 = self._improve_server_detection(connections1, detector)
+                    connections2 = self._improve_server_detection(connections2, detector)
+                    logger.info("Server detection improved using cardinality analysis")
+                    progress.update(detector_task, advance=1)
+
+                    # Match connections
+                    match_task = progress.add_task("[green]Matching connections...", total=1)
+                    logger.info("Matching connections...")
+                    bucket_enum = BucketStrategy(bucket_strategy)
+                    match_mode_enum = MatchMode(match_mode)
+                    matcher = ConnectionMatcher(
+                        bucket_strategy=bucket_enum,
+                        score_threshold=score_threshold,
+                        match_mode=match_mode_enum,
+                    )
+
+                    matches = matcher.match(connections1, connections2)
+                    logger.info(f"Found {len(matches)} matches")
+                    progress.update(match_task, advance=1)
 
                 # Get statistics
                 stats = matcher.get_match_stats(connections1, connections2, matches)
 
-                # Output results
-                output_task = progress.add_task("[green]Writing results...", total=1)
-                self._output_results(matches, stats, output_file)
-                progress.update(output_task, advance=1)
+                # Output topology if requested (takes precedence over regular results)
+                if topology:
+                    topology_task = progress.add_task("[green]Analyzing topology...", total=1)
+                    self._output_topology(matches, match_file1, match_file2, output_file)
+                    progress.update(topology_task, advance=1)
+                else:
+                    # Output regular match results
+                    output_task = progress.add_task("[green]Writing results...", total=1)
+                    self._output_results(matches, stats, output_file)
+                    progress.update(output_task, advance=1)
 
                 # Save matches to JSON if requested
                 if match_json:
@@ -703,6 +899,56 @@ class MatchPlugin(PluginBase):
         """
         return extract_connections_from_pcap(pcap_file, merge_by_5tuple=merge_by_5tuple)
 
+    def _convert_f5_matches_to_connection_matches(
+        self,
+        f5_matches: list,
+        connections1: list,
+        connections2: list,
+    ) -> list:
+        """
+        Convert F5 matches to standard ConnectionMatch format.
+
+        Args:
+            f5_matches: List of F5ConnectionPair objects
+            connections1: List of TcpConnection objects from file1
+            connections2: List of TcpConnection objects from file2
+
+        Returns:
+            List of ConnectionMatch objects
+        """
+        from capmaster.core.connection.matcher import ConnectionMatch
+        from capmaster.core.connection.scorer import MatchScore
+
+        # Build lookup tables: stream_id -> connection
+        conn1_map = {conn.stream_id: conn for conn in connections1}
+        conn2_map = {conn.stream_id: conn for conn in connections2}
+
+        matches = []
+        for f5_match in f5_matches:
+            # Look up connections by stream ID
+            conn1 = conn1_map.get(f5_match.snat_stream_id)
+            conn2 = conn2_map.get(f5_match.vip_stream_id)
+
+            if conn1 and conn2:
+                # Create a perfect match score for F5-based matches
+                score = MatchScore(
+                    normalized_score=1.0,
+                    raw_score=1.0,
+                    available_weight=1.0,
+                    ipid_match=True,
+                    evidence=f"F5_TRAILER(client={f5_match.client_ip}:{f5_match.client_port})",
+                    force_accept=True,
+                )
+
+                match = ConnectionMatch(
+                    conn1=conn1,
+                    conn2=conn2,
+                    score=score,
+                )
+                matches.append(match)
+
+        return matches
+
     def _output_results(
         self, matches: list, stats: dict, output_file: Path | None
     ) -> None:
@@ -740,13 +986,13 @@ class MatchPlugin(PluginBase):
 
         for i, match in enumerate(matches, 1):
             lines.append(
-                f"\n[{i}] A: {match.conn1.client_ip}:{match.conn1.client_port} <-> {match.conn1.server_ip}:{match.conn1.server_port}"
+                f"\n[{i}] A (stream {match.conn1.stream_id}): {match.conn1.client_ip}:{match.conn1.client_port} <-> {match.conn1.server_ip}:{match.conn1.server_port}"
             )
             lines.append(
-                f"    B: {match.conn2.client_ip}:{match.conn2.client_port} <-> {match.conn2.server_ip}:{match.conn2.server_port}"
+                f"    B (stream {match.conn2.stream_id}): {match.conn2.client_ip}:{match.conn2.client_port} <-> {match.conn2.server_ip}:{match.conn2.server_port}"
             )
             lines.append(
-                f"    置信度: {match.score.normalized_score:.2f} | 证据: {match.score.evidence}"
+                f"    Confidence: {match.score.normalized_score:.2f} | Evidence: {match.score.evidence}"
             )
 
         lines.append("")
@@ -756,6 +1002,8 @@ class MatchPlugin(PluginBase):
         output_text = "\n".join(lines)
 
         if output_file:
+            # Ensure parent directory exists
+            output_file.parent.mkdir(parents=True, exist_ok=True)
             output_file.write_text(output_text)
             logger.info(f"Results written to: {output_file}")
         else:
@@ -849,6 +1097,8 @@ class MatchPlugin(PluginBase):
 
         # Write output
         if output_file:
+            # Ensure parent directory exists
+            output_file.parent.mkdir(parents=True, exist_ok=True)
             output_file.write_text(output_text)
             logger.info(f"Endpoint statistics written to: {output_file}")
         else:
@@ -856,6 +1106,39 @@ class MatchPlugin(PluginBase):
 
         # Return stats for database writing
         return stats
+
+    def _output_topology(
+        self,
+        matches: list,
+        file1: Path,
+        file2: Path,
+        output_file: Path | None = None,
+    ) -> None:
+        """
+        Output network topology analysis for matched connections.
+
+        Args:
+            matches: List of ConnectionMatch objects
+            file1: Path to first PCAP file
+            file2: Path to second PCAP file
+            output_file: Optional output file path (None for stdout)
+        """
+        from capmaster.plugins.match.topology import TopologyAnalyzer, format_topology
+
+        # Analyze topology
+        analyzer = TopologyAnalyzer(matches, file1, file2)
+        topology_info = analyzer.analyze()
+
+        # Format and output
+        output_text = format_topology(topology_info)
+
+        if output_file:
+            # Ensure parent directory exists
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            output_file.write_text(output_text)
+            logger.info(f"Topology analysis written to: {output_file}")
+        else:
+            print(output_text)
 
     def _aggregate_and_output_service_stats(
         self,
@@ -1161,3 +1444,140 @@ class MatchPlugin(PluginBase):
         except Exception as e:
             logger.error(f"Failed to write to JSON file: {e}")
             raise
+
+    def execute_comparative_analysis(
+        self,
+        input_path: str | Path | None = None,
+        file1: Path | None = None,
+        file2: Path | None = None,
+        analysis_type: str = "service",
+        topology_file: Path | None = None,
+        matched_connections_file: Path | None = None,
+        top_n: int | None = None,
+        output_file: Path | None = None,
+    ) -> int:
+        """
+        Execute comparative analysis between two PCAP files.
+
+        Args:
+            input_path: Directory or comma-separated list of PCAP files
+            file1: Path to first PCAP file (alternative to input_path)
+            file2: Path to second PCAP file (alternative to input_path)
+            analysis_type: Type of analysis to perform ("service", "connections", or "both")
+            topology_file: Path to topology file (for service analysis)
+            matched_connections_file: Path to matched connections file (for connection pair analysis)
+            top_n: Show top N worst performing connection pairs (only for connection analysis)
+            output_file: Optional output file path (None for stdout)
+
+        Returns:
+            Exit code (0 for success, non-zero for failure)
+        """
+        try:
+            from capmaster.plugins.match.quality_analyzer import (
+                QualityAnalyzer,
+                format_connection_pair_report,
+                format_quality_report,
+                parse_matched_connections,
+                parse_topology_services,
+            )
+
+            logger.info(f"Starting comparative analysis (type: {analysis_type})...")
+
+            # Parse input to get file1 and file2
+            if input_path:
+                try:
+                    dual_input = DualFileInputParser.parse(
+                        input_path=input_path,
+                        file1=file1,
+                        file2=file2,
+                        file1_pcapid=None,
+                        file2_pcapid=None,
+                    )
+                    file1 = dual_input.file1
+                    file2 = dual_input.file2
+                    logger.info(f"Using files from input path:")
+                    logger.info(f"  File 1: {file1}")
+                    logger.info(f"  File 2: {file2}")
+                except InsufficientFilesError as e:
+                    logger.error(str(e))
+                    return 1
+
+            # Validate that we have both files
+            if not file1 or not file2:
+                logger.error("Both file1 and file2 must be specified")
+                return 1
+
+            analyzer = QualityAnalyzer()
+            reports = []
+
+            # Service-level analysis
+            if analysis_type in ("service", "both"):
+                if not topology_file:
+                    logger.error("Topology file must be specified for service analysis")
+                    return 1
+
+                # Parse topology file to extract services
+                logger.info(f"Parsing topology file: {topology_file}")
+                services = parse_topology_services(topology_file)
+
+                if not services:
+                    logger.error("No services found in topology file")
+                    return 1
+
+                logger.info(f"Found {len(services)} services to analyze")
+                for ip, port in services:
+                    logger.info(f"  - {ip}:{port}")
+
+                # Analyze quality metrics
+                logger.info("Analyzing service-level quality metrics...")
+                service_results = analyzer.analyze_service_quality(file1, file2, services)
+
+                # Format report
+                service_report = format_quality_report(service_results, file1.name, file2.name)
+                reports.append(service_report)
+
+            # Connection-pair analysis
+            if analysis_type in ("connections", "both"):
+                if not matched_connections_file:
+                    logger.error("Matched connections file must be specified for connection pair analysis")
+                    return 1
+
+                # Parse matched connections file
+                logger.info(f"Parsing matched connections file: {matched_connections_file}")
+                connection_pairs = parse_matched_connections(matched_connections_file)
+
+                if not connection_pairs:
+                    logger.error("No connection pairs found in matched connections file")
+                    return 1
+
+                logger.info(f"Found {len(connection_pairs)} connection pairs to analyze")
+
+                # Analyze quality metrics for each connection pair
+                logger.info("Analyzing connection-pair quality metrics...")
+                pair_results = analyzer.analyze_connection_pairs(file1, file2, connection_pairs)
+
+                # Format report
+                pair_report = format_connection_pair_report(pair_results, file1.name, file2.name, top_n=top_n)
+                reports.append(pair_report)
+
+            # Combine reports
+            if analysis_type == "both":
+                report = "\n\n".join(reports)
+            else:
+                report = reports[0] if reports else ""
+
+            # Output results
+            if output_file:
+                logger.info(f"Writing comparative analysis report to: {output_file}")
+                output_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    f.write(report)
+                logger.info(f"Comparative analysis report written to: {output_file}")
+            else:
+                print(report)
+
+            logger.info("Comparative analysis completed successfully")
+            return 0
+
+        except Exception as e:
+            return handle_error(e, show_traceback=True)
