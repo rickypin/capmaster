@@ -198,23 +198,21 @@ class TestCLIErrorHandling:
 
         assert result.returncode != 0, "Should fail with missing required arguments"
 
-    def test_cli_conflicting_sampling_options(self, tmp_path: Path):
-        """Test CLI with conflicting sampling options."""
+    def test_cli_sampling_without_enable_flag(self, tmp_path: Path):
+        """Test CLI with sampling parameters but without --enable-sampling flag."""
         result = subprocess.run(
             [
                 "python", "-m", "capmaster",
                 "match",
                 "-i", str(tmp_path),
                 "-o", str(tmp_path / "output.txt"),
-                "--no-sampling",
-                "--sampling-rate", "0.5",  # Conflicts with --no-sampling
+                "--sample-rate", "0.5",  # Without --enable-sampling, this has no effect
             ],
             capture_output=True,
             text=True,
         )
 
-        # This might succeed but should log a warning
-        # The behavior depends on implementation
+        # This should succeed (sampling parameters are ignored when sampling is disabled)
         # Just verify it doesn't crash
         assert result.returncode in [0, 1, 2]
 

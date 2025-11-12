@@ -150,6 +150,8 @@ class AnalysisExecutor:
             processed_output = f"## {header}\n\n```\n{body}\n```\n"
 
         # Write processed output to file
+        # Ensure parent directory exists
+        output_file.parent.mkdir(parents=True, exist_ok=True)
         with open(output_file, "w", encoding="utf-8") as f:
             f.write(processed_output)
 
@@ -163,6 +165,7 @@ class AnalysisExecutor:
                 "tshark_args": tshark_args,
                 "protocols": required_protocols,
             }
+            # Parent directory already created above
             with open(sidecar_path, "w", encoding="utf-8") as sidecar_file:
                 json.dump(sidecar_content, sidecar_file, indent=2)
 

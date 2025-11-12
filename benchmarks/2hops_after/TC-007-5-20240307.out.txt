@@ -1,0 +1,27 @@
+================================================================================
+TCP Connection Matching Results
+================================================================================
+
+Statistics:
+  Total connections (file 1): 2
+  Total connections (file 2): 2
+  Matched pairs: 1
+  Unmatched (file 1): 1
+  Unmatched (file 2): 1
+  Match rate (file 1): 50.0%
+  Match rate (file 2): 50.0%
+  Average score: 0.93
+
+Matched Connections:
+--------------------------------------------------------------------------------
+
+[1] A: 11.168.65.87:35640 <-> 10.200.238.142:8101
+    B: 11.168.65.87:35640 <-> 10.200.238.142:8101
+    置信度: 0.93 | 证据: synopt isnC ts dataC shape(1.00) ipid(n=6,r=1.00,j=0.60)
+
+================================================================================
+  Scanning for PCAP files...                             ━━━━━━━━━━━━━━━━━━━ 100%
+  Extracting from TC-007-5-20240307-洋桥核心网CR.pcap... ━━━━━━━━━━━━━━━━━━━ 100%
+  Analyzing server/client roles...                       ━━━━━━━━━━━━━━━━━━━ 100%
+  Matching connections...                                ━━━━━━━━━━━━━━━━━━━ 100%
+  Writing results...                                     ━━━━━━━━━━━━━━━━━━━ 100%

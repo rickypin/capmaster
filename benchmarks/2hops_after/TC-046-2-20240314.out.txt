@@ -1,0 +1,23 @@
+================================================================================
+TCP Connection Matching Results
+================================================================================
+
+Statistics:
+  Total connections (file 1): 77
+  Total connections (file 2): 14562
+  Matched pairs: 0
+  Unmatched (file 1): 77
+  Unmatched (file 2): 14562
+  Match rate (file 1): 0.0%
+  Match rate (file 2): 0.0%
+  Average score: 0.00
+
+Matched Connections:
+--------------------------------------------------------------------------------
+
+================================================================================
+  Scanning for PCAP files...                             ━━━━━━━━━━━━━━━━━━━ 100%
+  Extracting from TC-046-2-20240314-O-B-中间业务.pcap... ━━━━━━━━━━━━━━━━━━━ 100%
+  Analyzing server/client roles...                       ━━━━━━━━━━━━━━━━━━━ 100%
+  Matching connections...                                ━━━━━━━━━━━━━━━━━━━ 100%
+  Writing results...                                     ━━━━━━━━━━━━━━━━━━━ 100%

@@ -108,6 +108,8 @@ class TsharkWrapper:
 
         # Execute command without check=True to handle exit codes manually
         if output_file is not None:
+            # Ensure parent directory exists
+            Path(output_file).parent.mkdir(parents=True, exist_ok=True)
             # Redirect stdout to file for text output
             with open(output_file, "w", encoding="utf-8") as f:
                 result = subprocess.run(

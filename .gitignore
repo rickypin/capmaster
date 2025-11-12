@@ -140,6 +140,8 @@ cases_02/
 downloads/
 2hops/
 2hops/
+benchmarks/
+tmp/
 
 # Analysis output (statistics directory created by analyze_pcap.sh)
 statistics/

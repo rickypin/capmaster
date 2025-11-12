@@ -322,8 +322,10 @@ class ConnectionMatcher:
                     # Prioritize strong IPID matches in sorting
                     scored_pairs.append((1 if score.force_accept else 0, score.normalized_score, i, j, conn1, conn2, score))
 
-        # Sort by (force_accept, normalized score) descending
-        scored_pairs.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        # Sort by (force_accept, normalized score, stream_id1, stream_id2) descending
+        # Using stream IDs as tie-breakers ensures stable, deterministic sorting
+        # when multiple pairs have the same score
+        scored_pairs.sort(key=lambda x: (x[0], x[1], -x[4].stream_id, -x[5].stream_id), reverse=True)
 
         # Greedy matching: take highest scoring pairs first
         for _, _, i, j, conn1, conn2, score in scored_pairs:
@@ -385,8 +387,9 @@ class ConnectionMatcher:
                 if score.is_valid_match(self.score_threshold):
                     matches.append(ConnectionMatch(conn1, conn2, score))
 
-        # Sort by (force_accept, normalized score) descending for consistent ordering
-        matches.sort(key=lambda m: (1 if m.score.force_accept else 0, m.score.normalized_score), reverse=True)
+        # Sort by (force_accept, normalized score, stream_id1, stream_id2) descending for consistent ordering
+        # Using stream IDs as tie-breakers ensures stable, deterministic sorting
+        matches.sort(key=lambda m: (1 if m.score.force_accept else 0, m.score.normalized_score, -m.conn1.stream_id, -m.conn2.stream_id), reverse=True)
 
         return matches
 

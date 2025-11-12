@@ -1,0 +1,27 @@
+================================================================================
+TCP Connection Matching Results
+================================================================================
+
+Statistics:
+  Total connections (file 1): 1
+  Total connections (file 2): 1
+  Matched pairs: 1
+  Unmatched (file 1): 0
+  Unmatched (file 2): 0
+  Match rate (file 1): 100.0%
+  Match rate (file 2): 100.0%
+  Average score: 0.47
+
+Matched Connections:
+--------------------------------------------------------------------------------
+
+[1] A: 192.19.0.85:45058 <-> 10.107.33.21:3306
+    B: 192.19.0.85:45058 <-> 10.107.33.21:3306
+    置信度: 0.47 | 证据: ipid*(n=60957,r=0.99,j=0.99)
+
+================================================================================
+  Scanning for PCAP files...                                          ━━━━━━ 100%
+  Extracting from TC-032-1-20230519-O-B中心抓包点故障时间抓包.pcap... ━━━━━━ 100%
+  Analyzing server/client roles...                                    ━━━━━━ 100%
+  Matching connections...                                             ━━━━━━ 100%
+  Writing results...                                                  ━━━━━━ 100%

@@ -78,7 +78,7 @@ class TestTsharkWrapper:
             ["/usr/bin/tshark", "-q", "-z", "io,phs"],
             capture_output=True,
             text=True,
-            check=True,
+            check=False,  # TsharkWrapper handles exit codes manually
             timeout=None,
         )
 
@@ -157,13 +157,37 @@ class TestTsharkWrapper:
         mock_which.return_value = "/usr/bin/tshark"
         mock_run.side_effect = [
             MagicMock(stdout="TShark (Wireshark) 4.0.6\n", returncode=0),
-            subprocess.CalledProcessError(1, "tshark"),
+            MagicMock(stdout="", stderr="error", returncode=1),
         ]
 
         wrapper = TsharkWrapper()
 
         with pytest.raises(subprocess.CalledProcessError):
             wrapper.execute(["-invalid"])
+
+    @patch("shutil.which")
+    @patch("subprocess.run")
+    def test_execute_with_exit_code_2_warning(
+        self, mock_run: MagicMock, mock_which: MagicMock
+    ) -> None:
+        """Test command execution with exit code 2 (warning) - should not raise."""
+        mock_which.return_value = "/usr/bin/tshark"
+        mock_run.side_effect = [
+            MagicMock(stdout="TShark (Wireshark) 4.0.6\n", returncode=0),  # version
+            MagicMock(
+                stdout="packet data",
+                stderr='tshark: The file "test.pcap" appears to have been cut short',
+                returncode=2,
+            ),  # execute with warning
+        ]
+
+        wrapper = TsharkWrapper()
+        result = wrapper.execute(["-r", "test.pcap"])
+
+        # Should succeed despite exit code 2
+        assert result.returncode == 2
+        assert result.stdout == "packet data"
+        # Warning should be logged but not raise exception
 
     @patch("shutil.which")
     @patch("subprocess.run")

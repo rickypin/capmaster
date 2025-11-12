@@ -131,9 +131,12 @@ class PacketExtractor:
         
         # Execute tshark
         result = self.tshark.execute(args)
-        
-        if result.returncode != 0:
-            raise RuntimeError(f"tshark extraction failed: {result.stderr}")
+
+        # Note: TsharkWrapper.execute() already handles exit codes:
+        # - Exit code 0: Success
+        # - Exit code 2: Warning (e.g., truncated PCAP) - logs warning but continues
+        # - Other codes: Raises CalledProcessError
+        # So if we reach here, the command succeeded or had only warnings
         
         # Parse output
         packets = []
@@ -206,9 +209,12 @@ class PacketExtractor:
         
         # Execute tshark
         result = self.tshark.execute(args)
-        
-        if result.returncode != 0:
-            raise RuntimeError(f"tshark extraction failed: {result.stderr}")
+
+        # Note: TsharkWrapper.execute() already handles exit codes:
+        # - Exit code 0: Success
+        # - Exit code 2: Warning (e.g., truncated PCAP) - logs warning but continues
+        # - Other codes: Raises CalledProcessError
+        # So if we reach here, the command succeeded or had only warnings
         
         # Parse output
         packets = []
@@ -295,8 +301,11 @@ class PacketExtractor:
         # Execute tshark
         result = self.tshark.execute(args)
 
-        if result.returncode != 0:
-            raise RuntimeError(f"tshark extraction failed: {result.stderr}")
+        # Note: TsharkWrapper.execute() already handles exit codes:
+        # - Exit code 0: Success
+        # - Exit code 2: Warning (e.g., truncated PCAP) - logs warning but continues
+        # - Other codes: Raises CalledProcessError
+        # So if we reach here, the command succeeded or had only warnings
 
         # Parse output and group by stream_id
         packets_by_stream: dict[int, list[TcpPacket]] = {sid: [] for sid in stream_ids}

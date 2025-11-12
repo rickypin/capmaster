@@ -226,7 +226,7 @@ class TestMatchIntegration:
         assert len(result.stdout) > 0, "No output generated"
 
     def test_match_with_no_sampling(self, tc_001_1: Path, tmp_path: Path):
-        """Test match with sampling disabled."""
+        """Test match with sampling disabled (default behavior)."""
         if not tc_001_1.exists():
             pytest.skip(f"Test case directory not found: {tc_001_1}")
 
@@ -236,14 +236,13 @@ class TestMatchIntegration:
 
         output_file = tmp_path / "matches_no_sampling.txt"
 
-        # Run with --no-sampling flag
+        # Run without --enable-sampling flag (default: no sampling)
         result = subprocess.run(
             [
                 "python", "-m", "capmaster",
                 "match",
                 "-i", str(tc_001_1),
                 "-o", str(output_file),
-                "--no-sampling",
             ],
             capture_output=True,
             text=True,
@@ -252,7 +251,7 @@ class TestMatchIntegration:
         assert result.returncode == 0, f"Command failed: {result.stderr}"
         assert output_file.exists(), "Output file was not created"
 
-        # The --no-sampling flag should work without errors
+        # Default behavior should work without errors (no sampling)
         # (No specific output message is required, just verify it doesn't crash)
 
     def test_match_with_custom_sampling_threshold(self, tc_001_1: Path, tmp_path: Path):

@@ -382,16 +382,16 @@ class TestMatchPlugin:
         assert len(content) > 0, "Output file is empty"
 
     def test_execute_with_no_sampling(self, plugin: MatchPlugin, test_case_dir: Path, tmp_path: Path):
-        """Test executing match with sampling disabled."""
+        """Test executing match with sampling disabled (default behavior)."""
         output_file = tmp_path / "matches_no_sampling.txt"
 
-        # Execute the plugin with no_sampling=True
+        # Execute the plugin with enable_sampling=False (default)
         exit_code = plugin.execute(
             input_path=test_case_dir,
             output_file=output_file,
             bucket_strategy="auto",
             score_threshold=0.3,
-            no_sampling=True,
+            enable_sampling=False,
         )
 
         # Check that execution succeeded
@@ -410,8 +410,9 @@ class TestMatchPlugin:
             output_file=output_file,
             bucket_strategy="auto",
             score_threshold=0.3,
-            sampling_threshold=5000,
-            sampling_rate=0.3,
+            enable_sampling=True,
+            sample_threshold=5000,
+            sample_rate=0.3,
         )
 
         # Check that execution succeeded
