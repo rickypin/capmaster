@@ -954,7 +954,7 @@ class MatchPlugin(PluginBase):
         self, matches: list, stats: dict, output_file: Path | None
     ) -> None:
         """
-        Output match results.
+        Output match results in table format.
 
         Args:
             matches: List of ConnectionMatch objects
@@ -964,9 +964,9 @@ class MatchPlugin(PluginBase):
         lines = []
 
         # Header
-        lines.append("=" * 80)
+        lines.append("=" * 180)
         lines.append("TCP Connection Matching Results")
-        lines.append("=" * 80)
+        lines.append("=" * 180)
         lines.append("")
 
         # Statistics
@@ -981,23 +981,53 @@ class MatchPlugin(PluginBase):
         lines.append(f"  Average score: {stats['average_score']:.2f}")
         lines.append("")
 
-        # Matches
+        # Matched Connections Table
         lines.append("Matched Connections:")
-        lines.append("-" * 80)
+        lines.append("-" * 180)
 
+        # Table header
+        header = (
+            f"{'No.':<6} "
+            f"{'Stream A':<10} "
+            f"{'Client A':<22} "
+            f"{'Server A':<22} "
+            f"{'Stream B':<10} "
+            f"{'Client B':<22} "
+            f"{'Server B':<22} "
+            f"{'Conf':<6} "
+            f"{'Evidence':<40}"
+        )
+        lines.append(header)
+        lines.append("-" * 180)
+
+        # Table rows
         for i, match in enumerate(matches, 1):
-            lines.append(
-                f"\n[{i}] A (stream {match.conn1.stream_id}): {match.conn1.client_ip}:{match.conn1.client_port} <-> {match.conn1.server_ip}:{match.conn1.server_port}"
-            )
-            lines.append(
-                f"    B (stream {match.conn2.stream_id}): {match.conn2.client_ip}:{match.conn2.client_port} <-> {match.conn2.server_ip}:{match.conn2.server_port}"
-            )
-            lines.append(
-                f"    Confidence: {match.score.normalized_score:.2f} | Evidence: {match.score.evidence}"
-            )
+            client_a = f"{match.conn1.client_ip}:{match.conn1.client_port}"
+            server_a = f"{match.conn1.server_ip}:{match.conn1.server_port}"
+            client_b = f"{match.conn2.client_ip}:{match.conn2.client_port}"
+            server_b = f"{match.conn2.server_ip}:{match.conn2.server_port}"
 
-        lines.append("")
-        lines.append("=" * 80)
+            # Truncate evidence if too long
+            evidence = match.score.evidence
+            if len(evidence) > 40:
+                evidence = evidence[:37] + "..."
+
+            row = (
+                f"{i:<6} "
+                f"{match.conn1.stream_id:<10} "
+                f"{client_a:<22} "
+                f"{server_a:<22} "
+                f"{match.conn2.stream_id:<10} "
+                f"{client_b:<22} "
+                f"{server_b:<22} "
+                f"{match.score.normalized_score:<6.2f} "
+                f"{evidence:<40}"
+            )
+            lines.append(row)
+
+        lines.append("-" * 180)
+        lines.append(f"Total: {len(matches)} matched pairs")
+        lines.append("=" * 180)
 
         # Write output
         output_text = "\n".join(lines)
