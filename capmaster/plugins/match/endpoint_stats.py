@@ -531,9 +531,9 @@ def format_endpoint_stats_table(
     lines = []
 
     # Header
-    lines.append("=" * 210)
+    lines.append("=" * 80)
     lines.append("Endpoint Statistics Summary")
-    lines.append("=" * 210)
+    lines.append("=" * 80)
     lines.append("")
     lines.append(f"File A: {file1_name}")
     lines.append(f"File B: {file2_name}")
@@ -546,7 +546,7 @@ def format_endpoint_stats_table(
         f"{'Count':<6} | {'Conf':<8}"
     )
     lines.append(header)
-    lines.append("-" * 210)
+    lines.append("-" * 80)
 
     # Table rows
     for stat in stats:
@@ -562,7 +562,7 @@ def format_endpoint_stats_table(
         lines.append(row)
 
     lines.append("")
-    lines.append("=" * 210)
+    lines.append("=" * 80)
 
     return "\n".join(lines)
 

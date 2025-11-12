@@ -17,6 +17,7 @@ from capmaster.plugins.match.endpoint_stats import (
     format_endpoint_stats,
     format_endpoint_stats_table,
 )
+from capmaster.plugins.match.meta_writer import write_meta_json
 from capmaster.plugins.match.sampler import ConnectionSampler
 from capmaster.plugins.match.server_detector import ServerDetector
 from capmaster.utils.cli_options import (
@@ -1006,6 +1007,13 @@ class MatchPlugin(PluginBase):
             output_file.parent.mkdir(parents=True, exist_ok=True)
             output_file.write_text(output_text)
             logger.info(f"Results written to: {output_file}")
+
+            # Write meta.json file
+            write_meta_json(
+                output_file=output_file,
+                command_id="matched_connections",
+                source="basic",
+            )
         else:
             print(output_text)
 
@@ -1137,6 +1145,13 @@ class MatchPlugin(PluginBase):
             output_file.parent.mkdir(parents=True, exist_ok=True)
             output_file.write_text(output_text)
             logger.info(f"Topology analysis written to: {output_file}")
+
+            # Write meta.json file
+            write_meta_json(
+                output_file=output_file,
+                command_id="topology",
+                source="basic",
+            )
         else:
             print(output_text)
 
@@ -1573,6 +1588,21 @@ class MatchPlugin(PluginBase):
                 with open(output_file, 'w', encoding='utf-8') as f:
                     f.write(report)
                 logger.info(f"Comparative analysis report written to: {output_file}")
+
+                # Write meta.json file
+                # Determine command_id based on analysis_type
+                if analysis_type == "service":
+                    command_id = "comparative-analysis-service"
+                elif analysis_type == "connections":
+                    command_id = "poor-quality-connections"
+                else:  # both
+                    command_id = "comparative-analysis-both"
+
+                write_meta_json(
+                    output_file=output_file,
+                    command_id=command_id,
+                    source="basic",
+                )
             else:
                 print(report)
 

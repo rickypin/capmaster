@@ -556,9 +556,9 @@ def format_quality_report(
     """
     lines = []
     lines.append("")
-    lines.append("=" * 140)
+    lines.append("=" * 80)
     lines.append("Network Quality Analysis Report")
-    lines.append("=" * 140)
+    lines.append("=" * 80)
     lines.append("")
     lines.append(f"File A: {file1_name}")
     lines.append(f"File B: {file2_name}")
@@ -570,19 +570,19 @@ def format_quality_report(
 
     # Summary statistics
     lines.append("Summary:")
-    lines.append("-" * 140)
+    lines.append("-" * 80)
     lines.append(f"Total services analyzed: {len(results)}")
     lines.append("")
 
     # Detailed per-service metrics
     lines.append("Per-Service Quality Metrics:")
-    lines.append("=" * 140)
+    lines.append("=" * 80)
 
     for service, (metrics1, metrics2) in sorted(results.items()):
         server_ip, server_port = service
         lines.append("")
         lines.append(f"Service: {server_ip}:{server_port}")
-        lines.append("-" * 140)
+        lines.append("-" * 80)
 
         # Check if metrics1 has any data
         has_metrics1_data = (metrics1.client_total_packets > 0 or metrics1.server_total_packets > 0)
@@ -624,7 +624,7 @@ def format_quality_report(
             lines.append(f"\n  No traffic found for this service in either PCAP file.")
 
     lines.append("")
-    lines.append("=" * 140)
+    lines.append("=" * 80)
 
     return '\n'.join(lines)
 
@@ -679,9 +679,9 @@ def format_connection_pair_report(
     """
     lines = []
     lines.append("")
-    lines.append("=" * 140)
+    lines.append("=" * 80)
     lines.append("Connection Pair Quality Analysis Report")
-    lines.append("=" * 140)
+    lines.append("=" * 80)
     lines.append("")
     lines.append(f"File A: {file1_name}")
     lines.append(f"File B: {file2_name}")
@@ -713,7 +713,7 @@ def format_connection_pair_report(
 
     # Summary statistics
     lines.append("Summary:")
-    lines.append("-" * 140)
+    lines.append("-" * 80)
     lines.append(f"Total connection pairs analyzed: {len(results)}")
     if top_n is not None and top_n > 0:
         lines.append(f"Showing top {len(results_to_show)} worst performing connection pairs")
@@ -724,7 +724,7 @@ def format_connection_pair_report(
         lines.append(f"Top {len(results_to_show)} Worst Performing Connection Pairs:")
     else:
         lines.append("Per-Connection-Pair Quality Metrics:")
-    lines.append("=" * 140)
+    lines.append("=" * 80)
 
     for pair_metrics in results_to_show:
         pair = pair_metrics.pair
@@ -738,7 +738,7 @@ def format_connection_pair_report(
 
         lines.append("")
         lines.append(f"Connection Pair #{pair.pair_id} (Confidence: {pair.confidence:.2f}) - Performance Score: {combined_score:.1f}/100")
-        lines.append("-" * 140)
+        lines.append("-" * 80)
         lines.append(f"  A (stream {pair.stream_a}): {pair.connection_a}")
         lines.append(f"  B (stream {pair.stream_b}): {pair.connection_b}")
 
@@ -781,7 +781,7 @@ def format_connection_pair_report(
             lines.append(f"\n  No traffic found for this connection pair in either PCAP file.")
 
     lines.append("")
-    lines.append("=" * 140)
+    lines.append("=" * 80)
 
     return '\n'.join(lines)
 
