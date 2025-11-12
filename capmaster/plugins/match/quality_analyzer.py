@@ -452,13 +452,14 @@ def parse_matched_connections(matched_file: Path) -> list[ConnectionPair]:
                 break
 
         if is_table_format:
-            # Parse new table format
+            # Parse new table format (supports both plain text and Markdown format)
             # Table row format: No. Stream_A Client_A Server_A Stream_B Client_B Server_B Conf Evidence
             for line in lines:
                 line = line.strip()
-                # Skip headers, separators, and empty lines
+                # Skip headers, separators, empty lines, and Markdown markers
                 if not line or line.startswith('=') or line.startswith('-') or \
-                   line.startswith('TCP Connection') or line.startswith('Statistics') or \
+                   line.startswith('TCP Connection') or line.startswith('##') or \
+                   line.startswith('Statistics') or line.startswith('```') or \
                    line.startswith('Matched Connections') or line.startswith('Total') or \
                    line.startswith('No.') or 'Stream A' in line:
                     continue
@@ -607,17 +608,20 @@ def format_quality_report(
         Formatted report string
     """
     lines = []
+
+    # Markdown title
+    lines.append("## Network Quality Analysis Report")
     lines.append("")
-    lines.append("=" * 180)
-    lines.append("Network Quality Analysis Report")
-    lines.append("=" * 180)
-    lines.append("")
+
+    # Content in code block
+    lines.append("```text")
     lines.append(f"File A: {file1_name}")
     lines.append(f"File B: {file2_name}")
     lines.append("")
 
     if not results:
         lines.append("No services found for analysis.")
+        lines.append("```")
         return '\n'.join(lines)
 
     # Summary statistics
@@ -714,7 +718,7 @@ def format_quality_report(
         if len(results) > 1:
             lines.append("-" * 180)
 
-    lines.append("=" * 180)
+    lines.append("```")
 
     return '\n'.join(lines)
 
@@ -768,17 +772,20 @@ def format_connection_pair_report(
         Formatted report string
     """
     lines = []
+
+    # Markdown title
+    lines.append("## Connection Pair Quality Analysis Report")
     lines.append("")
-    lines.append("=" * 200)
-    lines.append("Connection Pair Quality Analysis Report")
-    lines.append("=" * 200)
-    lines.append("")
+
+    # Content in code block
+    lines.append("```text")
     lines.append(f"File A: {file1_name}")
     lines.append(f"File B: {file2_name}")
     lines.append("")
 
     if not results:
         lines.append("No connection pairs found for analysis.")
+        lines.append("```")
         return '\n'.join(lines)
 
     # Calculate performance scores for each pair
@@ -926,7 +933,7 @@ def format_connection_pair_report(
         lines.append("-" * 200)
 
     lines.append(f"Total: {len(scored_results)} connection pairs shown")
-    lines.append("=" * 200)
+    lines.append("```")
 
     return '\n'.join(lines)
 

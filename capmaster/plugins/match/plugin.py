@@ -963,13 +963,12 @@ class MatchPlugin(PluginBase):
         """
         lines = []
 
-        # Header
-        lines.append("=" * 180)
-        lines.append("TCP Connection Matching Results")
-        lines.append("=" * 180)
+        # Markdown title
+        lines.append("## TCP Connection Matching Results")
         lines.append("")
 
-        # Statistics
+        # Statistics section in code block
+        lines.append("```text")
         lines.append("Statistics:")
         lines.append(f"  Total connections (file 1): {stats['total_connections_1']}")
         lines.append(f"  Total connections (file 2): {stats['total_connections_2']}")
@@ -1027,7 +1026,7 @@ class MatchPlugin(PluginBase):
 
         lines.append("-" * 180)
         lines.append(f"Total: {len(matches)} matched pairs")
-        lines.append("=" * 180)
+        lines.append("```")
 
         # Write output
         output_text = "\n".join(lines)
