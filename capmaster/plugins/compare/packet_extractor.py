@@ -3,6 +3,7 @@
 from __future__ import annotations
 import logging
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 
 from capmaster.core.tshark_wrapper import TsharkWrapper
@@ -42,8 +43,8 @@ class TcpPacket:
     ack: int
     """TCP acknowledgment number (absolute)"""
 
-    timestamp: float
-    """Packet timestamp"""
+    timestamp: Decimal
+    """Packet timestamp in seconds (Unix epoch) with full nanosecond precision"""
 
     def __str__(self) -> str:
         """String representation for display."""
@@ -160,7 +161,7 @@ class PacketExtractor:
                     tcp_flags=tcp_flags,
                     seq=int(seq_str) if seq_str else 0,
                     ack=int(ack_str) if ack_str else 0,
-                    timestamp=float(timestamp_str) if timestamp_str else 0.0,
+                    timestamp=Decimal(timestamp_str) if timestamp_str else Decimal('0'),
                 )
                 packets.append(packet)
             except (ValueError, IndexError) as e:
@@ -235,7 +236,7 @@ class PacketExtractor:
                     tcp_flags=tcp_flags,
                     seq=int(seq_str) if seq_str else 0,
                     ack=int(ack_str) if ack_str else 0,
-                    timestamp=float(timestamp_str) if timestamp_str else 0.0,
+                    timestamp=Decimal(timestamp_str) if timestamp_str else Decimal('0'),
                 )
                 packets.append(packet)
             except (ValueError, IndexError) as e:
@@ -333,7 +334,7 @@ class PacketExtractor:
                     tcp_flags=tcp_flags,
                     seq=int(seq_str) if seq_str else 0,
                     ack=int(ack_str) if ack_str else 0,
-                    timestamp=float(timestamp_str) if timestamp_str else 0.0,
+                    timestamp=Decimal(timestamp_str) if timestamp_str else Decimal('0'),
                 )
                 packets_by_stream[stream_id].append(packet)
             except (ValueError, IndexError) as e:

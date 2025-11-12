@@ -84,16 +84,16 @@ packet = TcpPacket(
     tcp_flags=tcp_flags,
     seq=int(seq_str) if seq_str else 0,
     ack=int(ack_str) if ack_str else 0,
-    timestamp=float(timestamp_str) if timestamp_str else 0.0,  # ← 转换为 float
+    timestamp=Decimal(timestamp_str) if timestamp_str else Decimal('0'),  # ← 转换为 Decimal
 )
 ```
 </augment_code_snippet>
 
 **TcpPacket.timestamp 字段：**
-- **类型：** `float`
+- **类型：** `Decimal` (修复后，原为 `float`)
 - **单位：** 秒
-- **精度：** 保留 tshark 提取的完整精度
-- **示例：** `1757441703.689601024`
+- **精度：** 完整保留 tshark 提取的纳秒精度（使用 Decimal 避免浮点数精度丢失）
+- **示例：** `Decimal('1757441703.689601150')`
 
 ---
 
@@ -130,16 +130,17 @@ last_time_ns = to_nanoseconds(last_timestamp)    # ← 转换为纳秒
 
 **to_nanoseconds() 函数：**
 ```python
-def to_nanoseconds(timestamp_seconds: float) -> int:
+def to_nanoseconds(timestamp_seconds: Decimal) -> int:
     """Convert timestamp from seconds to nanoseconds with full precision."""
-    timestamp_nanoseconds = int(timestamp_seconds * 1_000_000_000)
+    # 使用 Decimal 算术确保乘法过程中不丢失精度
+    timestamp_nanoseconds = int(timestamp_seconds * Decimal('1000000000'))
     return timestamp_nanoseconds
 ```
 
 **转换示例：**
-- 输入：`1757441703.689601024` 秒
-- 计算：`1757441703.689601024 × 1,000,000,000`
-- 输出：`1757441703689601024` 纳秒
+- 输入：`Decimal('1757441703.689601150')` 秒
+- 计算：`Decimal('1757441703.689601150') × Decimal('1000000000')`
+- 输出：`1757441703689601150` 纳秒（完整保留精度）
 
 ---
 
@@ -269,14 +270,15 @@ Packet 3: frame.time_epoch = "1757441703.689603072"
 
 ```
 PCAP 文件 → tshark → TcpPacket → to_nanoseconds() → 数据库
-  (二进制)   (字符串)   (float秒)      (int纳秒)      (bigint)
+  (二进制)   (字符串)   (Decimal秒)    (int纳秒)      (bigint)
 ```
 
 ### 精度保证
 
-- **变更前：** 微秒精度（最后 3 位固定为 000）
-- **变更后：** 完整纳秒精度（保留所有位数）
-- **精度来源：** 取决于 PCAP 文件本身的精度
+- **修复前问题：** 使用 float 类型导致精度丢失（浮点数无法精确表示纳秒级精度）
+- **修复后方案：** 使用 Decimal 类型保持完整纳秒精度
+- **精度来源：** 取决于 PCAP 文件本身的精度（通常为纳秒级）
+- **关键改进：** 从字符串解析时直接使用 Decimal，避免 float 的精度限制
 
 ---
 
