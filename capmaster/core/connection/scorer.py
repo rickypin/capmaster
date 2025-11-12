@@ -121,6 +121,15 @@ class ConnectionScorer:
     # Optional numeric-range density gate (disabled by default: 0.0 means skip)
     STRONG_IPID_MIN_DENSITY = 0.0
 
+
+    # Strong acceptance gates
+    STRONG_TIME_MAX_GAP = 2.0  # seconds; allow small clock skew/proximity
+    ENFORCE_CLIENT_PORT_SAME_WHEN_CLIENT_IP_SAME = True
+
+    # Unidirectional IPID stricter thresholds (when only one direction contributes on both sides)
+    UNIDIR_STRONG_MIN_RATIO = 0.95
+    UNIDIR_STRONG_MIN_JACCARD = 0.80
+
     # Microflow (short-flow) matching configuration
     MICROFLOW_TRIGGER_MAX_PACKETS = 3
     MICROFLOW_TRIGGER_MAX_DURATION = 2.0  # seconds
@@ -199,12 +208,43 @@ class ConnectionScorer:
                 density = 0.0
         else:
             density = 0.0
+
+        # Initial strong IPID acceptance
         force_accept = (
             overlap_count >= self.STRONG_IPID_MIN_OVERLAP
             and overlap_ratio >= self.STRONG_IPID_MIN_RATIO
             and jaccard >= self.STRONG_IPID_MIN_JACCARD
             and (self.STRONG_IPID_MIN_DENSITY <= 0.0 or density >= self.STRONG_IPID_MIN_DENSITY)
         )
+
+        # Apply strong-acceptance gates: time consistency, client-port consistency, and unidirectional-IPID stricter thresholds
+        if force_accept:
+            # Time gate: require overlap or small gap
+            start_max = max(conn1.first_packet_time, conn2.first_packet_time)
+            end_min = min(conn1.last_packet_time, conn2.last_packet_time)
+            time_overlap = end_min - start_max
+            if time_overlap >= 0:
+                time_ok = True
+            else:
+                gap = start_max - end_min
+                time_ok = gap <= self.STRONG_TIME_MAX_GAP
+            if not time_ok:
+                force_accept = False
+
+        if force_accept and self.ENFORCE_CLIENT_PORT_SAME_WHEN_CLIENT_IP_SAME:
+            # Enforce port equality when client IP is the same and handshake likely captured (stable roles)
+            if conn1.syn_options and conn2.syn_options:
+                if conn1.client_ip == conn2.client_ip and conn1.client_port != conn2.client_port:
+                    force_accept = False
+
+        if force_accept:
+            # Unidirectional IPID stricter thresholds: only one direction contributes on both sides
+            client_present = (len(conn1.client_ipid_set) > 0 and len(conn2.client_ipid_set) > 0)
+            server_present = (len(conn1.server_ipid_set) > 0 and len(conn2.server_ipid_set) > 0)
+            unidir = (client_present != server_present)
+            if unidir:
+                if not (overlap_ratio >= self.UNIDIR_STRONG_MIN_RATIO and jaccard >= self.UNIDIR_STRONG_MIN_JACCARD):
+                    force_accept = False
 
         # Determine if we should use payload features
         # Don't use payload if either connection is header-only
