@@ -34,7 +34,7 @@ class TopologyAnalyzer:
         """
         # Create detector and collector for endpoint statistics
         detector = ServerDetector()
-        collector = EndpointStatsCollector(detector, disable_very_low_dual_output=True)
+        collector = EndpointStatsCollector(detector)
 
         # Add all matches
         for match in self.matches:

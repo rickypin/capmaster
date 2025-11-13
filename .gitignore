@@ -127,6 +127,8 @@ benchmark_results.json
 
 # Test output files
 test*_output.meta.json
+baseline_*.txt
+matches.json
 
 # Type checking
 .mypy_cache/
@@ -150,6 +152,12 @@ tmp/
 statistics/
 **/statistics/
 analysis/
+
+# Archive directories (keep README.md but ignore archived files)
+scripts/archive/*
+!scripts/archive/README.md
+docs/archive/changelogs/*
+!docs/archive/changelogs/README.md
 
 # Processed PCAP files (created by remove_one_way_tcp.sh)
 *-OWTR.pcap

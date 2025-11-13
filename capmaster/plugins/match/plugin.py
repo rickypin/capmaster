@@ -146,13 +146,6 @@ class MatchPlugin(PluginBase):
             "when the first connection lacks handshake packets.",
         )
         @click.option(
-            "--disable-very-low-dual-output",
-            is_flag=True,
-            default=False,
-            help="Disable dual output for VERY_LOW confidence endpoint pairs. "
-            "By default, VERY_LOW confidence pairs output both original and reversed interpretations.",
-        )
-        @click.option(
             "--endpoint-pair-mode",
             is_flag=True,
             default=False,
@@ -202,7 +195,6 @@ class MatchPlugin(PluginBase):
             kase_id: int | None,
             endpoint_stats_json: Path | None,
             merge_by_5tuple: bool,
-            disable_very_low_dual_output: bool,
             endpoint_pair_mode: bool,
             service_group_mapping: Path | None,
             match_json: Path | None,
@@ -322,7 +314,6 @@ class MatchPlugin(PluginBase):
                 kase_id=kase_id,
                 endpoint_stats_json=endpoint_stats_json,
                 merge_by_5tuple=merge_by_5tuple,
-                disable_very_low_dual_output=disable_very_low_dual_output,
                 endpoint_pair_mode=endpoint_pair_mode,
                 service_group_mapping=service_group_mapping,
                 match_json=match_json,
@@ -467,7 +458,6 @@ class MatchPlugin(PluginBase):
         kase_id: int | None = None,
         endpoint_stats_json: Path | None = None,
         merge_by_5tuple: bool = False,
-        disable_very_low_dual_output: bool = False,
         endpoint_pair_mode: bool = False,
         service_group_mapping: Path | None = None,
         match_json: Path | None = None,
@@ -496,7 +486,6 @@ class MatchPlugin(PluginBase):
             kase_id: Case ID for database table name
             endpoint_stats_json: Output JSON file for endpoint statistics
             merge_by_5tuple: Merge connections by direction-independent 5-tuple
-            disable_very_low_dual_output: Disable dual output for VERY_LOW confidence pairs
             endpoint_pair_mode: Use endpoint pair mode instead of service aggregation (default: False)
             service_group_mapping: JSON file mapping service ports to group IDs
             match_json: Output JSON file for match results (can be used as input to compare command)
@@ -781,7 +770,6 @@ class MatchPlugin(PluginBase):
                         match_file1,
                         match_file2,
                         endpoint_stats_output,
-                        disable_very_low_dual_output=disable_very_low_dual_output,
                     )
                     progress.update(endpoint_task, advance=1)
 
@@ -1185,7 +1173,6 @@ class MatchPlugin(PluginBase):
         file1: Path,
         file2: Path,
         output_file: Path | None,
-        disable_very_low_dual_output: bool = False,
     ) -> list:
         """
         Output endpoint statistics for matched connections.
@@ -1195,16 +1182,13 @@ class MatchPlugin(PluginBase):
             file1: Path to first PCAP file
             file2: Path to second PCAP file
             output_file: Output file for statistics (None for stdout)
-            disable_very_low_dual_output: Disable dual output for VERY_LOW confidence pairs
 
         Returns:
             List of EndpointPairStats objects
         """
         # Create detector and collector
         detector = ServerDetector()
-        collector = EndpointStatsCollector(
-            detector, disable_very_low_dual_output=disable_very_low_dual_output
-        )
+        collector = EndpointStatsCollector(detector)
 
         # Collect statistics from matches
         for match in matches:

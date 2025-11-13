@@ -172,16 +172,14 @@ class EndpointStatsCollector:
     paired relationship between files A and B.
     """
 
-    def __init__(self, detector: ServerDetector, disable_very_low_dual_output: bool = False):
+    def __init__(self, detector: ServerDetector):
         """
         Initialize the collector.
 
         Args:
             detector: Server detector for determining server/client roles
-            disable_very_low_dual_output: If True, disable dual output for VERY_LOW confidence pairs
         """
         self.detector = detector
-        self.disable_very_low_dual_output = disable_very_low_dual_output
 
         # Key: (tuple_a, tuple_b), Value: count
         self.pair_stats: dict[tuple[EndpointTuple, EndpointTuple], int] = defaultdict(int)
@@ -286,43 +284,6 @@ class EndpointStatsCollector:
         # Track total bytes
         self.total_bytes_a[pair_key] += match.conn1.total_bytes
         self.total_bytes_b[pair_key] += match.conn2.total_bytes
-
-        # For VERY_LOW confidence, also add the reversed interpretation
-        # This helps avoid missing connections due to incorrect server detection
-        # Can be disabled with disable_very_low_dual_output flag
-        if confidence == "VERY_LOW" and not self.disable_very_low_dual_output:
-            # Create reversed tuples (swap server/client roles)
-            tuple_a_reversed = EndpointTuple(
-                client_ip=info_a.server_ip,
-                server_ip=info_a.client_ip,
-                server_port=info_a.client_port,
-                protocol=protocol_a,
-            )
-            tuple_b_reversed = EndpointTuple(
-                client_ip=info_b.server_ip,
-                server_ip=info_b.client_ip,
-                server_port=info_b.client_port,
-                protocol=protocol_b,
-            )
-
-            # Add reversed pair
-            pair_key_reversed = (tuple_a_reversed, tuple_b_reversed)
-            self.pair_stats[pair_key_reversed] += 1
-            self.confidences[pair_key_reversed].append(confidence)
-
-            # Track TTL values for reversed pair (swap client/server TTLs)
-            if match.conn1.server_ttl > 0:
-                self.client_ttls_a[pair_key_reversed].append(match.conn1.server_ttl)
-            if match.conn1.client_ttl > 0:
-                self.server_ttls_a[pair_key_reversed].append(match.conn1.client_ttl)
-            if match.conn2.server_ttl > 0:
-                self.client_ttls_b[pair_key_reversed].append(match.conn2.server_ttl)
-            if match.conn2.client_ttl > 0:
-                self.server_ttls_b[pair_key_reversed].append(match.conn2.client_ttl)
-
-            # Track total bytes for reversed pair
-            self.total_bytes_a[pair_key_reversed] += match.conn1.total_bytes
-            self.total_bytes_b[pair_key_reversed] += match.conn2.total_bytes
 
     def get_stats(self) -> list[EndpointPairStats]:
         """

@@ -7,6 +7,7 @@ from pathlib import Path
 from capmaster.core.connection.models import (
     ConnectionBuilder,
     FiveTupleConnectionBuilder,
+    StreamingConnectionBuilder,
     TcpConnection,
 )
 from capmaster.core.connection.extractor import TcpFieldExtractor
