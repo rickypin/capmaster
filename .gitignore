@@ -125,6 +125,9 @@ coverage.json
 .hypothesis/
 benchmark_results.json
 
+# Test output files
+test*_output.meta.json
+
 # Type checking
 .mypy_cache/
 .dmypy.json

@@ -174,23 +174,6 @@ class MatchPlugin(PluginBase):
             "to ensure consistent matching between match and compare operations.",
         )
         @click.option(
-            "--f5-mode",
-            is_flag=True,
-            default=False,
-            help="Force F5 Ethernet Trailer based matching. When enabled, TCP connections are matched "
-            "using F5 trailer information (peeraddr/peerport) instead of TLS or feature-based matching. "
-            "This provides 100%% accurate matching when F5 trailers are present in both PCAP files.",
-        )
-        @click.option(
-            "--tls-mode",
-            type=click.Choice(["auto", "force", "disable"], case_sensitive=False),
-            default="auto",
-            help="TLS Client Hello based matching mode. "
-            "auto: Use TLS matching if available, otherwise try F5 or feature-based (default), "
-            "force: Force TLS matching (same as auto in current implementation), "
-            "disable: Disable TLS matching, fall back to F5 or feature-based.",
-        )
-        @click.option(
             "--topology",
             is_flag=True,
             default=False,
@@ -223,8 +206,6 @@ class MatchPlugin(PluginBase):
             endpoint_pair_mode: bool,
             service_group_mapping: Path | None,
             match_json: Path | None,
-            f5_mode: bool,
-            tls_mode: str,
             topology: bool,
         ) -> None:
             """
@@ -345,8 +326,6 @@ class MatchPlugin(PluginBase):
                 endpoint_pair_mode=endpoint_pair_mode,
                 service_group_mapping=service_group_mapping,
                 match_json=match_json,
-                f5_mode=f5_mode,
-                tls_mode=tls_mode,
                 topology=topology,
             )
             ctx.exit(exit_code)
@@ -492,8 +471,6 @@ class MatchPlugin(PluginBase):
         endpoint_pair_mode: bool = False,
         service_group_mapping: Path | None = None,
         match_json: Path | None = None,
-        f5_mode: bool = False,
-        tls_mode: str = "auto",
         topology: bool = False,
     ) -> int:
         """
@@ -573,70 +550,59 @@ class MatchPlugin(PluginBase):
                     )
                 logger.info(f"Matching: {match_file1.name} <-> {match_file2.name}")
 
-                # Determine matching strategy: TLS > F5 > Feature-based
-                # Priority: TLS (if available and not disabled) > F5 (if forced or TLS not available) > Feature-based
+                # Determine matching strategy: F5 > TLS > Feature-based
+                # Priority: F5 Ethernet Trailer (highest) > TLS Client Hello (medium) > Feature-based (lowest)
                 use_f5_matching = False
                 use_tls_matching = False
 
-                # If F5 mode is forced, skip TLS detection entirely
-                if f5_mode:
-                    logger.info("F5 mode explicitly enabled (forced) - skipping TLS detection")
-                    use_f5_matching = True
+                # Check for F5 Ethernet Trailer first (highest priority)
+                detect_task = progress.add_task("[cyan]Detecting F5 Ethernet Trailer...", total=2)
+                f5_matcher = F5Matcher()
+
+                has_f5_file1 = f5_matcher.detect_f5_trailer(match_file1)
+                progress.update(detect_task, advance=1)
+
+                has_f5_file2 = f5_matcher.detect_f5_trailer(match_file2)
+                progress.update(detect_task, advance=1)
+
+                use_f5_matching = has_f5_file1 and has_f5_file2
+
+                if use_f5_matching:
+                    logger.info("F5 Ethernet Trailer detected in both files - using F5 matching mode")
                 else:
-                    # Check for TLS mode first (new priority)
-                    if tls_mode != "disable":
-                        # Auto-detect TLS Client Hello
-                        detect_task = progress.add_task("[cyan]Detecting TLS Client Hello...", total=2)
-                        tls_matcher = TlsMatcher()
+                    if has_f5_file1 or has_f5_file2:
+                        logger.warning(
+                            f"F5 trailer found in {'file1' if has_f5_file1 else 'file2'} only - "
+                            "will check for TLS Client Hello"
+                        )
 
-                        has_tls_file1 = tls_matcher.detect_tls_client_hello(match_file1)
-                        progress.update(detect_task, advance=1)
+                    # Check for TLS Client Hello if F5 is not available (medium priority)
+                    detect_task = progress.add_task("[cyan]Detecting TLS Client Hello...", total=2)
+                    tls_matcher = TlsMatcher()
 
-                        has_tls_file2 = tls_matcher.detect_tls_client_hello(match_file2)
-                        progress.update(detect_task, advance=1)
+                    has_tls_file1 = tls_matcher.detect_tls_client_hello(match_file1)
+                    progress.update(detect_task, advance=1)
 
-                        use_tls_matching = has_tls_file1 and has_tls_file2
+                    has_tls_file2 = tls_matcher.detect_tls_client_hello(match_file2)
+                    progress.update(detect_task, advance=1)
 
-                        if use_tls_matching:
-                            logger.info("TLS Client Hello detected in both files - using TLS matching mode")
-                        else:
-                            if has_tls_file1 or has_tls_file2:
-                                logger.warning(
-                                    f"TLS Client Hello found in {'file1' if has_tls_file1 else 'file2'} only - "
-                                    "will check for F5 Ethernet Trailer"
-                                )
+                    use_tls_matching = has_tls_file1 and has_tls_file2
+
+                    if use_tls_matching:
+                        logger.info("TLS Client Hello detected in both files - using TLS matching mode")
                     else:
-                        logger.info("TLS matching disabled by user")
-
-                    # Check for F5 mode if TLS is not used
-                    if not use_tls_matching:
-                        # Auto-detect F5 trailers
-                        detect_task = progress.add_task("[cyan]Detecting F5 trailers...", total=2)
-                        f5_matcher = F5Matcher()
-
-                        has_f5_file1 = f5_matcher.detect_f5_trailer(match_file1)
-                        progress.update(detect_task, advance=1)
-
-                        has_f5_file2 = f5_matcher.detect_f5_trailer(match_file2)
-                        progress.update(detect_task, advance=1)
-
-                        use_f5_matching = has_f5_file1 and has_f5_file2
-
-                        if use_f5_matching:
-                            logger.info("F5 Ethernet Trailer detected in both files - using F5 matching mode")
-                        else:
-                            if has_f5_file1 or has_f5_file2:
-                                logger.warning(
-                                    f"F5 trailer found in {'file1' if has_f5_file1 else 'file2'} only - "
-                                    "falling back to feature-based matching"
-                                )
-                            logger.info("Using feature-based matching mode")
+                        if has_tls_file1 or has_tls_file2:
+                            logger.warning(
+                                f"TLS Client Hello found in {'file1' if has_tls_file1 else 'file2'} only - "
+                                "falling back to feature-based matching"
+                            )
+                        logger.info("Using feature-based matching mode")
 
                 # Log final matching strategy
-                if use_tls_matching:
-                    logger.info("Final matching strategy: TLS Client Hello")
-                elif use_f5_matching:
+                if use_f5_matching:
                     logger.info("Final matching strategy: F5 Ethernet Trailer")
+                elif use_tls_matching:
+                    logger.info("Final matching strategy: TLS Client Hello")
                 else:
                     logger.info("Final matching strategy: Feature-based")
 
