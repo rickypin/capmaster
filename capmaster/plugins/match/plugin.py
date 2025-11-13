@@ -9,6 +9,7 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 
 from capmaster.core.connection.connection_extractor import extract_connections_from_pcap
 from capmaster.core.connection.f5_matcher import F5Matcher
+from capmaster.core.connection.tls_matcher import TlsMatcher
 from capmaster.core.connection.matcher import BucketStrategy, ConnectionMatcher, MatchMode
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
@@ -176,9 +177,18 @@ class MatchPlugin(PluginBase):
             "--f5-mode",
             is_flag=True,
             default=False,
-            help="Use F5 Ethernet Trailer based matching. When enabled, TCP connections are matched "
-            "using F5 trailer information (peeraddr/peerport) instead of feature-based scoring. "
+            help="Force F5 Ethernet Trailer based matching. When enabled, TCP connections are matched "
+            "using F5 trailer information (peeraddr/peerport) instead of TLS or feature-based matching. "
             "This provides 100%% accurate matching when F5 trailers are present in both PCAP files.",
+        )
+        @click.option(
+            "--tls-mode",
+            type=click.Choice(["auto", "force", "disable"], case_sensitive=False),
+            default="auto",
+            help="TLS Client Hello based matching mode. "
+            "auto: Use TLS matching if available, otherwise try F5 or feature-based (default), "
+            "force: Force TLS matching (same as auto in current implementation), "
+            "disable: Disable TLS matching, fall back to F5 or feature-based.",
         )
         @click.option(
             "--topology",
@@ -214,6 +224,7 @@ class MatchPlugin(PluginBase):
             service_group_mapping: Path | None,
             match_json: Path | None,
             f5_mode: bool,
+            tls_mode: str,
             topology: bool,
         ) -> None:
             """
@@ -335,6 +346,7 @@ class MatchPlugin(PluginBase):
                 service_group_mapping=service_group_mapping,
                 match_json=match_json,
                 f5_mode=f5_mode,
+                tls_mode=tls_mode,
                 topology=topology,
             )
             ctx.exit(exit_code)
@@ -481,6 +493,7 @@ class MatchPlugin(PluginBase):
         service_group_mapping: Path | None = None,
         match_json: Path | None = None,
         f5_mode: bool = False,
+        tls_mode: str = "auto",
         topology: bool = False,
     ) -> int:
         """
@@ -560,32 +573,72 @@ class MatchPlugin(PluginBase):
                     )
                 logger.info(f"Matching: {match_file1.name} <-> {match_file2.name}")
 
-                # Check for F5 mode (auto-detect or explicit)
+                # Determine matching strategy: TLS > F5 > Feature-based
+                # Priority: TLS (if available and not disabled) > F5 (if forced or TLS not available) > Feature-based
+                use_f5_matching = False
+                use_tls_matching = False
+
+                # If F5 mode is forced, skip TLS detection entirely
                 if f5_mode:
-                    logger.info("F5 mode explicitly enabled")
+                    logger.info("F5 mode explicitly enabled (forced) - skipping TLS detection")
                     use_f5_matching = True
                 else:
-                    # Auto-detect F5 trailers
-                    detect_task = progress.add_task("[cyan]Detecting F5 trailers...", total=2)
-                    f5_matcher = F5Matcher()
+                    # Check for TLS mode first (new priority)
+                    if tls_mode != "disable":
+                        # Auto-detect TLS Client Hello
+                        detect_task = progress.add_task("[cyan]Detecting TLS Client Hello...", total=2)
+                        tls_matcher = TlsMatcher()
 
-                    has_f5_file1 = f5_matcher.detect_f5_trailer(match_file1)
-                    progress.update(detect_task, advance=1)
+                        has_tls_file1 = tls_matcher.detect_tls_client_hello(match_file1)
+                        progress.update(detect_task, advance=1)
 
-                    has_f5_file2 = f5_matcher.detect_f5_trailer(match_file2)
-                    progress.update(detect_task, advance=1)
+                        has_tls_file2 = tls_matcher.detect_tls_client_hello(match_file2)
+                        progress.update(detect_task, advance=1)
 
-                    use_f5_matching = has_f5_file1 and has_f5_file2
+                        use_tls_matching = has_tls_file1 and has_tls_file2
 
-                    if use_f5_matching:
-                        logger.info("F5 Ethernet Trailer detected in both files - using F5 matching mode")
+                        if use_tls_matching:
+                            logger.info("TLS Client Hello detected in both files - using TLS matching mode")
+                        else:
+                            if has_tls_file1 or has_tls_file2:
+                                logger.warning(
+                                    f"TLS Client Hello found in {'file1' if has_tls_file1 else 'file2'} only - "
+                                    "will check for F5 Ethernet Trailer"
+                                )
                     else:
-                        if has_f5_file1 or has_f5_file2:
-                            logger.warning(
-                                f"F5 trailer found in {'file1' if has_f5_file1 else 'file2'} only - "
-                                "falling back to feature-based matching"
-                            )
-                        logger.info("Using feature-based matching mode")
+                        logger.info("TLS matching disabled by user")
+
+                    # Check for F5 mode if TLS is not used
+                    if not use_tls_matching:
+                        # Auto-detect F5 trailers
+                        detect_task = progress.add_task("[cyan]Detecting F5 trailers...", total=2)
+                        f5_matcher = F5Matcher()
+
+                        has_f5_file1 = f5_matcher.detect_f5_trailer(match_file1)
+                        progress.update(detect_task, advance=1)
+
+                        has_f5_file2 = f5_matcher.detect_f5_trailer(match_file2)
+                        progress.update(detect_task, advance=1)
+
+                        use_f5_matching = has_f5_file1 and has_f5_file2
+
+                        if use_f5_matching:
+                            logger.info("F5 Ethernet Trailer detected in both files - using F5 matching mode")
+                        else:
+                            if has_f5_file1 or has_f5_file2:
+                                logger.warning(
+                                    f"F5 trailer found in {'file1' if has_f5_file1 else 'file2'} only - "
+                                    "falling back to feature-based matching"
+                                )
+                            logger.info("Using feature-based matching mode")
+
+                # Log final matching strategy
+                if use_tls_matching:
+                    logger.info("Final matching strategy: TLS Client Hello")
+                elif use_f5_matching:
+                    logger.info("Final matching strategy: F5 Ethernet Trailer")
+                else:
+                    logger.info("Final matching strategy: Feature-based")
 
                 # Extract connections from both files
                 extract_task = progress.add_task("[cyan]Extracting connections...", total=2)
@@ -661,6 +714,27 @@ class MatchPlugin(PluginBase):
                     # Convert F5 matches to standard ConnectionMatch format
                     matches = self._convert_f5_matches_to_connection_matches(
                         f5_matches, connections1, connections2
+                    )
+                    progress.update(match_task, advance=1)
+
+                    # Create a matcher instance for statistics calculation
+                    matcher = ConnectionMatcher(
+                        bucket_strategy=BucketStrategy("auto"),
+                        score_threshold=score_threshold,
+                        match_mode=MatchMode(match_mode),
+                    )
+                elif use_tls_matching:
+                    # TLS-based matching
+                    match_task = progress.add_task("[green]Matching connections using TLS Client Hello...", total=1)
+                    logger.info("Matching connections using TLS Client Hello...")
+
+                    tls_matcher = TlsMatcher()
+                    tls_matches = tls_matcher.match(match_file1, match_file2)
+                    logger.info(f"Found {len(tls_matches)} TLS-based matches")
+
+                    # Convert TLS matches to standard ConnectionMatch format
+                    matches = self._convert_tls_matches_to_connection_matches(
+                        tls_matches, connections1, connections2
                     )
                     progress.update(match_task, advance=1)
 
@@ -938,6 +1012,57 @@ class MatchPlugin(PluginBase):
                     available_weight=1.0,
                     ipid_match=True,
                     evidence=f"F5_TRAILER(client={f5_match.client_ip}:{f5_match.client_port})",
+                    force_accept=True,
+                )
+
+                match = ConnectionMatch(
+                    conn1=conn1,
+                    conn2=conn2,
+                    score=score,
+                )
+                matches.append(match)
+
+        return matches
+
+    def _convert_tls_matches_to_connection_matches(
+        self,
+        tls_matches: list,
+        connections1: list,
+        connections2: list,
+    ) -> list:
+        """
+        Convert TLS matches to standard ConnectionMatch format.
+
+        Args:
+            tls_matches: List of TlsConnectionPair objects
+            connections1: List of TcpConnection objects from file1
+            connections2: List of TcpConnection objects from file2
+
+        Returns:
+            List of ConnectionMatch objects
+        """
+        from capmaster.core.connection.matcher import ConnectionMatch
+        from capmaster.core.connection.scorer import MatchScore
+
+        # Build lookup tables: stream_id -> connection
+        conn1_map = {conn.stream_id: conn for conn in connections1}
+        conn2_map = {conn.stream_id: conn for conn in connections2}
+
+        matches = []
+        for tls_match in tls_matches:
+            # Look up connections by stream ID
+            conn1 = conn1_map.get(tls_match.stream_id_1)
+            conn2 = conn2_map.get(tls_match.stream_id_2)
+
+            if conn1 and conn2:
+                # Create a perfect match score for TLS-based matches
+                # TLS Client Hello random (32 bytes) + session_id provides strong uniqueness
+                score = MatchScore(
+                    normalized_score=1.0,
+                    raw_score=1.0,
+                    available_weight=1.0,
+                    ipid_match=True,
+                    evidence=f"TLS_CLIENT_HELLO(random={tls_match.random[:16]}..., session_id={tls_match.session_id[:16]}...)",
                     force_accept=True,
                 )
 

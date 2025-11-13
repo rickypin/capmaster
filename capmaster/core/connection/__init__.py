@@ -15,6 +15,8 @@ from capmaster.core.connection.extractor import TcpFieldExtractor
 from capmaster.core.connection.connection_extractor import extract_connections_from_pcap
 from capmaster.core.connection.matcher import BucketStrategy, ConnectionMatch, ConnectionMatcher, MatchMode
 from capmaster.core.connection.scorer import ConnectionScorer, MatchScore
+from capmaster.core.connection.f5_matcher import F5Matcher, F5ConnectionPair
+from capmaster.core.connection.tls_matcher import TlsMatcher, TlsConnectionPair
 
 __all__ = [
     # Models
@@ -33,5 +35,11 @@ __all__ = [
     # Scorer
     "ConnectionScorer",
     "MatchScore",
+    # F5 Matcher
+    "F5Matcher",
+    "F5ConnectionPair",
+    # TLS Matcher
+    "TlsMatcher",
+    "TlsConnectionPair",
 ]
 
