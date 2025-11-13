@@ -767,21 +767,23 @@ class ComparePlugin(PluginBase):
             return flow_hash_cache[cache_key]
 
         lines = []
-        lines.append("=" * 100)
-        lines.append("TCP Connection Packet-Level Comparison Report")
-        lines.append("=" * 100)
+        # Markdown title
+        lines.append("## TCP Connection Packet-Level Comparison Report")
+        lines.append("")
+
+        # Content in code block
+        lines.append("```text")
         lines.append(f"Baseline File: {baseline_file.name}")
         lines.append(f"Compare File:  {compare_file.name}")
         lines.append(f"Comparison Direction: {compare_file.name} relative to {baseline_file.name}")
         lines.append(f"Matched Connections: {len(results)}")
         if matched_only:
             lines.append("Mode: Matched-only (only comparing packets with matching IPID in both files)")
-        lines.append("=" * 100)
+        lines.append("")
 
         # Section 1: Matched TCP Connections from Baseline File
-        lines.append(f"\n{'='*140}")
         lines.append(f"Matched TCP Connections in Baseline File ({baseline_file.name})")
-        lines.append("=" * 140)
+        lines.append("-" * 140)
 
         if show_flow_hash:
             lines.append(f"{'No.':<6} {'Stream ID':<12} {'Client IP:Port':<25} {'Server IP:Port':<25} {'Packets':<10} {'First Time':<22} {'Last Time':<22} {'Flow Hash':<30}")
@@ -834,11 +836,11 @@ class ComparePlugin(PluginBase):
 
         lines.append("-" * 140)
         lines.append(f"Total: {unique_baseline_count} connections")
+        lines.append("")
 
         # Section 2: Matched TCP Connections from Compare File
-        lines.append(f"\n{'='*140}")
         lines.append(f"Matched TCP Connections in Compare File ({compare_file.name})")
-        lines.append("=" * 140)
+        lines.append("-" * 140)
 
         if show_flow_hash:
             lines.append(f"{'No.':<6} {'Stream ID':<12} {'Client IP:Port':<25} {'Server IP:Port':<25} {'Packets':<10} {'First Time':<22} {'Last Time':<22} {'Flow Hash':<30}")
@@ -891,19 +893,20 @@ class ComparePlugin(PluginBase):
 
         lines.append("-" * 140)
         lines.append(f"Total: {unique_compare_count} connections")
+        lines.append("")
 
         # Overall summary statistics
         identical_count = sum(1 for _, _, _, r in results if r.is_identical)
         diff_count = len(results) - identical_count
 
-        lines.append(f"\n{'='*100}")
         lines.append("Overall Summary")
-        lines.append("=" * 100)
+        lines.append("-" * 100)
         lines.append(f"Total matched pairs: {len(results)}")
         lines.append(f"Unique baseline streams: {unique_baseline_count}")
         lines.append(f"Unique compare streams: {unique_compare_count}")
         lines.append(f"Identical connections: {identical_count}")
         lines.append(f"Connections with differences: {diff_count}")
+        lines.append("")
 
         # Collect statistics per stream pair
         # Structure: {(baseline_stream_id, compare_stream_id): {diff_type: count, tcp_flags: {flags_pair: count}}}
@@ -939,9 +942,8 @@ class ComparePlugin(PluginBase):
 
         # Output statistics per stream pair
         if stream_pair_stats:
-            lines.append(f"\n{'='*140}")
             lines.append("Per-Stream-Pair Statistics")
-            lines.append("=" * 140)
+            lines.append("-" * 140)
 
             # Sort stream pairs by baseline stream id, then compare stream id
             sorted_pairs = sorted(stream_pair_stats.keys())
@@ -950,10 +952,10 @@ class ComparePlugin(PluginBase):
                 stats = stream_pair_stats[stream_pair]
                 baseline_stream, compare_stream = stream_pair
 
-                lines.append(f"\n{'─'*140}")
+                lines.append("")
                 lines.append(f"Stream Pair: Baseline Stream {baseline_stream} ↔ Compare Stream {compare_stream}")
                 lines.append(f"Connection: {stats['connection_id']}")
-                lines.append(f"{'─'*140}")
+                lines.append("─" * 140)
 
                 # Show if identical
                 if stats['is_identical']:
@@ -1006,9 +1008,8 @@ class ComparePlugin(PluginBase):
                     lines.append(f"  {'-'*85}")
                     lines.append(f"  {'TOTAL':<71} {sum(stats['tcp_flags'].values()):<15}")
 
-            lines.append(f"\n{'='*140}")
-
-        # Remove "Connection Details" section as requested
+        # Close code block
+        lines.append("```")
 
         # Write output
         output_text = "\n".join(lines)
@@ -1018,6 +1019,14 @@ class ComparePlugin(PluginBase):
             output_file.parent.mkdir(parents=True, exist_ok=True)
             output_file.write_text(output_text)
             logger.info(f"Results written to: {output_file}")
+
+            # Write meta.json file
+            from capmaster.plugins.match.meta_writer import write_meta_json
+            write_meta_json(
+                output_file=output_file,
+                command_id="packet_differences",
+                source="basic",
+            )
         elif not silent:
             # Only print to stdout if not in silent mode and no output file specified
             print(output_text)
