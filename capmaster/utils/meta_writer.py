@@ -1,4 +1,4 @@
-"""Utility for writing meta.json files for match plugin outputs."""
+"""Utility for writing meta.json files for plugin outputs."""
 
 from __future__ import annotations
 

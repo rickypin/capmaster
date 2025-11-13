@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import sys
 from unittest.mock import MagicMock, patch, call
 import pytest
+
+# Mock psycopg2 module before importing MatchDatabaseWriter
+sys.modules['psycopg2'] = MagicMock()
 
 from capmaster.plugins.match.db_writer import MatchDatabaseWriter
 

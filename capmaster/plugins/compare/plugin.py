@@ -1021,7 +1021,7 @@ class ComparePlugin(PluginBase):
             logger.info(f"Results written to: {output_file}")
 
             # Write meta.json file
-            from capmaster.plugins.match.meta_writer import write_meta_json
+            from capmaster.utils.meta_writer import write_meta_json
             write_meta_json(
                 output_file=output_file,
                 command_id="packet_differences",

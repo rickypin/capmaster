@@ -3,90 +3,31 @@
 from __future__ import annotations
 import logging
 from typing import Any
-from urllib.parse import urlparse
+
+from capmaster.utils.database import BaseDatabaseWriter
 
 logger = logging.getLogger(__name__)
 
 
-class DatabaseWriter:
+class CompareDatabaseWriter(BaseDatabaseWriter):
     """
     Write compare plugin results to PostgreSQL database.
-    
+
     This class handles:
     - Database connection management
     - Table creation based on reference schema
     - Data insertion for flow hash and comparison results
     """
-    
+
     def __init__(self, connection_string: str, kase_id: int):
         """
         Initialize database writer.
-        
+
         Args:
             connection_string: PostgreSQL connection string (e.g., "postgresql://user:pass@host:port/db")
             kase_id: Case ID for table name construction (e.g., 133 -> kase_133_tcp_stream_extra)
         """
-        self.connection_string = connection_string
-        self.kase_id = kase_id
-        self.table_name = f"kase_{kase_id}_tcp_stream_extra"
-        self.full_table_name = f"public.{self.table_name}"
-        self._conn = None
-        self._cursor = None
-        
-    def __enter__(self):
-        """Context manager entry."""
-        self.connect()
-        return self
-        
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
-        self.close()
-        
-    def connect(self) -> None:
-        """
-        Establish database connection.
-        
-        Raises:
-            ImportError: If psycopg2 is not installed
-            Exception: If connection fails
-        """
-        try:
-            import psycopg2
-        except ImportError:
-            raise ImportError(
-                "Database functionality requires psycopg2-binary.\n"
-                "Install with one of the following methods:\n"
-                "  1. pip install capmaster[database]\n"
-                "  2. pip install -r requirements-database.txt\n"
-                "  3. pip install psycopg2-binary"
-            )
-        
-        # Parse connection string
-        parsed = urlparse(self.connection_string)
-        
-        try:
-            self._conn = psycopg2.connect(
-                host=parsed.hostname,
-                port=parsed.port or 5432,
-                database=parsed.path.lstrip('/'),
-                user=parsed.username,
-                password=parsed.password,
-                connect_timeout=10
-            )
-            self._conn.autocommit = False  # Use transactions
-            self._cursor = self._conn.cursor()
-            logger.info(f"Connected to database: {parsed.hostname}:{parsed.port}/{parsed.path.lstrip('/')}")
-        except Exception as e:
-            logger.error(f"Failed to connect to database: {e}")
-            raise
-            
-    def close(self) -> None:
-        """Close database connection."""
-        if self._cursor:
-            self._cursor.close()
-        if self._conn:
-            self._conn.close()
-        logger.info("Database connection closed")
+        super().__init__(connection_string, kase_id, "tcp_stream_extra")
         
     def ensure_table_exists(self) -> None:
         """
@@ -107,18 +48,8 @@ class DatabaseWriter:
         if not self._cursor or not self._conn:
             raise RuntimeError("Database not connected")
 
-        # Check if table exists
-        self._cursor.execute("""
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables
-                WHERE table_schema = 'public'
-                AND table_name = %s
-            );
-        """, (self.table_name,))
-
-        exists = self._cursor.fetchone()[0]
-
-        if exists:
+        # Check if table exists using base class method
+        if self._check_table_exists():
             logger.info(f"Table {self.full_table_name} already exists")
             # Check if tcp_flags_different_type column exists, add it if not
             self._cursor.execute("""
@@ -162,37 +93,10 @@ class DatabaseWriter:
         """
 
         self._cursor.execute(create_table_sql)
-        
-        # Create sequence for id column
-        sequence_name = f"{self.table_name}_id_seq"
-        create_sequence_sql = f"""
-            CREATE SEQUENCE public.{sequence_name}
-                START WITH 1
-                INCREMENT BY 1
-                NO MINVALUE
-                NO MAXVALUE
-                CACHE 1;
-        """
-        
-        self._cursor.execute(create_sequence_sql)
-        
-        # Set sequence ownership
-        self._cursor.execute(f"""
-            ALTER SEQUENCE public.{sequence_name} OWNED BY {self.full_table_name}.id;
-        """)
-        
-        # Set default value for id column
-        self._cursor.execute(f"""
-            ALTER TABLE ONLY {self.full_table_name} 
-            ALTER COLUMN id SET DEFAULT nextval('public.{sequence_name}'::regclass);
-        """)
-        
-        # Add primary key constraint
-        self._cursor.execute(f"""
-            ALTER TABLE ONLY {self.full_table_name}
-            ADD CONSTRAINT {self.table_name}_pkey PRIMARY KEY (id);
-        """)
-        
+
+        # Create sequence and primary key using base class method
+        self._create_sequence_and_primary_key()
+
         # Create indexes for better query performance
         self._cursor.execute(f"""
             CREATE INDEX idx_{self.table_name}_flow_hash
@@ -347,15 +251,6 @@ class DatabaseWriter:
         # Execute batch insert using executemany
         self._cursor.executemany(insert_sql, batch_data)
 
-    def commit(self) -> None:
-        """Commit current transaction."""
-        if self._conn:
-            self._conn.commit()
-            logger.info("Transaction committed")
-            
-    def rollback(self) -> None:
-        """Rollback current transaction."""
-        if self._conn:
-            self._conn.rollback()
-            logger.warning("Transaction rolled back")
 
+# Backward compatibility alias
+DatabaseWriter = CompareDatabaseWriter

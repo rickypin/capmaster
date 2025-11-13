@@ -18,7 +18,7 @@ from capmaster.plugins.match.endpoint_stats import (
     format_endpoint_stats,
     format_endpoint_stats_table,
 )
-from capmaster.plugins.match.meta_writer import write_meta_json
+from capmaster.utils.meta_writer import write_meta_json
 from capmaster.plugins.match.sampler import ConnectionSampler
 from capmaster.plugins.match.server_detector import ServerDetector
 from capmaster.utils.cli_options import (
@@ -704,16 +704,9 @@ class MatchPlugin(PluginBase):
                     # Improve server detection using cardinality analysis
                     detector_task = progress.add_task("[yellow]Analyzing server/client roles...", total=1)
                     logger.info("Performing cardinality analysis for server detection...")
-                    detector = ServerDetector()
 
-                    # Collect all connections for cardinality analysis
-                    for conn in connections1:
-                        detector.collect_connection(conn)
-                    for conn in connections2:
-                        detector.collect_connection(conn)
-
-                    # Finalize cardinality analysis
-                    detector.finalize_cardinality()
+                    # Create and populate detector using helper method
+                    detector = self._create_and_populate_detector(connections1, connections2)
 
                     # Re-detect server/client roles with improved detection
                     connections1 = self._improve_server_detection(connections1, detector)
@@ -884,16 +877,9 @@ class MatchPlugin(PluginBase):
 
         # Step 1: Improve server detection using cardinality analysis
         logger.info("Performing cardinality analysis for server detection...")
-        detector = ServerDetector()
 
-        # Collect all connections for cardinality analysis
-        for conn in connections1:
-            detector.collect_connection(conn)
-        for conn in connections2:
-            detector.collect_connection(conn)
-
-        # Finalize cardinality analysis
-        detector.finalize_cardinality()
+        # Create and populate detector using helper method
+        detector = self._create_and_populate_detector(connections1, connections2)
 
         # Re-detect server/client roles with improved detection
         connections1 = self._improve_server_detection(connections1, detector)
@@ -1338,6 +1324,37 @@ class MatchPlugin(PluginBase):
 
         except (json.JSONDecodeError, ValueError) as e:
             raise ValueError(f"Invalid service group mapping file: {e}")
+
+    def _create_and_populate_detector(
+        self,
+        connections1: list[TcpConnection],
+        connections2: list[TcpConnection],
+    ) -> ServerDetector:
+        """
+        Create a ServerDetector and populate it with connections from both files.
+
+        This helper method eliminates code duplication by centralizing the common
+        pattern of creating a detector, collecting connections, and finalizing.
+
+        Args:
+            connections1: Connections from first file
+            connections2: Connections from second file
+
+        Returns:
+            ServerDetector with finalized cardinality analysis
+        """
+        detector = ServerDetector()
+
+        # Collect all connections for cardinality analysis
+        for conn in connections1:
+            detector.collect_connection(conn)
+        for conn in connections2:
+            detector.collect_connection(conn)
+
+        # Finalize cardinality analysis
+        detector.finalize_cardinality()
+
+        return detector
 
     def _improve_server_detection(
         self,
