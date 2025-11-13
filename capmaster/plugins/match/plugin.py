@@ -1031,98 +1031,10 @@ class MatchPlugin(PluginBase):
     def _output_results(
         self, matches: list, stats: dict, output_file: Path | None
     ) -> None:
-        """
-        Output match results in table format.
+        """Delegated to capmaster.plugins.match.output_formatter.output_match_results."""
+        from capmaster.plugins.match.output_formatter import output_match_results
 
-        Args:
-            matches: List of ConnectionMatch objects
-            stats: Statistics dictionary
-            output_file: Output file path (None for stdout)
-        """
-        lines = []
-
-        # Markdown title
-        lines.append("## TCP Connection Matching Results")
-        lines.append("")
-
-        # Statistics section in code block
-        lines.append("```text")
-        lines.append("Statistics:")
-        lines.append(f"  Total connections (file 1): {stats['total_connections_1']}")
-        lines.append(f"  Total connections (file 2): {stats['total_connections_2']}")
-        lines.append(f"  Matched pairs: {stats['matched_pairs']}")
-        lines.append(f"  Unmatched (file 1): {stats['unmatched_1']}")
-        lines.append(f"  Unmatched (file 2): {stats['unmatched_2']}")
-        lines.append(f"  Match rate (file 1): {stats['match_rate_1']:.1%}")
-        lines.append(f"  Match rate (file 2): {stats['match_rate_2']:.1%}")
-        lines.append(f"  Average score: {stats['average_score']:.2f}")
-        lines.append("")
-
-        # Matched Connections Table
-        lines.append("Matched Connections:")
-        lines.append("-" * 180)
-
-        # Table header
-        header = (
-            f"{'No.':<6} "
-            f"{'Stream A':<10} "
-            f"{'Client A':<22} "
-            f"{'Server A':<22} "
-            f"{'Stream B':<10} "
-            f"{'Client B':<22} "
-            f"{'Server B':<22} "
-            f"{'Conf':<6} "
-            f"{'Evidence':<40}"
-        )
-        lines.append(header)
-        lines.append("-" * 180)
-
-        # Table rows
-        for i, match in enumerate(matches, 1):
-            client_a = f"{match.conn1.client_ip}:{match.conn1.client_port}"
-            server_a = f"{match.conn1.server_ip}:{match.conn1.server_port}"
-            client_b = f"{match.conn2.client_ip}:{match.conn2.client_port}"
-            server_b = f"{match.conn2.server_ip}:{match.conn2.server_port}"
-
-            # Truncate evidence if too long
-            evidence = match.score.evidence
-            if len(evidence) > 40:
-                evidence = evidence[:37] + "..."
-
-            row = (
-                f"{i:<6} "
-                f"{match.conn1.stream_id:<10} "
-                f"{client_a:<22} "
-                f"{server_a:<22} "
-                f"{match.conn2.stream_id:<10} "
-                f"{client_b:<22} "
-                f"{server_b:<22} "
-                f"{match.score.normalized_score:<6.2f} "
-                f"{evidence:<40}"
-            )
-            lines.append(row)
-
-        lines.append("-" * 180)
-        lines.append(f"Total: {len(matches)} matched pairs")
-        lines.append("```")
-
-        # Write output
-        output_text = "\n".join(lines)
-
-        if output_file:
-            # Ensure parent directory exists
-            output_file.parent.mkdir(parents=True, exist_ok=True)
-            output_file.write_text(output_text)
-            logger.info(f"Results written to: {output_file}")
-
-            # Write meta.json file
-            write_meta_json(
-                output_file=output_file,
-                command_id="matched_connections",
-                source="basic",
-            )
-        else:
-            print(output_text)
+        output_match_results(matches, stats, output_file)
 
     def _save_matches_json(
         self,
@@ -1132,39 +1044,10 @@ class MatchPlugin(PluginBase):
         file2: Path,
         stats: dict,
     ) -> None:
-        """
-        Save match results to JSON file.
+        """Delegated to capmaster.plugins.match.output_formatter.save_matches_json."""
+        from capmaster.plugins.match.output_formatter import save_matches_json
 
-        Args:
-            matches: List of ConnectionMatch objects
-            output_file: Path to output JSON file
-            file1: Path to first PCAP file
-            file2: Path to second PCAP file
-            stats: Statistics dictionary
-        """
-        from capmaster.core.connection.match_serializer import MatchSerializer
-
-        # Prepare metadata
-        metadata = {
-            "total_connections_1": stats["total_connections_1"],
-            "total_connections_2": stats["total_connections_2"],
-            "matched_pairs": stats["matched_pairs"],
-            "unmatched_1": stats["unmatched_1"],
-            "unmatched_2": stats["unmatched_2"],
-            "match_rate_1": stats["match_rate_1"],
-            "match_rate_2": stats["match_rate_2"],
-            "average_score": stats["average_score"],
-            "match_mode": stats["match_mode"],
-        }
-
-        # Save to JSON
-        MatchSerializer.save_matches(
-            matches=matches,
-            output_file=output_file,
-            file1_path=str(file1),
-            file2_path=str(file2),
-            metadata=metadata,
-        )
+        save_matches_json(matches, output_file, file1, file2, stats)
 
     def _output_endpoint_stats(
         self,
