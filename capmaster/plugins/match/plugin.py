@@ -32,6 +32,13 @@ from capmaster.utils.errors import (
 )
 from capmaster.utils.input_parser import DualFileInputParser
 
+from capmaster.plugins.match.cli_commands import register_comparative_analysis_command
+from capmaster.plugins.match.output_formatter import output_match_results, save_matches_json
+from capmaster.plugins.match.strategies import (
+    convert_f5_matches_to_connection_matches,
+    convert_tls_matches_to_connection_matches,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -313,6 +320,7 @@ class MatchPlugin(PluginBase):
                 db_connection=db_connection,
                 kase_id=kase_id,
                 endpoint_stats_json=endpoint_stats_json,
+
                 merge_by_5tuple=merge_by_5tuple,
                 endpoint_pair_mode=endpoint_pair_mode,
                 service_group_mapping=service_group_mapping,
@@ -320,6 +328,11 @@ class MatchPlugin(PluginBase):
                 topology=topology,
             )
             ctx.exit(exit_code)
+
+            # Register comparative-analysis subcommand (extracted to cli_commands.py)
+            register_comparative_analysis_command(self, cli_group)
+            # Skip legacy inlined implementation below
+            return
 
         # Add comparative-analysis subcommand
         @cli_group.command(name="comparative-analysis")
@@ -667,7 +680,7 @@ class MatchPlugin(PluginBase):
                     logger.info(f"Found {len(f5_matches)} F5-based matches")
 
                     # Convert F5 matches to standard ConnectionMatch format
-                    matches = self._convert_f5_matches_to_connection_matches(
+                    matches = convert_f5_matches_to_connection_matches(
                         f5_matches, connections1, connections2
                     )
                     progress.update(match_task, advance=1)
@@ -688,7 +701,7 @@ class MatchPlugin(PluginBase):
                     logger.info(f"Found {len(tls_matches)} TLS-based matches")
 
                     # Convert TLS matches to standard ConnectionMatch format
-                    matches = self._convert_tls_matches_to_connection_matches(
+                    matches = convert_tls_matches_to_connection_matches(
                         tls_matches, connections1, connections2
                     )
                     progress.update(match_task, advance=1)
@@ -740,13 +753,13 @@ class MatchPlugin(PluginBase):
                 else:
                     # Output regular match results
                     output_task = progress.add_task("[green]Writing results...", total=1)
-                    self._output_results(matches, stats, output_file)
+                    output_match_results(matches, stats, output_file)
                     progress.update(output_task, advance=1)
 
                 # Save matches to JSON if requested
                 if match_json:
                     json_task = progress.add_task("[green]Saving matches to JSON...", total=1)
-                    self._save_matches_json(
+                    save_matches_json(
                         matches,
                         match_json,
                         match_file1,
