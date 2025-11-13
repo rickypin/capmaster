@@ -176,13 +176,13 @@ class TestComparePlugin:
 
         # Mock the heavy operations to make test fast
         with patch("capmaster.plugins.compare.plugin.extract_connections_from_pcap") as mock_extract, \
-             patch("capmaster.plugins.compare.plugin.ConnectionMatcher") as mock_matcher, \
+             patch("capmaster.plugins.match.plugin.MatchPlugin.match_connections_in_memory") as mock_match, \
              patch("capmaster.plugins.compare.plugin.PacketExtractor") as mock_extractor, \
              patch("capmaster.plugins.compare.plugin.PacketComparator") as mock_comparator:
 
             # Setup mocks to return empty results
             mock_extract.return_value = []
-            mock_matcher.return_value.match.return_value = []
+            mock_match.return_value = []
 
             exit_code = plugin.execute(
                 input_path=two_pcap_dir,
@@ -200,11 +200,12 @@ class TestComparePlugin:
         output_file = tmp_path / "comparison_results.txt"
 
         with patch("capmaster.plugins.compare.plugin.extract_connections_from_pcap") as mock_extract, \
-             patch("capmaster.plugins.compare.plugin.ConnectionMatcher") as mock_matcher:
+             patch("capmaster.plugins.match.plugin.MatchPlugin.match_connections_in_memory") as mock_match:
 
             # Mock to return at least one match so output is generated
             from capmaster.core.connection.matcher import ConnectionMatch
             from capmaster.core.connection.models import TcpConnection
+            from capmaster.core.connection.scorer import MatchScore
 
             mock_conn = TcpConnection(
                 stream_id=0,
@@ -234,9 +235,16 @@ class TestComparePlugin:
                 server_ttl=64
             )
 
-            mock_match = ConnectionMatch(conn1=mock_conn, conn2=mock_conn, score=1.0)
+            mock_score = MatchScore(
+                normalized_score=1.0,
+                raw_score=1.0,
+                available_weight=1.0,
+                ipid_match=True,
+                evidence="test"
+            )
+            mock_match_obj = ConnectionMatch(conn1=mock_conn, conn2=mock_conn, score=mock_score)
             mock_extract.return_value = [mock_conn]
-            mock_matcher.return_value.match.return_value = [mock_match]
+            mock_match.return_value = [mock_match_obj]
 
             plugin.execute(
                 input_path=two_pcap_dir,
@@ -252,10 +260,10 @@ class TestComparePlugin:
     ):
         """Test that silent mode suppresses console output."""
         with patch("capmaster.plugins.compare.plugin.extract_connections_from_pcap") as mock_extract, \
-             patch("capmaster.plugins.compare.plugin.ConnectionMatcher") as mock_matcher:
+             patch("capmaster.plugins.match.plugin.MatchPlugin.match_connections_in_memory") as mock_match:
 
             mock_extract.return_value = []
-            mock_matcher.return_value.match.return_value = []
+            mock_match.return_value = []
 
             plugin.execute(input_path=two_pcap_dir, silent=True)
 
@@ -280,10 +288,10 @@ class TestComparePlugin:
         input_path = f"{file1},{file2}"
 
         with patch("capmaster.plugins.compare.plugin.extract_connections_from_pcap") as mock_extract, \
-             patch("capmaster.plugins.compare.plugin.ConnectionMatcher") as mock_matcher:
+             patch("capmaster.plugins.match.plugin.MatchPlugin.match_connections_in_memory") as mock_match:
 
             mock_extract.return_value = []
-            mock_matcher.return_value.match.return_value = []
+            mock_match.return_value = []
 
             exit_code = plugin.execute(input_path=input_path, silent=True)
             assert exit_code == 0
@@ -305,10 +313,10 @@ class TestComparePlugin:
         ).build(test_dir / "a_file.pcap")
 
         with patch("capmaster.plugins.compare.plugin.extract_connections_from_pcap") as mock_extract, \
-             patch("capmaster.plugins.compare.plugin.ConnectionMatcher") as mock_matcher:
+             patch("capmaster.plugins.match.plugin.MatchPlugin.match_connections_in_memory") as mock_match:
 
             mock_extract.return_value = []
-            mock_matcher.return_value.match.return_value = []
+            mock_match.return_value = []
 
             plugin.execute(input_path=test_dir, silent=True)
 
@@ -321,12 +329,10 @@ class TestComparePlugin:
     ):
         """Test execute with match_mode=one-to-many parameter."""
         with patch("capmaster.plugins.compare.plugin.extract_connections_from_pcap") as mock_extract, \
-             patch("capmaster.plugins.compare.plugin.ConnectionMatcher") as mock_matcher:
+             patch("capmaster.plugins.match.plugin.MatchPlugin.match_connections_in_memory") as mock_match:
 
             mock_extract.return_value = []
-            mock_matcher_instance = MagicMock()
-            mock_matcher_instance.match.return_value = []
-            mock_matcher.return_value = mock_matcher_instance
+            mock_match.return_value = []
 
             exit_code = plugin.execute(
                 input_path=two_pcap_dir,
@@ -337,11 +343,12 @@ class TestComparePlugin:
             # Should succeed
             assert exit_code == 0
 
-            # Verify ConnectionMatcher was called with correct match_mode
+            # Verify match_connections_in_memory was called with correct match_mode
             from capmaster.core.connection.matcher import MatchMode
-            mock_matcher.assert_called_once()
-            call_kwargs = mock_matcher.call_args[1]
-            assert call_kwargs["match_mode"] == MatchMode.ONE_TO_MANY
+            mock_match.assert_called_once()
+            call_kwargs = mock_match.call_args[1]
+            # The match_mode is passed as string and converted inside the function
+            assert call_kwargs["match_mode"] == "one-to-many"
 
     def test_execute_with_invalid_match_mode(
         self, plugin: ComparePlugin, two_pcap_dir: Path
@@ -362,7 +369,7 @@ class TestComparePlugin:
     ):
         """Test that batch packet extraction is used for performance optimization."""
         with patch("capmaster.plugins.compare.plugin.extract_connections_from_pcap") as mock_extract, \
-             patch("capmaster.plugins.compare.plugin.ConnectionMatcher") as mock_matcher, \
+             patch("capmaster.plugins.match.plugin.MatchPlugin.match_connections_in_memory") as mock_match, \
              patch("capmaster.plugins.compare.plugin.PacketExtractor") as mock_extractor_class:
 
             # Create mock connections
@@ -378,8 +385,8 @@ class TestComparePlugin:
             from capmaster.core.connection.scorer import MatchScore
             mock_score = MagicMock(spec=MatchScore)
             mock_score.normalized_score = 0.95
-            mock_match = ConnectionMatch(conn1=mock_conn1, conn2=mock_conn2, score=mock_score)
-            mock_matcher.return_value.match.return_value = [mock_match]
+            mock_match_obj = ConnectionMatch(conn1=mock_conn1, conn2=mock_conn2, score=mock_score)
+            mock_match.return_value = [mock_match_obj]
 
             # Mock packet extractor
             mock_extractor = MagicMock()

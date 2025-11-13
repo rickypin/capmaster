@@ -305,7 +305,7 @@ def calculate_flow_hash(
         flow_side = FlowSide.RHS_GT_LHS
     else:
         # Ports equal, compare IPs
-        if ipaddress.IPv4Address(src_ip) >= ipaddress.IPv4Address(dst_ip):
+        if ipaddress.ip_address(src_ip) >= ipaddress.ip_address(dst_ip):
             p1, p2 = src_port, dst_port
             ip_1, ip_2 = src_ip, dst_ip
             flow_side = FlowSide.LHS_GE_RHS
@@ -318,11 +318,27 @@ def calculate_flow_hash(
     msg1 = p1.to_bytes(2, "big")
     msg2 = p2.to_bytes(2, "big")
     msg3 = (0).to_bytes(8, "little")
-    msg4 = (4).to_bytes(8, "little")
-    msg5 = ipaddress.IPv4Address(ip_1).packed
+
+    # Handle both IPv4 and IPv6
+    ip_1_obj = ipaddress.ip_address(ip_1)
+    ip_2_obj = ipaddress.ip_address(ip_2)
+
+    if isinstance(ip_1_obj, ipaddress.IPv4Address):
+        msg4 = (4).to_bytes(8, "little")
+        msg5 = ip_1_obj.packed
+    else:  # IPv6
+        msg4 = (16).to_bytes(8, "little")
+        msg5 = ip_1_obj.packed
+
     msg6 = (0).to_bytes(8, "little")
-    msg7 = (4).to_bytes(8, "little")
-    msg8 = ipaddress.IPv4Address(ip_2).packed
+
+    if isinstance(ip_2_obj, ipaddress.IPv4Address):
+        msg7 = (4).to_bytes(8, "little")
+        msg8 = ip_2_obj.packed
+    else:  # IPv6
+        msg7 = (16).to_bytes(8, "little")
+        msg8 = ip_2_obj.packed
+
     msg9 = (1).to_bytes(8, "little")
     msg10 = protocol.to_bytes(1, "big")
 

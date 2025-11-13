@@ -148,12 +148,13 @@ class TestPacketExtractor:
 
         # Check first packet
         # IP ID "64" (hex) = 100 (decimal)
+        from decimal import Decimal
         assert packets[0].frame_number == 1
         assert packets[0].ip_id == 100
         assert packets[0].tcp_flags == "0x002"
         assert packets[0].seq == 1000000
         assert packets[0].ack == 0
-        assert packets[0].timestamp == 1234567890.123456
+        assert packets[0].timestamp == Decimal('1234567890.123456')
 
         # Check second packet
         # IP ID "65" (hex) = 101 (decimal)
@@ -188,14 +189,17 @@ class TestPacketExtractor:
         self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
     ):
         """Test that extract_packets handles tshark errors."""
+        import subprocess
         extractor.tshark = mock_tshark
-        mock_tshark.execute.return_value = TsharkResult(
+        # TsharkWrapper.execute() raises CalledProcessError for non-zero exit codes (except 2)
+        mock_tshark.execute.side_effect = subprocess.CalledProcessError(
             returncode=1,
-            stdout="",
+            cmd=["tshark"],
+            output="",
             stderr="tshark: error message"
         )
 
-        with pytest.raises(RuntimeError) as exc_info:
+        with pytest.raises(subprocess.CalledProcessError) as exc_info:
             extractor.extract_packets(
                 sample_pcap,
                 src_ip="192.168.1.100",
@@ -204,7 +208,7 @@ class TestPacketExtractor:
                 dst_port=80
             )
 
-        assert "tshark extraction failed" in str(exc_info.value)
+        assert exc_info.value.returncode == 1
 
     def test_extract_by_stream_id_builds_correct_filter(
         self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
@@ -405,16 +409,21 @@ class TestPacketExtractor:
         self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
     ):
         """Test extract_multiple_streams handles tshark errors."""
+        import subprocess
         extractor.tshark = mock_tshark
 
-        mock_tshark.execute.return_value = TsharkResult(
+        # TsharkWrapper.execute() raises CalledProcessError for non-zero exit codes (except 2)
+        mock_tshark.execute.side_effect = subprocess.CalledProcessError(
             returncode=1,
-            stdout="",
+            cmd=["tshark"],
+            output="",
             stderr="tshark: error message"
         )
 
-        with pytest.raises(RuntimeError, match="tshark extraction failed"):
+        with pytest.raises(subprocess.CalledProcessError) as exc_info:
             extractor.extract_multiple_streams(sample_pcap, [0, 1])
+
+        assert exc_info.value.returncode == 1
 
     def test_extract_multiple_streams_skips_unknown_streams(
         self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock

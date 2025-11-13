@@ -23,12 +23,12 @@ from capmaster.utils.errors import (
 logger = logging.getLogger(__name__)
 
 
-def to_nanoseconds(timestamp_seconds: Decimal) -> int:
+def to_nanoseconds(timestamp_seconds: float | Decimal) -> int:
     """
     Convert timestamp from seconds to nanoseconds with full precision.
 
     Args:
-        timestamp_seconds: Unix timestamp in seconds (Decimal for full precision)
+        timestamp_seconds: Unix timestamp in seconds (float or Decimal for full precision)
 
     Returns:
         Timestamp in nanoseconds (int), preserving full nanosecond precision
@@ -36,7 +36,14 @@ def to_nanoseconds(timestamp_seconds: Decimal) -> int:
     Example:
         Input:  Decimal('1757441703.689601150') seconds
         Output: 1757441703689601150 nanoseconds (full precision preserved)
+
+        Input:  1757441703.689601024 (float)
+        Output: 1757441703689601024 nanoseconds (converted via Decimal)
     """
+    # Convert float to Decimal to preserve precision
+    if isinstance(timestamp_seconds, float):
+        timestamp_seconds = Decimal(str(timestamp_seconds))
+
     # Convert to nanoseconds using Decimal to preserve full precision
     # Decimal arithmetic ensures no precision loss during multiplication
     timestamp_nanoseconds = int(timestamp_seconds * Decimal('1000000000'))

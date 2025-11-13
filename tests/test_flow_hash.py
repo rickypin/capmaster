@@ -64,9 +64,13 @@ class TestFlowHash:
         assert hash1 != hash2, "Different connections should have different hashes"
 
     def test_port_comparison(self):
-        """Test flow side determination based on ports."""
-        # Server port (80) < Client port (54321)
-        # So RHS (server) > LHS (client) in normalized order
+        """Test flow side determination based on ports.
+
+        Note: Ports are compared as little-endian integers to match Rust implementation.
+        54321 (0xD431) in little-endian = 0x31D4 = 12756
+        80 (0x0050) in little-endian = 0x5000 = 20480
+        Since 12756 < 20480, dst_port is considered larger, so RHS_GT_LHS.
+        """
         hash1, side1 = calculate_flow_hash(
             src_ip="192.168.1.100",
             dst_ip="10.0.0.1",
@@ -75,8 +79,8 @@ class TestFlowHash:
             protocol=6,
         )
 
-        # When src_port > dst_port, flow_side should be LHS_GE_RHS
-        assert side1 == FlowSide.LHS_GE_RHS
+        # When src_port (little-endian) < dst_port (little-endian), flow_side should be RHS_GT_LHS
+        assert side1 == FlowSide.RHS_GT_LHS
 
     def test_same_ports_ip_comparison(self):
         """Test flow side determination based on IPs when ports are equal."""

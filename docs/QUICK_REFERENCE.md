@@ -412,12 +412,78 @@ capmaster --version
 
 ---
 
+## Match & Compare Consistency
+
+Ensure consistent results between match and compare commands:
+
+```bash
+# Step 1: Match and save JSON
+capmaster match -i /path/to/pcaps/ --match-json matches.json
+
+# Step 2: Compare using saved matches
+capmaster compare -i /path/to/pcaps/ --match-file matches.json
+
+# Benefits:
+# - Guaranteed consistency between match and compare
+# - Reusable match results
+# - Faster compare (skips matching step)
+```
+
+---
+
+## Sampling Control (Large Datasets)
+
+Control sampling for large datasets:
+
+```bash
+# Default: No sampling (all connections processed)
+capmaster match -i captures/
+
+# Enable sampling with custom threshold
+capmaster match -i captures/ --sample-threshold 5000 --sample-rate 0.5
+
+# Aggressive sampling for very large datasets
+capmaster match -i huge_dataset/ --sample-threshold 10000 --sample-rate 0.2
+
+# Sampling decision tree:
+# < 1,000 connections    → No sampling needed
+# 1,000 - 5,000          → Optional: --sample-rate 0.5
+# 5,000 - 10,000         → Recommended: --sample-rate 0.3-0.7
+# > 10,000               → Recommended: --sample-rate 0.2-0.5
+```
+
+**Note**: Header-only connections and special ports (HTTP, HTTPS, SSH, DNS, etc.) are always preserved.
+
+---
+
+## F5 Load Balancer Support
+
+For PCAP files with F5 Ethernet Trailer:
+
+```bash
+# Automatic F5 detection (recommended)
+capmaster match \
+  --file1 SNAT.pcap --file1-pcapid 0 \
+  --file2 VIP.pcap --file2-pcapid 1
+
+# Explicit F5 mode
+capmaster match \
+  --file1 SNAT.pcap --file1-pcapid 0 \
+  --file2 VIP.pcap --file2-pcapid 1 \
+  --f5-mode
+
+# F5 matching provides 100% accuracy (confidence = 1.00)
+```
+
+---
+
 ## Resources
 
 - **README**: Installation and quick start
-- **USER_GUIDE**: Detailed usage guide
+- **USER_GUIDE**: Detailed usage guide with advanced features
 - **CHANGELOG**: Version history
 - **PERFORMANCE_REPORT**: Benchmark results
+- **MATCH_LOGIC_COMPLETE**: Detailed matching algorithm documentation
 
 ---
 
@@ -446,8 +512,28 @@ capmaster filter -i noisy.pcap -o clean.pcap
 capmaster analyze -i clean.pcap
 ```
 
+### Example 4: Consistent Match & Compare Workflow
+
+```bash
+# Generate matches
+capmaster match -i captures/ --match-json m.json -o matches.txt
+
+# Compare using same matches
+capmaster compare -i captures/ --match-file m.json -o comparison.txt
+```
+
+### Example 5: Large Dataset with Sampling
+
+```bash
+capmaster match -i large_capture/ \
+  --sample-threshold 5000 \
+  --sample-rate 0.5 \
+  --threshold 0.60 \
+  -o matches.txt
+```
+
 ---
 
-**Quick Reference Card v1.0.0**  
+**Quick Reference Card v1.0.0**
 *For detailed information, see USER_GUIDE.md*
 

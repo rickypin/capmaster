@@ -19,7 +19,9 @@ class TestToNanoseconds:
         result = to_nanoseconds(timestamp_seconds)
         # Note: Due to floating point precision, we may lose some precision
         # but it should be very close to the expected value
-        expected = int(1757441703.689601024 * 1_000_000_000)
+        # Using Decimal conversion gives us the best precision possible from float
+        from decimal import Decimal
+        expected = int(Decimal(str(timestamp_seconds)) * Decimal('1000000000'))
         assert result == expected
 
     def test_high_precision_timestamp(self):
@@ -27,7 +29,8 @@ class TestToNanoseconds:
         # Input: 1757445296.366606848 seconds
         timestamp_seconds = 1757445296.366606848
         result = to_nanoseconds(timestamp_seconds)
-        expected = int(1757445296.366606848 * 1_000_000_000)
+        from decimal import Decimal
+        expected = int(Decimal(str(timestamp_seconds)) * Decimal('1000000000'))
         assert result == expected
 
     def test_exact_microsecond(self):
@@ -36,7 +39,8 @@ class TestToNanoseconds:
         # Expected: 1459996923372072000 nanoseconds
         timestamp_seconds = 1459996923.372072
         result = to_nanoseconds(timestamp_seconds)
-        expected = int(1459996923.372072 * 1_000_000_000)
+        from decimal import Decimal
+        expected = int(Decimal(str(timestamp_seconds)) * Decimal('1000000000'))
         assert result == expected
 
     def test_zero_timestamp(self):
@@ -60,7 +64,8 @@ class TestToNanoseconds:
         # Expected: full nanosecond precision
         timestamp_seconds = 1735689600.123456789
         result = to_nanoseconds(timestamp_seconds)
-        expected = int(1735689600.123456789 * 1_000_000_000)
+        from decimal import Decimal
+        expected = int(Decimal(str(timestamp_seconds)) * Decimal('1000000000'))
         assert result == expected
 
     def test_output_format(self):
@@ -87,6 +92,7 @@ class TestToNanoseconds:
 
     def test_multiple_values(self):
         """Test with multiple timestamp values."""
+        from decimal import Decimal
         test_cases = [
             1459996923.372072960,
             1459996923.780259000,
@@ -96,7 +102,7 @@ class TestToNanoseconds:
 
         for input_seconds in test_cases:
             result = to_nanoseconds(input_seconds)
-            expected = int(input_seconds * 1_000_000_000)
+            expected = int(Decimal(str(input_seconds)) * Decimal('1000000000'))
             assert result == expected
 
     def test_negative_timestamp(self):

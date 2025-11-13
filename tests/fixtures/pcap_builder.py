@@ -30,9 +30,10 @@ class PcapBuilder:
         timestamp_sec: int = 1234567890,
         timestamp_usec: int = 0,
         payload: bytes = b"",
+        ip_id: int = 0x0001,  # IP Identification field
     ) -> PcapBuilder:
         """Add a TCP packet to the PCAP file.
-        
+
         Args:
             src_ip: Source IP address (e.g., "192.168.1.1")
             dst_ip: Destination IP address
@@ -44,12 +45,13 @@ class PcapBuilder:
             timestamp_sec: Timestamp seconds
             timestamp_usec: Timestamp microseconds
             payload: TCP payload data
-            
+            ip_id: IP Identification field (for testing IPID-based matching)
+
         Returns:
             Self for chaining
         """
         packet_data = self._create_tcp_packet(
-            src_ip, dst_ip, src_port, dst_port, flags, seq, ack, payload
+            src_ip, dst_ip, src_port, dst_port, flags, seq, ack, payload, ip_id
         )
         self.packets.append((timestamp_sec, timestamp_usec, packet_data))
         return self
@@ -162,16 +164,15 @@ class PcapBuilder:
         )
     
     @staticmethod
-    def _create_ip_header(src_ip: str, dst_ip: str, protocol: int, total_length: int) -> bytes:
+    def _create_ip_header(src_ip: str, dst_ip: str, protocol: int, total_length: int, ip_id: int = 0x0001) -> bytes:
         """Create IP header."""
         src_ip_bytes = bytes([int(x) for x in src_ip.split('.')])
         dst_ip_bytes = bytes([int(x) for x in dst_ip.split('.')])
-        
+
         return bytes.fromhex(
             "45"    # Version (4) + IHL (5)
             "00"    # DSCP + ECN
-        ) + struct.pack('>H', total_length) + bytes.fromhex(
-            "0001"  # Identification
+        ) + struct.pack('>H', total_length) + struct.pack('>H', ip_id) + bytes.fromhex(
             "0000"  # Flags + Fragment offset
             "40"    # TTL (64)
         ) + bytes([protocol]) + bytes.fromhex(
@@ -188,6 +189,7 @@ class PcapBuilder:
         seq: int,
         ack: int,
         payload: bytes,
+        ip_id: int = 0x0001,
     ) -> bytes:
         """Create a complete TCP packet."""
         # TCP header (20 bytes minimum)
@@ -203,14 +205,14 @@ class PcapBuilder:
             0,              # Checksum (placeholder)
             0               # Urgent pointer
         )
-        
+
         # IP header
         ip_total_length = 20 + len(tcp_header) + len(payload)
-        ip_header = self._create_ip_header(src_ip, dst_ip, 6, ip_total_length)
-        
+        ip_header = self._create_ip_header(src_ip, dst_ip, 6, ip_total_length, ip_id)
+
         # Ethernet header
         eth_header = self._create_ethernet_header()
-        
+
         return eth_header + ip_header + tcp_header + payload
     
     def _create_udp_packet(

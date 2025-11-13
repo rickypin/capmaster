@@ -2,28 +2,41 @@
 
 本目录包含项目开发过程中的历史文档，这些文档记录了项目的重构、修复和开发过程。
 
+**归档日期**: 2025-11-13
+**归档原因**: 文档清理和重组，保留历史记录供参考
+
 ## 📁 文档分类
+
+### 开发任务文档
+- **TASK_CHECKLIST.md** - 完整任务清单（76个任务，100%完成）
+- **PROJECT_SPEC.md** - 原始项目技术规范
+- **README_AI_AGENT.md** - AI Agent 开发指南
+
+### 代码重构文档
+- **REFACTORING_SUMMARY.md** - 代码重构总结 (2025-11-07)
+- **EXCEPTION_AND_DUPLICATION_FIX_SUMMARY.md** - 异常处理和代码重复修复
+- **FIX_COMPLETION_REPORT.md** - 问题修复完成报告
+- **DEPENDENCY_FIX_SUMMARY.md** - 依赖管理问题修复
 
 ### 测试结果文档
 - **BASELINE_TEST_RESULTS.md** - 修复前的基准测试结果 (2025-11-07)
 - **POST_FIX_TEST_RESULTS.md** - 修复后的测试结果 (2025-11-07)
 
-### 修复总结文档
-- **EXCEPTION_AND_DUPLICATION_FIX_SUMMARY.md** - 异常处理和代码重复问题修复总结
-- **FIX_COMPLETION_REPORT.md** - 问题修复完成报告
-- **REFACTORING_SUMMARY.md** - 代码重构总结
-- **DEPENDENCY_FIX_SUMMARY.md** - 依赖管理问题修复总结
+### 功能变更日志
+- **changelogs/** - 各功能特性的详细变更日志
+  - CHANGELOG_ABSOLUTE_ISN.md
+  - CHANGELOG_COMPARE_META_JSON.md
+  - CHANGELOG_MARKDOWN_FORMAT.md
+  - CHANGELOG_MATCH_COMPARE.md
+  - CHANGELOG_META_JSON.md
+  - CHANGELOG_TIMESTAMP_IMPROVEMENT.md
+  - 以及相关的快速参考和总结文档
 
-### AI Agent 开发文档
-- **README_AI_AGENT.md** - AI Agent 专用文档
-- **TASK_CHECKLIST.md** - 任务清单（76个任务，100%完成）
-- **PROJECT_SPEC.md** - 项目技术规范
+## 📊 项目历史状态
 
-## 📊 项目状态
-
-**项目完成日期**: 2024-11-02  
-**完成率**: 100% (76/76 任务)  
-**测试覆盖率**: 87%  
+**项目完成日期**: 2024-11-02
+**完成率**: 100% (76/76 任务)
+**测试覆盖率**: 87%
 **性能提升**: 平均 +13%
 
 ## 🎯 归档原因

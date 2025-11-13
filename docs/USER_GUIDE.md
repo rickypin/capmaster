@@ -814,6 +814,69 @@ INFO     Successfully deleted 3/3 directories (36.00 B freed)
 
 ## Advanced Usage
 
+### Selective Module Analysis
+
+Run only specific analysis modules for faster execution:
+
+```bash
+# Analyze only protocol distribution
+capmaster analyze -i capture.pcap -m protocol_hierarchy
+
+# Analyze multiple specific modules
+capmaster analyze -i capture.pcap -m protocol_hierarchy -m dns_stats -m http_stats
+
+# Available modules: protocol_hierarchy, ipv4_conversations, tcp_conversations,
+# dns_stats, http_stats, tls_alert, sip_stats, rtp_stats, voip_quality, etc.
+# See full list with: capmaster analyze --help
+```
+
+### F5 Load Balancer Matching
+
+For PCAP files captured from F5 load balancers with F5 Ethernet Trailer:
+
+```bash
+# Automatic F5 detection (recommended)
+capmaster match \
+  --file1 SNAT.pcap --file1-pcapid 0 \
+  --file2 VIP.pcap --file2-pcapid 1
+
+# Explicit F5 mode
+capmaster match \
+  --file1 SNAT.pcap --file1-pcapid 0 \
+  --file2 VIP.pcap --file2-pcapid 1 \
+  --f5-mode
+
+# F5 matching provides 100% accuracy when F5 trailers are present
+# Match confidence will be 1.00 for all F5-based matches
+```
+
+### Flow Hash Analysis
+
+Display bidirectional flow identifiers for connection correlation:
+
+```bash
+# Show flow hash in compare output
+capmaster compare -i /path/to/pcaps/ --show-flow-hash
+
+# Flow hash is consistent across both directions of a connection
+# Useful for identifying the same flow across different PCAP files
+```
+
+### Sampling Control for Large Datasets
+
+Control sampling behavior when processing large numbers of connections:
+
+```bash
+# Set custom sampling threshold (default: 5000 connections)
+capmaster match -i /path/to/pcaps/ --sample-threshold 10000
+
+# Set custom sampling rate (default: 0.5 = 50%)
+capmaster match -i /path/to/pcaps/ --sample-rate 0.3
+
+# Combine both parameters
+capmaster match -i /path/to/pcaps/ --sample-threshold 8000 --sample-rate 0.4
+```
+
 ### Batch Processing
 
 Process multiple PCAP files efficiently:
