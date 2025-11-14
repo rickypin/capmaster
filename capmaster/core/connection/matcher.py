@@ -60,6 +60,97 @@ class ConnectionMatch:
         )
 
 
+
+
+def choose_bucket_strategy_auto(
+    connections1: Sequence[TcpConnection],
+    connections2: Sequence[TcpConnection],
+) -> BucketStrategy:
+    """Auto-select bucketing strategy based on connection characteristics.
+
+    This implements the NAT-aware heuristic shared by ConnectionMatcher and
+    BehavioralMatcher. Callers should handle non-AUTO strategies before
+    delegating here.
+    """
+    # Auto-select based on connection characteristics
+    # NAT-aware heuristic to support both SNAT and DNAT automatically.
+    # Heuristics:
+    # - If client IPs have no overlap but server IPs overlap -> likely SNAT → use PORT
+    # - If server IPs have no overlap but client IPs overlap -> likely DNAT → use PORT
+    # - If neither clients nor servers overlap but there are common ports -> ambiguous NAT/LB → use PORT
+    # - If servers are identical on both sides -> use SERVER (high precision)
+    # - Else if some common servers exist -> prefer SERVER; otherwise PORT
+
+    # Count unique clients, servers and ports
+    clients1 = {c.client_ip for c in connections1}
+    clients2 = {c.client_ip for c in connections2}
+    servers1 = {c.server_ip for c in connections1}
+    servers2 = {c.server_ip for c in connections2}
+    ports1 = {c.server_port for c in connections1}
+    ports2 = {c.server_port for c in connections2}
+
+    # Intersections
+    common_clients = clients1 & clients2
+    common_servers = servers1 & servers2
+    common_ports = ports1 & ports2
+
+    # NAT likelihood checks
+    snat_likely = (not common_clients) and bool(common_servers)
+    dnat_likely = (not common_servers) and bool(common_clients)
+    nat_ambiguous = (not common_clients) and (not common_servers) and bool(common_ports)
+
+    if snat_likely or dnat_likely or nat_ambiguous:
+        # PORT bucketing is robust to IP translation (only requires a common port)
+        return BucketStrategy.PORT
+
+    # If servers are identical, use SERVER bucketing (highest precision)
+    if common_servers and len(common_servers) == len(servers1) == len(servers2):
+        return BucketStrategy.SERVER
+
+    # If servers differ but have common ports, use PORT bucketing (NAT/LB friendly)
+    if not common_servers and common_ports:
+        return BucketStrategy.PORT
+
+    # If have some common servers, prefer SERVER bucketing
+    if common_servers:
+        return BucketStrategy.SERVER
+
+    # Default to PORT bucketing (more flexible for NAT scenarios)
+    return BucketStrategy.PORT
+
+
+def create_buckets(
+    connections: Sequence[TcpConnection],
+    strategy: BucketStrategy,
+) -> dict[str, list[TcpConnection]]:
+    """Create buckets of connections based on strategy.
+
+    Shared helper for ConnectionMatcher and BehavioralMatcher.
+    """
+    buckets: dict[str, list[TcpConnection]] = defaultdict(list)
+
+    for conn in connections:
+        if strategy == BucketStrategy.SERVER:
+            # Use both IPs from normalized 5-tuple to handle direction independence
+            ip1, port1, ip2, port2 = conn.get_normalized_5tuple()
+            key = f"{ip1}:{ip2}"
+            buckets[key].append(conn)
+        elif strategy == BucketStrategy.PORT:
+            # OPTIMIZATION: Place connection only in server_port bucket
+            # This reduces memory usage by 30-40% compared to placing in both ports
+            # After ServerDetector improvement, server_port should be reliable
+            # Connections with the same server_port will be in the same bucket
+            # Example:
+            #   Connection A: 47525 <-> 10007  buckets["10007"]
+            #   Connection B: 1425 <-> 10007   buckets["10007"]
+            #   They will both be in buckets["10007"] and can be matched
+            buckets[str(conn.server_port)].append(conn)
+        else:  # NONE or AUTO (fallback)
+            key = "all"
+            buckets[key].append(conn)
+
+    return buckets
+
 class ConnectionMatcher:
     """
     Match connections between two PCAP files.
@@ -157,96 +248,19 @@ class ConnectionMatcher:
         if self.bucket_strategy != BucketStrategy.AUTO:
             return self.bucket_strategy
 
-        # Auto-select based on connection characteristics
-        # NAT-aware heuristic to support both SNAT and DNAT automatically.
-        # Heuristics:
-        # - If client IPs have no overlap but server IPs overlap -> likely SNAT → use PORT
-        # - If server IPs have no overlap but client IPs overlap -> likely DNAT → use PORT
-        # - If neither clients nor servers overlap but there are common ports -> ambiguous NAT/LB → use PORT
-        # - If servers are identical on both sides -> use SERVER (high precision)
-        # - Else if some common servers exist -> prefer SERVER; otherwise PORT
+        return choose_bucket_strategy_auto(connections1, connections2)
 
-        # Count unique clients, servers and ports
-        clients1 = {c.client_ip for c in connections1}
-        clients2 = {c.client_ip for c in connections2}
-        servers1 = {c.server_ip for c in connections1}
-        servers2 = {c.server_ip for c in connections2}
-        ports1 = {c.server_port for c in connections1}
-        ports2 = {c.server_port for c in connections2}
-
-        # Intersections
-        common_clients = clients1 & clients2
-        common_servers = servers1 & servers2
-        common_ports = ports1 & ports2
-
-        # NAT likelihood checks
-        snat_likely = (not common_clients) and bool(common_servers)
-        dnat_likely = (not common_servers) and bool(common_clients)
-        nat_ambiguous = (not common_clients) and (not common_servers) and bool(common_ports)
-
-        if snat_likely or dnat_likely or nat_ambiguous:
-            # PORT bucketing is robust to IP translation (only requires a common port)
-            return BucketStrategy.PORT
-
-        # If servers are identical, use SERVER bucketing (highest precision)
-        if common_servers and len(common_servers) == len(servers1) == len(servers2):
-            return BucketStrategy.SERVER
-
-        # If servers differ but have common ports, use PORT bucketing (NAT/LB friendly)
-        if not common_servers and common_ports:
-            return BucketStrategy.PORT
-
-        # If have some common servers, prefer SERVER bucketing
-        if common_servers:
-            return BucketStrategy.SERVER
-
-        # Default to PORT bucketing (more flexible for NAT scenarios)
-        return BucketStrategy.PORT
 
     def _create_buckets(
         self,
         connections: Sequence[TcpConnection],
         strategy: BucketStrategy,
     ) -> dict[str, list[TcpConnection]]:
+        """Create buckets of connections based on strategy.
+
+        Uses shared helper to keep bucketing behavior consistent across matchers.
         """
-        Create buckets of connections based on strategy.
-
-        Uses normalized 5-tuple for direction-independent bucketing.
-
-        For PORT strategy, each connection is placed in multiple buckets (one for each port).
-        This allows connections with different client ports but same server port to be matched
-        (e.g., for F5 SNAT scenarios where client port changes but server port remains the same).
-
-        Args:
-            connections: List of connections
-            strategy: Bucketing strategy
-
-        Returns:
-            Dictionary mapping bucket keys to connection lists
-        """
-        buckets: dict[str, list[TcpConnection]] = defaultdict(list)
-
-        for conn in connections:
-            if strategy == BucketStrategy.SERVER:
-                # Use both IPs from normalized 5-tuple to handle direction independence
-                ip1, port1, ip2, port2 = conn.get_normalized_5tuple()
-                key = f"{ip1}:{ip2}"
-                buckets[key].append(conn)
-            elif strategy == BucketStrategy.PORT:
-                # OPTIMIZATION: Place connection only in server_port bucket
-                # This reduces memory usage by 30-40% compared to placing in both ports
-                # After ServerDetector improvement, server_port should be reliable
-                # Connections with the same server_port will be in the same bucket
-                # Example:
-                #   Connection A: 47525 <-> 10007 → buckets["10007"]
-                #   Connection B: 1425 <-> 10007  → buckets["10007"]
-                #   They will both be in buckets["10007"] and can be matched
-                buckets[str(conn.server_port)].append(conn)
-            else:  # NONE or AUTO (fallback)
-                key = "all"
-                buckets[key].append(conn)
-
-        return buckets
+        return create_buckets(connections, strategy)
 
     def _match_bucket(
         self,

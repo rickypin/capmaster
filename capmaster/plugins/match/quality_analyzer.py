@@ -39,7 +39,7 @@ class QualityMetrics:
     """Lost segments detected on client side (may include capture misses)"""
 
     client_ack_lost_segments: int = 0
-    """ACKed segments that weren't captured on client side (indicates capture miss, not real packet loss)"""
+    """ACK packets in C->S direction that acknowledged S->C segments not captured (indicates S->C capture miss)"""
 
     # Server-to-Client metrics
     server_total_packets: int = 0
@@ -55,7 +55,7 @@ class QualityMetrics:
     """Lost segments detected on server side (may include capture misses)"""
 
     server_ack_lost_segments: int = 0
-    """ACKed segments that weren't captured on server side (indicates capture miss, not real packet loss)"""
+    """ACK packets in S->C direction that acknowledged C->S segments not captured (indicates C->S capture miss)"""
 
     @property
     def client_retransmission_rate(self) -> float:
@@ -80,18 +80,23 @@ class QualityMetrics:
 
     @property
     def client_ack_lost_rate(self) -> float:
-        """Calculate client-to-server ACKed lost segment rate (capture miss indicator)."""
+        """Calculate rate of C->S ACKs that acknowledged uncaptured S->C segments."""
         if self.client_total_packets == 0:
             return 0.0
         return (self.client_ack_lost_segments / self.client_total_packets) * 100
 
     @property
     def client_real_loss_rate(self) -> float:
-        """Calculate client-to-server real packet loss rate (excluding capture misses)."""
+        """
+        Calculate client-to-server real packet loss rate (excluding capture misses).
+
+        Real C->S loss = C->S lost segments - S->C ACK lost segments
+        (S->C ACK lost means server ACKed C->S segments that weren't captured)
+        """
         if self.client_total_packets == 0:
             return 0.0
-        # Real loss = lost_segments - ack_lost_segments
-        real_loss = max(0, self.client_lost_segments - self.client_ack_lost_segments)
+        # Real loss = C->S lost - S->C ack_lost (cross-direction)
+        real_loss = max(0, self.client_lost_segments - self.server_ack_lost_segments)
         return (real_loss / self.client_total_packets) * 100
 
     @property
@@ -117,18 +122,23 @@ class QualityMetrics:
 
     @property
     def server_ack_lost_rate(self) -> float:
-        """Calculate server-to-client ACKed lost segment rate (capture miss indicator)."""
+        """Calculate rate of S->C ACKs that acknowledged uncaptured C->S segments."""
         if self.server_total_packets == 0:
             return 0.0
         return (self.server_ack_lost_segments / self.server_total_packets) * 100
 
     @property
     def server_real_loss_rate(self) -> float:
-        """Calculate server-to-client real packet loss rate (excluding capture misses)."""
+        """
+        Calculate server-to-client real packet loss rate (excluding capture misses).
+
+        Real S->C loss = S->C lost segments - C->S ACK lost segments
+        (C->S ACK lost means client ACKed S->C segments that weren't captured)
+        """
         if self.server_total_packets == 0:
             return 0.0
-        # Real loss = lost_segments - ack_lost_segments
-        real_loss = max(0, self.server_lost_segments - self.server_ack_lost_segments)
+        # Real loss = S->C lost - C->S ack_lost (cross-direction)
+        real_loss = max(0, self.server_lost_segments - self.client_ack_lost_segments)
         return (real_loss / self.server_total_packets) * 100
 
 
@@ -717,6 +727,8 @@ def format_quality_report(
         # File A metrics
         if has_metrics1_data:
             # Client -> Server
+            # Real loss = C->S lost - S->C ack_lost (cross-direction)
+            client_real_loss = max(0, metrics1.client_lost_segments - metrics1.server_ack_lost_segments)
             row = (
                 f"{service_str:<22} "
                 f"{'A':<6} "
@@ -726,11 +738,13 @@ def format_quality_report(
                 f"{metrics1.client_duplicate_acks:>6,} ({metrics1.client_duplicate_ack_rate:>4.1f}%) "
                 f"{metrics1.client_lost_segments:>6,} ({metrics1.client_loss_rate:>4.1f}%) "
                 f"{metrics1.client_ack_lost_segments:>6,} ({metrics1.client_ack_lost_rate:>4.1f}%) "
-                f"{metrics1.client_lost_segments - metrics1.client_ack_lost_segments:>6,} ({metrics1.client_real_loss_rate:>4.1f}%)"
+                f"{client_real_loss:>6,} ({metrics1.client_real_loss_rate:>4.1f}%)"
             )
             lines.append(row)
 
             # Server -> Client
+            # Real loss = S->C lost - C->S ack_lost (cross-direction)
+            server_real_loss = max(0, metrics1.server_lost_segments - metrics1.client_ack_lost_segments)
             row = (
                 f"{'':<22} "
                 f"{'':<6} "
@@ -740,13 +754,15 @@ def format_quality_report(
                 f"{metrics1.server_duplicate_acks:>6,} ({metrics1.server_duplicate_ack_rate:>4.1f}%) "
                 f"{metrics1.server_lost_segments:>6,} ({metrics1.server_loss_rate:>4.1f}%) "
                 f"{metrics1.server_ack_lost_segments:>6,} ({metrics1.server_ack_lost_rate:>4.1f}%) "
-                f"{metrics1.server_lost_segments - metrics1.server_ack_lost_segments:>6,} ({metrics1.server_real_loss_rate:>4.1f}%)"
+                f"{server_real_loss:>6,} ({metrics1.server_real_loss_rate:>4.1f}%)"
             )
             lines.append(row)
 
         # File B metrics
         if has_metrics2_data:
             # Client -> Server
+            # Real loss = C->S lost - S->C ack_lost (cross-direction)
+            client_real_loss = max(0, metrics2.client_lost_segments - metrics2.server_ack_lost_segments)
             row = (
                 f"{service_str if not has_metrics1_data else '':<22} "
                 f"{'B':<6} "
@@ -756,11 +772,13 @@ def format_quality_report(
                 f"{metrics2.client_duplicate_acks:>6,} ({metrics2.client_duplicate_ack_rate:>4.1f}%) "
                 f"{metrics2.client_lost_segments:>6,} ({metrics2.client_loss_rate:>4.1f}%) "
                 f"{metrics2.client_ack_lost_segments:>6,} ({metrics2.client_ack_lost_rate:>4.1f}%) "
-                f"{metrics2.client_lost_segments - metrics2.client_ack_lost_segments:>6,} ({metrics2.client_real_loss_rate:>4.1f}%)"
+                f"{client_real_loss:>6,} ({metrics2.client_real_loss_rate:>4.1f}%)"
             )
             lines.append(row)
 
             # Server -> Client
+            # Real loss = S->C lost - C->S ack_lost (cross-direction)
+            server_real_loss = max(0, metrics2.server_lost_segments - metrics2.client_ack_lost_segments)
             row = (
                 f"{'':<22} "
                 f"{'':<6} "
@@ -770,7 +788,7 @@ def format_quality_report(
                 f"{metrics2.server_duplicate_acks:>6,} ({metrics2.server_duplicate_ack_rate:>4.1f}%) "
                 f"{metrics2.server_lost_segments:>6,} ({metrics2.server_loss_rate:>4.1f}%) "
                 f"{metrics2.server_ack_lost_segments:>6,} ({metrics2.server_ack_lost_rate:>4.1f}%) "
-                f"{metrics2.server_lost_segments - metrics2.server_ack_lost_segments:>6,} ({metrics2.server_real_loss_rate:>4.1f}%)"
+                f"{server_real_loss:>6,} ({metrics2.server_real_loss_rate:>4.1f}%)"
             )
             lines.append(row)
 
@@ -927,6 +945,8 @@ def format_connection_pair_report(
         # File A metrics
         if has_metrics_a_data:
             # Client -> Server
+            # Real loss = C->S lost - S->C ack_lost (cross-direction)
+            client_real_loss = max(0, metrics_a.client_lost_segments - metrics_a.server_ack_lost_segments)
             row = (
                 f"{pair.pair_id:<7} "
                 f"{pair.stream_a:<8} "
@@ -938,13 +958,15 @@ def format_connection_pair_report(
                 f"{metrics_a.client_duplicate_acks:>5,}({metrics_a.client_duplicate_ack_rate:>4.1f}%) "
                 f"{metrics_a.client_lost_segments:>5,}({metrics_a.client_loss_rate:>4.1f}%) "
                 f"{metrics_a.client_ack_lost_segments:>5,}({metrics_a.client_ack_lost_rate:>4.1f}%) "
-                f"{max(0, metrics_a.client_lost_segments - metrics_a.client_ack_lost_segments):>5,}({metrics_a.client_real_loss_rate:>4.1f}%) "
+                f"{client_real_loss:>5,}({metrics_a.client_real_loss_rate:>4.1f}%) "
                 f"{score_a:<8.1f} "
                 f"{pair.confidence:<6.2f}"
             )
             lines.append(row)
 
             # Server -> Client
+            # Real loss = S->C lost - C->S ack_lost (cross-direction)
+            server_real_loss = max(0, metrics_a.server_lost_segments - metrics_a.client_ack_lost_segments)
             row = (
                 f"{'':<7} "
                 f"{'':<8} "
@@ -956,7 +978,7 @@ def format_connection_pair_report(
                 f"{metrics_a.server_duplicate_acks:>5,}({metrics_a.server_duplicate_ack_rate:>4.1f}%) "
                 f"{metrics_a.server_lost_segments:>5,}({metrics_a.server_loss_rate:>4.1f}%) "
                 f"{metrics_a.server_ack_lost_segments:>5,}({metrics_a.server_ack_lost_rate:>4.1f}%) "
-                f"{max(0, metrics_a.server_lost_segments - metrics_a.server_ack_lost_segments):>5,}({metrics_a.server_real_loss_rate:>4.1f}%) "
+                f"{server_real_loss:>5,}({metrics_a.server_real_loss_rate:>4.1f}%) "
                 f"{'':<8} "
                 f"{'':<6}"
             )
@@ -965,6 +987,8 @@ def format_connection_pair_report(
         # File B metrics
         if has_metrics_b_data:
             # Client -> Server
+            # Real loss = C->S lost - S->C ack_lost (cross-direction)
+            client_real_loss = max(0, metrics_b.client_lost_segments - metrics_b.server_ack_lost_segments)
             row = (
                 f"{pair.pair_id if not has_metrics_a_data else '':<7} "
                 f"{pair.stream_b:<8} "
@@ -976,13 +1000,15 @@ def format_connection_pair_report(
                 f"{metrics_b.client_duplicate_acks:>5,}({metrics_b.client_duplicate_ack_rate:>4.1f}%) "
                 f"{metrics_b.client_lost_segments:>5,}({metrics_b.client_loss_rate:>4.1f}%) "
                 f"{metrics_b.client_ack_lost_segments:>5,}({metrics_b.client_ack_lost_rate:>4.1f}%) "
-                f"{max(0, metrics_b.client_lost_segments - metrics_b.client_ack_lost_segments):>5,}({metrics_b.client_real_loss_rate:>4.1f}%) "
+                f"{client_real_loss:>5,}({metrics_b.client_real_loss_rate:>4.1f}%) "
                 f"{score_b:<8.1f} "
                 f"{pair.confidence if not has_metrics_a_data else '':<6}"
             )
             lines.append(row)
 
             # Server -> Client
+            # Real loss = S->C lost - C->S ack_lost (cross-direction)
+            server_real_loss = max(0, metrics_b.server_lost_segments - metrics_b.client_ack_lost_segments)
             row = (
                 f"{'':<7} "
                 f"{'':<8} "
@@ -994,7 +1020,7 @@ def format_connection_pair_report(
                 f"{metrics_b.server_duplicate_acks:>5,}({metrics_b.server_duplicate_ack_rate:>4.1f}%) "
                 f"{metrics_b.server_lost_segments:>5,}({metrics_b.server_loss_rate:>4.1f}%) "
                 f"{metrics_b.server_ack_lost_segments:>5,}({metrics_b.server_ack_lost_rate:>4.1f}%) "
-                f"{max(0, metrics_b.server_lost_segments - metrics_b.server_ack_lost_segments):>5,}({metrics_b.server_real_loss_rate:>4.1f}%) "
+                f"{server_real_loss:>5,}({metrics_b.server_real_loss_rate:>4.1f}%) "
                 f"{'':<8} "
                 f"{'':<6}"
             )

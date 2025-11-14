@@ -24,13 +24,18 @@ Notes:
 """
 from __future__ import annotations
 
-from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 from capmaster.core.connection.models import TcpConnection
 from capmaster.core.connection.scorer import MatchScore
-from capmaster.core.connection.matcher import BucketStrategy, MatchMode, ConnectionMatch
+from capmaster.core.connection.matcher import (
+    BucketStrategy,
+    MatchMode,
+    ConnectionMatch,
+    choose_bucket_strategy_auto,
+    create_buckets,
+)
 
 
 @dataclass
@@ -136,48 +141,27 @@ class BehavioralMatcher:
         connections1: Sequence[TcpConnection],
         connections2: Sequence[TcpConnection],
     ) -> BucketStrategy:
+        """Choose bucketing strategy for behavioral matching.
+
+        For AUTO, delegate to the shared NAT-aware heuristic used by
+        ConnectionMatcher to ensure consistent behavior between matchers.
+        """
         if self.bucket_strategy != BucketStrategy.AUTO:
             return self.bucket_strategy
-        # Reuse simple heuristic from ConnectionMatcher: prefer PORT in NAT-ish scenarios
-        clients1 = {c.client_ip for c in connections1}
-        clients2 = {c.client_ip for c in connections2}
-        servers1 = {c.server_ip for c in connections1}
-        servers2 = {c.server_ip for c in connections2}
-        ports1 = {c.server_port for c in connections1}
-        ports2 = {c.server_port for c in connections2}
-        common_clients = clients1 & clients2
-        common_servers = servers1 & servers2
-        common_ports = ports1 & ports2
-        snat_likely = (not common_clients) and bool(common_servers)
-        dnat_likely = (not common_servers) and bool(common_clients)
-        nat_ambiguous = (not common_clients) and (not common_servers) and bool(common_ports)
-        if snat_likely or dnat_likely or nat_ambiguous:
-            return BucketStrategy.PORT
-        if common_servers and len(common_servers) == len(servers1) == len(servers2):
-            return BucketStrategy.SERVER
-        if not common_servers and common_ports:
-            return BucketStrategy.PORT
-        if common_servers:
-            return BucketStrategy.SERVER
-        return BucketStrategy.PORT
+
+        return choose_bucket_strategy_auto(connections1, connections2)
 
     def _create_buckets(
         self,
         connections: Sequence[TcpConnection],
         strategy: BucketStrategy,
     ) -> dict[str, list[TcpConnection]]:
-        buckets: dict[str, list[TcpConnection]] = defaultdict(list)
-        for conn in connections:
-            if strategy == BucketStrategy.SERVER:
-                ip1, _p1, ip2, _p2 = conn.get_normalized_5tuple()
-                key = f"{ip1}:{ip2}"
-                buckets[key].append(conn)
-            elif strategy == BucketStrategy.PORT:
-                key = str(conn.server_port)
-                buckets[key].append(conn)
-            else:
-                buckets["all"].append(conn)
-        return buckets
+        """Create buckets of connections based on strategy.
+
+        Uses the shared helper to keep bucketing behavior consistent with
+        ConnectionMatcher.
+        """
+        return create_buckets(connections, strategy)
 
     # --------- internals: matching ---------
     def _match_bucket_one_to_one(

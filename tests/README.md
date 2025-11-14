@@ -19,8 +19,7 @@ tests/
 │   └── test_match/         # Match plugin tests
 ├── test_flow_hash.py       # Flow hash unit tests
 ├── test_flow_hash_rust_compatibility.py  # Rust compatibility tests
-├── conftest.py             # Shared fixtures
-└── legacy/                 # Deprecated tests (see legacy/README.md)
+└── conftest.py             # Shared fixtures
 ```
 
 ## Test Categories
@@ -352,13 +351,6 @@ View detailed coverage report:
 pytest --cov=capmaster --cov-report=html
 open htmlcov/index.html
 ```
-
-## Legacy Tests
-
-The `legacy/` directory contains deprecated tests that depend on the original shell scripts.
-See `legacy/README.md` for details.
-
-**Do not use legacy tests for new development.**
 
 ## Contributing
 
