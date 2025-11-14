@@ -7,19 +7,21 @@ def test_quality_metrics():
     """Test QualityMetrics with new ack_lost_segment fields."""
     
     # Create a metrics instance with sample data
+    # Simulating the case from user's example:
+    # File A: C->S Lost=0, C->S ACK Lost=3, S->C Lost=3, S->C ACK Lost=0
     metrics = QualityMetrics(
-        server_ip="10.93.75.130",
-        server_port=8443,
-        client_total_packets=1000,
-        client_retransmissions=10,
-        client_duplicate_acks=5,
-        client_lost_segments=8,  # Total lost segments detected
-        client_ack_lost_segments=5,  # ACKed segments (capture miss)
-        server_total_packets=1000,
-        server_retransmissions=8,
-        server_duplicate_acks=4,
-        server_lost_segments=6,
-        server_ack_lost_segments=4,
+        server_ip="10.64.0.125",
+        server_port=26301,
+        client_total_packets=370,
+        client_retransmissions=0,
+        client_duplicate_acks=0,
+        client_lost_segments=0,  # C->S lost segments
+        client_ack_lost_segments=3,  # C->S ACK packets that ACKed S->C segments not captured
+        server_total_packets=374,
+        server_retransmissions=5,
+        server_duplicate_acks=1,
+        server_lost_segments=3,  # S->C lost segments
+        server_ack_lost_segments=0,  # S->C ACK packets that ACKed C->S segments not captured
     )
     
     print("=" * 80)
@@ -31,16 +33,18 @@ def test_quality_metrics():
     print(f"  Retransmissions:         {metrics.client_retransmissions:,} ({metrics.client_retransmission_rate:.2f}%)")
     print(f"  Duplicate ACKs:          {metrics.client_duplicate_acks:,} ({metrics.client_duplicate_ack_rate:.2f}%)")
     print(f"  Lost Segments:           {metrics.client_lost_segments:,} ({metrics.client_loss_rate:.2f}%)")
-    print(f"  ACK Lost Segments:       {metrics.client_ack_lost_segments:,} ({metrics.client_ack_lost_rate:.2f}%)")
-    print(f"  Real Loss (calculated):  {metrics.client_lost_segments - metrics.client_ack_lost_segments:,} ({metrics.client_real_loss_rate:.2f}%)")
-    
+    print(f"  ACK Lost Segments:       {metrics.client_ack_lost_segments:,} ({metrics.client_ack_lost_rate:.2f}%) [C->S ACKs that ACKed S->C uncaptured segments]")
+    client_real_loss = max(0, metrics.client_lost_segments - metrics.server_ack_lost_segments)
+    print(f"  Real Loss (calculated):  {client_real_loss:,} ({metrics.client_real_loss_rate:.2f}%) [C->S lost - S->C ack_lost]")
+
     print("\nServer -> Client:")
     print(f"  Total Packets:           {metrics.server_total_packets:,}")
     print(f"  Retransmissions:         {metrics.server_retransmissions:,} ({metrics.server_retransmission_rate:.2f}%)")
     print(f"  Duplicate ACKs:          {metrics.server_duplicate_acks:,} ({metrics.server_duplicate_ack_rate:.2f}%)")
     print(f"  Lost Segments:           {metrics.server_lost_segments:,} ({metrics.server_loss_rate:.2f}%)")
-    print(f"  ACK Lost Segments:       {metrics.server_ack_lost_segments:,} ({metrics.server_ack_lost_rate:.2f}%)")
-    print(f"  Real Loss (calculated):  {metrics.server_lost_segments - metrics.server_ack_lost_segments:,} ({metrics.server_real_loss_rate:.2f}%)")
+    print(f"  ACK Lost Segments:       {metrics.server_ack_lost_segments:,} ({metrics.server_ack_lost_rate:.2f}%) [S->C ACKs that ACKed C->S uncaptured segments]")
+    server_real_loss = max(0, metrics.server_lost_segments - metrics.client_ack_lost_segments)
+    print(f"  Real Loss (calculated):  {server_real_loss:,} ({metrics.server_real_loss_rate:.2f}%) [S->C lost - C->S ack_lost]")
     
     print("\n" + "=" * 80)
     print("Analysis:")
@@ -72,9 +76,12 @@ def test_quality_metrics():
     
     print("\n" + "=" * 80)
     
-    # Verify calculations
-    assert metrics.client_real_loss_rate == ((metrics.client_lost_segments - metrics.client_ack_lost_segments) / metrics.client_total_packets) * 100
-    assert metrics.server_real_loss_rate == ((metrics.server_lost_segments - metrics.server_ack_lost_segments) / metrics.server_total_packets) * 100
+    # Verify calculations (cross-direction)
+    expected_client_real_loss_rate = (max(0, metrics.client_lost_segments - metrics.server_ack_lost_segments) / metrics.client_total_packets) * 100
+    expected_server_real_loss_rate = (max(0, metrics.server_lost_segments - metrics.client_ack_lost_segments) / metrics.server_total_packets) * 100
+
+    assert abs(metrics.client_real_loss_rate - expected_client_real_loss_rate) < 0.01, f"Client real loss rate mismatch: {metrics.client_real_loss_rate} != {expected_client_real_loss_rate}"
+    assert abs(metrics.server_real_loss_rate - expected_server_real_loss_rate) < 0.01, f"Server real loss rate mismatch: {metrics.server_real_loss_rate} != {expected_server_real_loss_rate}"
     
     print("✅ All assertions passed!")
     print("=" * 80)
