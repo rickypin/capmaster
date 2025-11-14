@@ -1305,12 +1305,24 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
                 records_count += 1
 
             # Write File B server nodes (type=2, with port)
+            # For each server IP in file B, find the actual port used in file B
+            # (which may differ from file A due to NAT/load balancing)
+            server_ip_to_port_b: dict[str, int] = {}
+            for pair in service.endpoint_pairs:
+                server_ip_b = pair.tuple_b.server_ip
+                server_port_b = pair.tuple_b.server_port
+                # Store the port for this server IP (all pairs should have same port for same IP)
+                if server_ip_b not in server_ip_to_port_b:
+                    server_ip_to_port_b[server_ip_b] = server_port_b
+
             for server_ip in sorted(service.unique_server_ips_b):
+                # Use the actual port from file B for this server IP
+                actual_port_b = server_ip_to_port_b.get(server_ip, server_port)
                 records.append({
                     "pcap_id": pcap_id_b,
                     "group_id": group_id,
                     "ip": server_ip,
-                    "port": server_port,
+                    "port": actual_port_b,
                     "proto": protocol,
                     "type": 2,  # type=2 for server (same as endpoint pair mode)
                     "is_capture": False,
