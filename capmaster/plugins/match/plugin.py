@@ -11,6 +11,7 @@ from capmaster.core.connection.connection_extractor import extract_connections_f
 from capmaster.core.connection.f5_matcher import F5Matcher
 from capmaster.core.connection.tls_matcher import TlsMatcher
 from capmaster.core.connection.matcher import BucketStrategy, ConnectionMatcher, MatchMode
+from capmaster.core.connection.behavioral_matcher import BehavioralMatcher
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
 from capmaster.plugins.match.endpoint_stats import (
@@ -76,9 +77,9 @@ class MatchPlugin(PluginBase):
         )
         @click.option(
             "--mode",
-            type=click.Choice(["auto", "header"], case_sensitive=False),
+            type=click.Choice(["auto", "header", "behavioral"], case_sensitive=False),
             default="auto",
-            help="Matching mode (auto: automatic, header: header-only)",
+            help="Matching mode (auto: automatic, header: header-only, behavioral: behavior-only)",
         )
         @click.option(
             "--bucket",
@@ -98,6 +99,30 @@ class MatchPlugin(PluginBase):
             default="one-to-one",
             help="Matching mode (one-to-one: each connection matches at most once, "
             "one-to-many: allow one connection to match multiple connections based on time overlap)",
+        )
+        @click.option(
+            "--behavioral-weight-overlap",
+            type=float,
+            default=0.35,
+            help="Weight for time overlap feature in behavioral matching (default: 0.35)",
+        )
+        @click.option(
+            "--behavioral-weight-duration",
+            type=float,
+            default=0.25,
+            help="Weight for duration similarity feature in behavioral matching (default: 0.25)",
+        )
+        @click.option(
+            "--behavioral-weight-iat",
+            type=float,
+            default=0.20,
+            help="Weight for inter-arrival time similarity feature in behavioral matching (default: 0.20)",
+        )
+        @click.option(
+            "--behavioral-weight-bytes",
+            type=float,
+            default=0.20,
+            help="Weight for total bytes similarity feature in behavioral matching (default: 0.20)",
         )
         @click.option(
             "--endpoint-stats",
@@ -193,6 +218,10 @@ class MatchPlugin(PluginBase):
             bucket: str,
             threshold: float,
             match_mode: str,
+            behavioral_weight_overlap: float,
+            behavioral_weight_duration: float,
+            behavioral_weight_iat: float,
+            behavioral_weight_bytes: float,
             endpoint_stats: bool,
             endpoint_stats_output: Path | None,
             enable_sampling: bool,
@@ -436,59 +465,64 @@ class MatchPlugin(PluginBase):
                     )
                 logger.info(f"Matching: {match_file1.name} <-> {match_file2.name}")
 
-                # Determine matching strategy: F5 > TLS > Feature-based
-                # Priority: F5 Ethernet Trailer (highest) > TLS Client Hello (medium) > Feature-based (lowest)
+                # Determine matching strategy: F5 > TLS > Feature-based, or explicit behavioral
                 use_f5_matching = False
                 use_tls_matching = False
+                use_behavioral = (mode.lower() == "behavioral")
 
-                # Check for F5 Ethernet Trailer first (highest priority)
-                detect_task = progress.add_task("[cyan]Detecting F5 Ethernet Trailer...", total=2)
-                f5_matcher = F5Matcher()
-
-                has_f5_file1 = f5_matcher.detect_f5_trailer(match_file1)
-                progress.update(detect_task, advance=1)
-
-                has_f5_file2 = f5_matcher.detect_f5_trailer(match_file2)
-                progress.update(detect_task, advance=1)
-
-                use_f5_matching = has_f5_file1 and has_f5_file2
-
-                if use_f5_matching:
-                    logger.info("F5 Ethernet Trailer detected in both files - using F5 matching mode")
+                if use_behavioral:
+                    logger.info("Behavioral-only mode selected - skipping F5/TLS detection")
                 else:
-                    if has_f5_file1 or has_f5_file2:
-                        logger.warning(
-                            f"F5 trailer found in {'file1' if has_f5_file1 else 'file2'} only - "
-                            "will check for TLS Client Hello"
-                        )
+                    # Check for F5 Ethernet Trailer first (highest priority)
+                    detect_task = progress.add_task("[cyan]Detecting F5 Ethernet Trailer...", total=2)
+                    f5_matcher = F5Matcher()
 
-                    # Check for TLS Client Hello if F5 is not available (medium priority)
-                    detect_task = progress.add_task("[cyan]Detecting TLS Client Hello...", total=2)
-                    tls_matcher = TlsMatcher()
-
-                    has_tls_file1 = tls_matcher.detect_tls_client_hello(match_file1)
+                    has_f5_file1 = f5_matcher.detect_f5_trailer(match_file1)
                     progress.update(detect_task, advance=1)
 
-                    has_tls_file2 = tls_matcher.detect_tls_client_hello(match_file2)
+                    has_f5_file2 = f5_matcher.detect_f5_trailer(match_file2)
                     progress.update(detect_task, advance=1)
 
-                    use_tls_matching = has_tls_file1 and has_tls_file2
+                    use_f5_matching = has_f5_file1 and has_f5_file2
 
-                    if use_tls_matching:
-                        logger.info("TLS Client Hello detected in both files - using TLS matching mode")
+                    if use_f5_matching:
+                        logger.info("F5 Ethernet Trailer detected in both files - using F5 matching mode")
                     else:
-                        if has_tls_file1 or has_tls_file2:
+                        if has_f5_file1 or has_f5_file2:
                             logger.warning(
-                                f"TLS Client Hello found in {'file1' if has_tls_file1 else 'file2'} only - "
-                                "falling back to feature-based matching"
+                                f"F5 trailer found in {'file1' if has_f5_file1 else 'file2'} only - "
+                                "will check for TLS Client Hello"
                             )
-                        logger.info("Using feature-based matching mode")
+
+                        # Check for TLS Client Hello if F5 is not available (medium priority)
+                        detect_task = progress.add_task("[cyan]Detecting TLS Client Hello...", total=2)
+                        tls_matcher = TlsMatcher()
+
+                        has_tls_file1 = tls_matcher.detect_tls_client_hello(match_file1)
+                        progress.update(detect_task, advance=1)
+
+                        has_tls_file2 = tls_matcher.detect_tls_client_hello(match_file2)
+                        progress.update(detect_task, advance=1)
+
+                        use_tls_matching = has_tls_file1 and has_tls_file2
+
+                        if use_tls_matching:
+                            logger.info("TLS Client Hello detected in both files - using TLS matching mode")
+                        else:
+                            if has_tls_file1 or has_tls_file2:
+                                logger.warning(
+                                    f"TLS Client Hello found in {'file1' if has_tls_file1 else 'file2'} only - "
+                                    "falling back to feature-based matching"
+                                )
+                            logger.info("Using feature-based matching mode")
 
                 # Log final matching strategy
                 if use_f5_matching:
                     logger.info("Final matching strategy: F5 Ethernet Trailer")
                 elif use_tls_matching:
                     logger.info("Final matching strategy: TLS Client Hello")
+                elif use_behavioral:
+                    logger.info("Final matching strategy: Behavioral (behavior-only)")
                 else:
                     logger.info("Final matching strategy: Feature-based")
 
@@ -596,6 +630,31 @@ class MatchPlugin(PluginBase):
                         score_threshold=score_threshold,
                         match_mode=MatchMode(match_mode),
                     )
+                elif use_behavioral:
+                    # Behavioral-only matching
+                    detector_task = progress.add_task("[yellow]Analyzing server/client roles...", total=1)
+                    logger.info("Performing cardinality analysis for server detection (behavioral mode)...")
+                    detector = self._create_and_populate_detector(connections1, connections2)
+                    connections1 = self._improve_server_detection(connections1, detector)
+                    connections2 = self._improve_server_detection(connections2, detector)
+                    progress.update(detector_task, advance=1)
+
+                    match_task = progress.add_task("[green]Matching connections (behavioral)...", total=1)
+                    logger.info("Matching connections using behavioral features only...")
+                    bucket_enum = BucketStrategy(bucket_strategy)
+                    match_mode_enum = MatchMode(match_mode)
+                    matcher = BehavioralMatcher(
+                        bucket_strategy=bucket_enum,
+                        score_threshold=score_threshold,
+                        match_mode=match_mode_enum,
+                        weight_overlap=behavioral_weight_overlap,
+                        weight_duration=behavioral_weight_duration,
+                        weight_iat=behavioral_weight_iat,
+                        weight_bytes=behavioral_weight_bytes,
+                    )
+                    matches = matcher.match(connections1, connections2)
+                    logger.info(f"Found {len(matches)} matches (behavioral)")
+                    progress.update(match_task, advance=1)
                 else:
                     # Feature-based matching (original logic)
                     # Improve server detection using cardinality analysis

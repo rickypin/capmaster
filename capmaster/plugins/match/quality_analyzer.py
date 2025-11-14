@@ -36,7 +36,10 @@ class QualityMetrics:
     """Duplicate ACKs from client"""
 
     client_lost_segments: int = 0
-    """Lost segments detected on client side"""
+    """Lost segments detected on client side (may include capture misses)"""
+
+    client_ack_lost_segments: int = 0
+    """ACKed segments that weren't captured on client side (indicates capture miss, not real packet loss)"""
 
     # Server-to-Client metrics
     server_total_packets: int = 0
@@ -49,7 +52,10 @@ class QualityMetrics:
     """Duplicate ACKs from server"""
 
     server_lost_segments: int = 0
-    """Lost segments detected on server side"""
+    """Lost segments detected on server side (may include capture misses)"""
+
+    server_ack_lost_segments: int = 0
+    """ACKed segments that weren't captured on server side (indicates capture miss, not real packet loss)"""
 
     @property
     def client_retransmission_rate(self) -> float:
@@ -67,10 +73,26 @@ class QualityMetrics:
 
     @property
     def client_loss_rate(self) -> float:
-        """Calculate client-to-server packet loss rate."""
+        """Calculate client-to-server packet loss rate (may include capture misses)."""
         if self.client_total_packets == 0:
             return 0.0
         return (self.client_lost_segments / self.client_total_packets) * 100
+
+    @property
+    def client_ack_lost_rate(self) -> float:
+        """Calculate client-to-server ACKed lost segment rate (capture miss indicator)."""
+        if self.client_total_packets == 0:
+            return 0.0
+        return (self.client_ack_lost_segments / self.client_total_packets) * 100
+
+    @property
+    def client_real_loss_rate(self) -> float:
+        """Calculate client-to-server real packet loss rate (excluding capture misses)."""
+        if self.client_total_packets == 0:
+            return 0.0
+        # Real loss = lost_segments - ack_lost_segments
+        real_loss = max(0, self.client_lost_segments - self.client_ack_lost_segments)
+        return (real_loss / self.client_total_packets) * 100
 
     @property
     def server_retransmission_rate(self) -> float:
@@ -88,10 +110,26 @@ class QualityMetrics:
 
     @property
     def server_loss_rate(self) -> float:
-        """Calculate server-to-client packet loss rate."""
+        """Calculate server-to-client packet loss rate (may include capture misses)."""
         if self.server_total_packets == 0:
             return 0.0
         return (self.server_lost_segments / self.server_total_packets) * 100
+
+    @property
+    def server_ack_lost_rate(self) -> float:
+        """Calculate server-to-client ACKed lost segment rate (capture miss indicator)."""
+        if self.server_total_packets == 0:
+            return 0.0
+        return (self.server_ack_lost_segments / self.server_total_packets) * 100
+
+    @property
+    def server_real_loss_rate(self) -> float:
+        """Calculate server-to-client real packet loss rate (excluding capture misses)."""
+        if self.server_total_packets == 0:
+            return 0.0
+        # Real loss = lost_segments - ack_lost_segments
+        real_loss = max(0, self.server_lost_segments - self.server_ack_lost_segments)
+        return (real_loss / self.server_total_packets) * 100
 
 
 @dataclass
@@ -143,6 +181,7 @@ class TcpAnalysisPacket:
     has_retransmission: bool
     has_duplicate_ack: bool
     has_lost_segment: bool
+    has_ack_lost_segment: bool
 
 
 class QualityAnalyzer:
@@ -180,6 +219,7 @@ class QualityAnalyzer:
             "-e", "tcp.analysis.retransmission",
             "-e", "tcp.analysis.duplicate_ack",
             "-e", "tcp.analysis.lost_segment",
+            "-e", "tcp.analysis.ack_lost_segment",
         ]
 
         # Execute tshark
@@ -195,7 +235,7 @@ class QualityAnalyzer:
                 continue
 
             parts = line.split('\t')
-            if len(parts) < 8:
+            if len(parts) < 9:
                 continue
 
             try:
@@ -207,6 +247,7 @@ class QualityAnalyzer:
                 has_retransmission = bool(parts[5])
                 has_duplicate_ack = bool(parts[6])
                 has_lost_segment = bool(parts[7])
+                has_ack_lost_segment = bool(parts[8])
 
                 yield TcpAnalysisPacket(
                     stream_id=stream_id,
@@ -217,6 +258,7 @@ class QualityAnalyzer:
                     has_retransmission=has_retransmission,
                     has_duplicate_ack=has_duplicate_ack,
                     has_lost_segment=has_lost_segment,
+                    has_ack_lost_segment=has_ack_lost_segment,
                 )
             except (ValueError, IndexError) as e:
                 logger.debug(f"Failed to parse line: {line}, error: {e}")
@@ -350,6 +392,8 @@ class QualityAnalyzer:
                     metric.client_duplicate_acks += 1
                 if packet.has_lost_segment:
                     metric.client_lost_segments += 1
+                if packet.has_ack_lost_segment:
+                    metric.client_ack_lost_segments += 1
             else:
                 metric.server_total_packets += 1
                 if packet.has_retransmission:
@@ -358,6 +402,8 @@ class QualityAnalyzer:
                     metric.server_duplicate_acks += 1
                 if packet.has_lost_segment:
                     metric.server_lost_segments += 1
+                if packet.has_ack_lost_segment:
+                    metric.server_ack_lost_segments += 1
 
         return metrics
 
@@ -415,6 +461,8 @@ class QualityAnalyzer:
                     metric.client_duplicate_acks += 1
                 if packet.has_lost_segment:
                     metric.client_lost_segments += 1
+                if packet.has_ack_lost_segment:
+                    metric.client_ack_lost_segments += 1
             else:
                 metric.server_total_packets += 1
                 if packet.has_retransmission:
@@ -423,6 +471,8 @@ class QualityAnalyzer:
                     metric.server_duplicate_acks += 1
                 if packet.has_lost_segment:
                     metric.server_lost_segments += 1
+                if packet.has_ack_lost_segment:
+                    metric.server_ack_lost_segments += 1
 
         return metrics
 
@@ -632,7 +682,7 @@ def format_quality_report(
 
     # Service Quality Metrics Table
     lines.append("Service Quality Metrics:")
-    lines.append("-" * 180)
+    lines.append("-" * 220)
 
     # Table header
     header = (
@@ -642,10 +692,12 @@ def format_quality_report(
         f"{'Packets':<10} "
         f"{'Retrans':<12} "
         f"{'Dup ACK':<12} "
-        f"{'Lost Seg':<12}"
+        f"{'Lost Seg':<12} "
+        f"{'ACK Lost':<12} "
+        f"{'Real Loss':<12}"
     )
     lines.append(header)
-    lines.append("-" * 180)
+    lines.append("-" * 220)
 
     # Table rows
     for service, (metrics1, metrics2) in sorted(results.items()):
@@ -658,7 +710,7 @@ def format_quality_report(
 
         if not has_metrics1_data and not has_metrics2_data:
             # No data for this service
-            row = f"{service_str:<22} {'N/A':<6} {'No traffic':<15} {'-':<10} {'-':<12} {'-':<12} {'-':<12}"
+            row = f"{service_str:<22} {'N/A':<6} {'No traffic':<15} {'-':<10} {'-':<12} {'-':<12} {'-':<12} {'-':<12} {'-':<12}"
             lines.append(row)
             continue
 
@@ -672,7 +724,9 @@ def format_quality_report(
                 f"{metrics1.client_total_packets:<10,} "
                 f"{metrics1.client_retransmissions:>6,} ({metrics1.client_retransmission_rate:>4.1f}%) "
                 f"{metrics1.client_duplicate_acks:>6,} ({metrics1.client_duplicate_ack_rate:>4.1f}%) "
-                f"{metrics1.client_lost_segments:>6,} ({metrics1.client_loss_rate:>4.1f}%)"
+                f"{metrics1.client_lost_segments:>6,} ({metrics1.client_loss_rate:>4.1f}%) "
+                f"{metrics1.client_ack_lost_segments:>6,} ({metrics1.client_ack_lost_rate:>4.1f}%) "
+                f"{metrics1.client_lost_segments - metrics1.client_ack_lost_segments:>6,} ({metrics1.client_real_loss_rate:>4.1f}%)"
             )
             lines.append(row)
 
@@ -684,7 +738,9 @@ def format_quality_report(
                 f"{metrics1.server_total_packets:<10,} "
                 f"{metrics1.server_retransmissions:>6,} ({metrics1.server_retransmission_rate:>4.1f}%) "
                 f"{metrics1.server_duplicate_acks:>6,} ({metrics1.server_duplicate_ack_rate:>4.1f}%) "
-                f"{metrics1.server_lost_segments:>6,} ({metrics1.server_loss_rate:>4.1f}%)"
+                f"{metrics1.server_lost_segments:>6,} ({metrics1.server_loss_rate:>4.1f}%) "
+                f"{metrics1.server_ack_lost_segments:>6,} ({metrics1.server_ack_lost_rate:>4.1f}%) "
+                f"{metrics1.server_lost_segments - metrics1.server_ack_lost_segments:>6,} ({metrics1.server_real_loss_rate:>4.1f}%)"
             )
             lines.append(row)
 
@@ -698,7 +754,9 @@ def format_quality_report(
                 f"{metrics2.client_total_packets:<10,} "
                 f"{metrics2.client_retransmissions:>6,} ({metrics2.client_retransmission_rate:>4.1f}%) "
                 f"{metrics2.client_duplicate_acks:>6,} ({metrics2.client_duplicate_ack_rate:>4.1f}%) "
-                f"{metrics2.client_lost_segments:>6,} ({metrics2.client_loss_rate:>4.1f}%)"
+                f"{metrics2.client_lost_segments:>6,} ({metrics2.client_loss_rate:>4.1f}%) "
+                f"{metrics2.client_ack_lost_segments:>6,} ({metrics2.client_ack_lost_rate:>4.1f}%) "
+                f"{metrics2.client_lost_segments - metrics2.client_ack_lost_segments:>6,} ({metrics2.client_real_loss_rate:>4.1f}%)"
             )
             lines.append(row)
 
@@ -710,13 +768,15 @@ def format_quality_report(
                 f"{metrics2.server_total_packets:<10,} "
                 f"{metrics2.server_retransmissions:>6,} ({metrics2.server_retransmission_rate:>4.1f}%) "
                 f"{metrics2.server_duplicate_acks:>6,} ({metrics2.server_duplicate_ack_rate:>4.1f}%) "
-                f"{metrics2.server_lost_segments:>6,} ({metrics2.server_loss_rate:>4.1f}%)"
+                f"{metrics2.server_lost_segments:>6,} ({metrics2.server_loss_rate:>4.1f}%) "
+                f"{metrics2.server_ack_lost_segments:>6,} ({metrics2.server_ack_lost_rate:>4.1f}%) "
+                f"{metrics2.server_lost_segments - metrics2.server_ack_lost_segments:>6,} ({metrics2.server_real_loss_rate:>4.1f}%)"
             )
             lines.append(row)
 
         # Add separator between services
         if len(results) > 1:
-            lines.append("-" * 180)
+            lines.append("-" * 220)
 
     lines.append("```")
 
@@ -734,7 +794,7 @@ def calculate_performance_score(metrics: QualityMetrics) -> float:
         Performance score (0-100, lower is worse)
     """
     # Calculate weighted penalty based on different metrics
-    # Weights: retransmission (40%), duplicate ACK (30%), packet loss (30%)
+    # Weights: retransmission (40%), duplicate ACK (30%), real packet loss (30%)
     total_packets = metrics.client_total_packets + metrics.server_total_packets
     if total_packets == 0:
         return 100.0  # No traffic, perfect score
@@ -742,10 +802,11 @@ def calculate_performance_score(metrics: QualityMetrics) -> float:
     # Calculate average rates across both directions
     avg_retrans_rate = (metrics.client_retransmission_rate + metrics.server_retransmission_rate) / 2
     avg_dup_ack_rate = (metrics.client_duplicate_ack_rate + metrics.server_duplicate_ack_rate) / 2
-    avg_loss_rate = (metrics.client_loss_rate + metrics.server_loss_rate) / 2
+    # Use real loss rate (excluding capture misses) for more accurate scoring
+    avg_real_loss_rate = (metrics.client_real_loss_rate + metrics.server_real_loss_rate) / 2
 
     # Calculate penalty (0-100, higher is worse)
-    penalty = (avg_retrans_rate * 0.4) + (avg_dup_ack_rate * 0.3) + (avg_loss_rate * 0.3)
+    penalty = (avg_retrans_rate * 0.4) + (avg_dup_ack_rate * 0.3) + (avg_real_loss_rate * 0.3)
 
     # Convert to score (100 - penalty, capped at 0)
     score = max(0.0, 100.0 - penalty)
@@ -807,7 +868,7 @@ def format_connection_pair_report(
 
     # Summary statistics
     lines.append("Summary:")
-    lines.append("-" * 200)
+    lines.append("-" * 240)
     lines.append(f"Total connection pairs analyzed: {len(results)}")
     if top_n is not None and top_n > 0:
         lines.append(f"Showing top {len(scored_results)} worst performing connection pairs")
@@ -818,7 +879,7 @@ def format_connection_pair_report(
         lines.append(f"Top {len(scored_results)} Worst Performing Connection Pairs:")
     else:
         lines.append("Connection Pair Quality Metrics:")
-    lines.append("-" * 200)
+    lines.append("-" * 240)
 
     # Table header
     header = (
@@ -831,11 +892,13 @@ def format_connection_pair_report(
         f"{'Retrans':<12} "
         f"{'DupACK':<12} "
         f"{'LostSeg':<12} "
+        f"{'ACKLost':<12} "
+        f"{'RealLoss':<12} "
         f"{'Score':<8} "
         f"{'Conf':<6}"
     )
     lines.append(header)
-    lines.append("-" * 200)
+    lines.append("-" * 240)
 
     # Table rows
     for combined_score, score_a, score_b, pair_metrics in scored_results:
@@ -855,7 +918,7 @@ def format_connection_pair_report(
                 f"{pair.connection_a[:45]:<45} "
                 f"{'N/A':<6} "
                 f"{'No traffic':<15} "
-                f"{'-':<8} {'-':<12} {'-':<12} {'-':<12} {'-':<8} "
+                f"{'-':<8} {'-':<12} {'-':<12} {'-':<12} {'-':<12} {'-':<12} {'-':<8} "
                 f"{pair.confidence:<6.2f}"
             )
             lines.append(row)
@@ -874,6 +937,8 @@ def format_connection_pair_report(
                 f"{metrics_a.client_retransmissions:>5,}({metrics_a.client_retransmission_rate:>4.1f}%) "
                 f"{metrics_a.client_duplicate_acks:>5,}({metrics_a.client_duplicate_ack_rate:>4.1f}%) "
                 f"{metrics_a.client_lost_segments:>5,}({metrics_a.client_loss_rate:>4.1f}%) "
+                f"{metrics_a.client_ack_lost_segments:>5,}({metrics_a.client_ack_lost_rate:>4.1f}%) "
+                f"{max(0, metrics_a.client_lost_segments - metrics_a.client_ack_lost_segments):>5,}({metrics_a.client_real_loss_rate:>4.1f}%) "
                 f"{score_a:<8.1f} "
                 f"{pair.confidence:<6.2f}"
             )
@@ -890,6 +955,8 @@ def format_connection_pair_report(
                 f"{metrics_a.server_retransmissions:>5,}({metrics_a.server_retransmission_rate:>4.1f}%) "
                 f"{metrics_a.server_duplicate_acks:>5,}({metrics_a.server_duplicate_ack_rate:>4.1f}%) "
                 f"{metrics_a.server_lost_segments:>5,}({metrics_a.server_loss_rate:>4.1f}%) "
+                f"{metrics_a.server_ack_lost_segments:>5,}({metrics_a.server_ack_lost_rate:>4.1f}%) "
+                f"{max(0, metrics_a.server_lost_segments - metrics_a.server_ack_lost_segments):>5,}({metrics_a.server_real_loss_rate:>4.1f}%) "
                 f"{'':<8} "
                 f"{'':<6}"
             )
@@ -908,6 +975,8 @@ def format_connection_pair_report(
                 f"{metrics_b.client_retransmissions:>5,}({metrics_b.client_retransmission_rate:>4.1f}%) "
                 f"{metrics_b.client_duplicate_acks:>5,}({metrics_b.client_duplicate_ack_rate:>4.1f}%) "
                 f"{metrics_b.client_lost_segments:>5,}({metrics_b.client_loss_rate:>4.1f}%) "
+                f"{metrics_b.client_ack_lost_segments:>5,}({metrics_b.client_ack_lost_rate:>4.1f}%) "
+                f"{max(0, metrics_b.client_lost_segments - metrics_b.client_ack_lost_segments):>5,}({metrics_b.client_real_loss_rate:>4.1f}%) "
                 f"{score_b:<8.1f} "
                 f"{pair.confidence if not has_metrics_a_data else '':<6}"
             )
@@ -924,13 +993,15 @@ def format_connection_pair_report(
                 f"{metrics_b.server_retransmissions:>5,}({metrics_b.server_retransmission_rate:>4.1f}%) "
                 f"{metrics_b.server_duplicate_acks:>5,}({metrics_b.server_duplicate_ack_rate:>4.1f}%) "
                 f"{metrics_b.server_lost_segments:>5,}({metrics_b.server_loss_rate:>4.1f}%) "
+                f"{metrics_b.server_ack_lost_segments:>5,}({metrics_b.server_ack_lost_rate:>4.1f}%) "
+                f"{max(0, metrics_b.server_lost_segments - metrics_b.server_ack_lost_segments):>5,}({metrics_b.server_real_loss_rate:>4.1f}%) "
                 f"{'':<8} "
                 f"{'':<6}"
             )
             lines.append(row)
 
         # Add separator between pairs
-        lines.append("-" * 200)
+        lines.append("-" * 240)
 
     lines.append(f"Total: {len(scored_results)} connection pairs shown")
     lines.append("```")
