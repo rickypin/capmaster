@@ -190,6 +190,10 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
         server_hops_a: int,
         client_hops_b: int,
         server_hops_b: int,
+        client_ttl_a: int = 0,
+        server_ttl_a: int = 0,
+        client_ttl_b: int = 0,
+        server_ttl_b: int = 0,
     ) -> str:
         """
         Determine the relative network position of two capture points based on TTL deltas.
@@ -202,25 +206,88 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
             server_hops_a: Number of hops from File A capture point to server
             client_hops_b: Number of hops from client to File B capture point
             server_hops_b: Number of hops from File B capture point to server
+            client_ttl_a: Original client TTL value from file A (optional)
+            server_ttl_a: Original server TTL value from file A (optional)
+            client_ttl_b: Original client TTL value from file B (optional)
+            server_ttl_b: Original server TTL value from file B (optional)
 
         Returns:
             One of the following position indicators:
             - "A_CLOSER_TO_CLIENT": File A is closer to client (Client -> A -> B -> Server)
             - "B_CLOSER_TO_CLIENT": File B is closer to client (Client -> B -> A -> Server)
+            - "A_CLOSER_TO_SERVER": File A is closer to server (Client -> B -> A -> Server)
+            - "B_CLOSER_TO_SERVER": File B is closer to server (Client -> A -> B -> Server)
             - "SAME_POSITION": Same position or cannot determine
 
         Logic:
-            1. Calculate TTL delta differences:
+            1. Check for original TTL values (255, 128, 64):
+               - These values indicate network devices (routers, load balancers)
+               - If one point sees original client TTL and another sees original server TTL:
+                 * Point seeing client=255 → closer to SERVER (device on client side)
+                 * Point seeing server=255 → closer to CLIENT (device on server side)
+               - Example: Client → [Device TTL=255] → B → A → Server
+                 * A sees client=255 → A closer to server → B_CLOSER_TO_CLIENT
+
+            2. Calculate TTL delta differences:
                - client_delta_diff = client_hops_b - client_hops_a
                - server_delta_diff = server_hops_a - server_hops_b
 
-            2. Detect NAT scenario (client and server deltas conflict)
+            3. Detect NAT scenario (client and server deltas conflict)
 
-            3. Always use server-side TTL for final judgment:
+            4. Always use server-side TTL for final judgment:
                - server_delta_diff > 0 → A_CLOSER_TO_CLIENT
                - server_delta_diff < 0 → B_CLOSER_TO_CLIENT
                - server_delta_diff == 0 → SAME_POSITION
         """
+        # Check for original TTL values (common initial TTL values: 255, 128, 64)
+        ORIGINAL_TTL_VALUES = {255, 128, 64}
+
+        # Check if we have original TTL scenario
+        client_a_is_original = client_ttl_a in ORIGINAL_TTL_VALUES
+        server_a_is_original = server_ttl_a in ORIGINAL_TTL_VALUES
+        client_b_is_original = client_ttl_b in ORIGINAL_TTL_VALUES
+        server_b_is_original = server_ttl_b in ORIGINAL_TTL_VALUES
+
+        # Special case: If one file has original client TTL and another has original server TTL
+        # This indicates the capture points are on opposite sides of the connection
+        # Rule: The point seeing original client TTL is closer to SERVER
+        #       The point seeing original server TTL is closer to CLIENT
+        if client_a_is_original and server_b_is_original and not server_a_is_original and not client_b_is_original:
+            # A sees original client TTL, B sees original server TTL
+            # → A is closer to server, B is closer to client
+            logger.debug(
+                f"Original TTL detected: client_ttl_a={client_ttl_a} (original), "
+                f"server_ttl_b={server_ttl_b} (original). B is closer to client."
+            )
+            return "B_CLOSER_TO_CLIENT"
+
+        if server_a_is_original and client_b_is_original and not client_a_is_original and not server_b_is_original:
+            # A sees original server TTL, B sees original client TTL
+            # → A is closer to client, B is closer to server
+            logger.debug(
+                f"Original TTL detected: server_ttl_a={server_ttl_a} (original), "
+                f"client_ttl_b={client_ttl_b} (original). A is closer to client."
+            )
+            return "A_CLOSER_TO_CLIENT"
+
+        if client_b_is_original and server_a_is_original and not server_b_is_original and not client_a_is_original:
+            # B sees original client TTL, A sees original server TTL
+            # → B is closer to server, A is closer to client
+            logger.debug(
+                f"Original TTL detected: client_ttl_b={client_ttl_b} (original), "
+                f"server_ttl_a={server_ttl_a} (original). A is closer to client."
+            )
+            return "A_CLOSER_TO_CLIENT"
+
+        if server_b_is_original and client_a_is_original and not client_b_is_original and not server_a_is_original:
+            # B sees original server TTL, A sees original client TTL
+            # → B is closer to client, A is closer to server
+            logger.debug(
+                f"Original TTL detected: server_ttl_b={server_ttl_b} (original), "
+                f"client_ttl_a={client_ttl_a} (original). B is closer to client."
+            )
+            return "B_CLOSER_TO_CLIENT"
+
         # Calculate TTL delta differences
         client_delta_diff = client_hops_b - client_hops_a
         server_delta_diff = server_hops_a - server_hops_b
@@ -422,6 +489,10 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
             server_hops_a=first_pair.server_hops_a,
             client_hops_b=first_pair.client_hops_b,
             server_hops_b=first_pair.server_hops_b,
+            client_ttl_a=first_pair.client_ttl_a,
+            server_ttl_a=first_pair.server_ttl_a,
+            client_ttl_b=first_pair.client_ttl_b,
+            server_ttl_b=first_pair.server_ttl_b,
         )
 
         # Determine net_area based on position
@@ -642,6 +713,10 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
             server_hops_a=stat.server_hops_a,
             client_hops_b=stat.client_hops_b,
             server_hops_b=stat.server_hops_b,
+            client_ttl_a=stat.client_ttl_a,
+            server_ttl_a=stat.server_ttl_a,
+            client_ttl_b=stat.client_ttl_b,
+            server_ttl_b=stat.server_ttl_b,
         )
 
         # Debug logging for TTL-based topology detection
@@ -882,6 +957,10 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
                 server_hops_a=stat.server_hops_a,
                 client_hops_b=stat.client_hops_b,
                 server_hops_b=stat.server_hops_b,
+                client_ttl_a=stat.client_ttl_a,
+                server_ttl_a=stat.server_ttl_a,
+                client_ttl_b=stat.client_ttl_b,
+                server_ttl_b=stat.server_ttl_b,
             )
 
             # Determine net_area for each node based on position
@@ -1111,6 +1190,10 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
                 server_hops_a=first_pair.server_hops_a,
                 client_hops_b=first_pair.client_hops_b,
                 server_hops_b=first_pair.server_hops_b,
+                client_ttl_a=first_pair.client_ttl_a,
+                server_ttl_a=first_pair.server_ttl_a,
+                client_ttl_b=first_pair.client_ttl_b,
+                server_ttl_b=first_pair.server_ttl_b,
             )
 
             # Determine net_area for each node based on position
@@ -1272,6 +1355,10 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
         server_hops_a: int,
         client_hops_b: int,
         server_hops_b: int,
+        client_ttl_a: int = 0,
+        server_ttl_a: int = 0,
+        client_ttl_b: int = 0,
+        server_ttl_b: int = 0,
     ) -> str:
         """
         Static version of _determine_network_position for use in static methods.
@@ -1284,13 +1371,69 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
             server_hops_a: Number of hops from File A capture point to server
             client_hops_b: Number of hops from client to File B capture point
             server_hops_b: Number of hops from File B capture point to server
+            client_ttl_a: Original client TTL value from file A (optional)
+            server_ttl_a: Original server TTL value from file A (optional)
+            client_ttl_b: Original client TTL value from file B (optional)
+            server_ttl_b: Original server TTL value from file B (optional)
 
         Returns:
             Position indicator string:
             - "A_CLOSER_TO_CLIENT": A is farther from server
             - "B_CLOSER_TO_CLIENT": B is farther from server
+            - "A_CLOSER_TO_SERVER": A is closer to server
+            - "B_CLOSER_TO_SERVER": B is closer to server
             - "SAME_POSITION": Same distance or cannot determine
         """
+        # Check for original TTL values (common initial TTL values: 255, 128, 64)
+        ORIGINAL_TTL_VALUES = {255, 128, 64}
+
+        # Check if we have original TTL scenario
+        client_a_is_original = client_ttl_a in ORIGINAL_TTL_VALUES
+        server_a_is_original = server_ttl_a in ORIGINAL_TTL_VALUES
+        client_b_is_original = client_ttl_b in ORIGINAL_TTL_VALUES
+        server_b_is_original = server_ttl_b in ORIGINAL_TTL_VALUES
+
+        # Special case: If one file has original client TTL and another has original server TTL
+        # This indicates the capture points are on opposite sides of the connection
+        # Rule: The point seeing original client TTL is closer to SERVER
+        #       The point seeing original server TTL is closer to CLIENT
+        # Reason: 255 is a network device (router/LB) TTL signature
+        if client_a_is_original and server_b_is_original and not server_a_is_original and not client_b_is_original:
+            # A sees original client TTL, B sees original server TTL
+            # → A is closer to server, B is closer to client
+            logger.debug(
+                f"Original TTL detected: client_ttl_a={client_ttl_a} (original), "
+                f"server_ttl_b={server_ttl_b} (original). B is closer to client."
+            )
+            return "B_CLOSER_TO_CLIENT"
+
+        if server_a_is_original and client_b_is_original and not client_a_is_original and not server_b_is_original:
+            # A sees original server TTL, B sees original client TTL
+            # → A is closer to client, B is closer to server
+            logger.debug(
+                f"Original TTL detected: server_ttl_a={server_ttl_a} (original), "
+                f"client_ttl_b={client_ttl_b} (original). A is closer to client."
+            )
+            return "A_CLOSER_TO_CLIENT"
+
+        if client_b_is_original and server_a_is_original and not server_b_is_original and not client_a_is_original:
+            # B sees original client TTL, A sees original server TTL
+            # → B is closer to server, A is closer to client
+            logger.debug(
+                f"Original TTL detected: client_ttl_b={client_ttl_b} (original), "
+                f"server_ttl_a={server_ttl_a} (original). A is closer to client."
+            )
+            return "A_CLOSER_TO_CLIENT"
+
+        if server_b_is_original and client_a_is_original and not client_b_is_original and not server_a_is_original:
+            # B sees original server TTL, A sees original client TTL
+            # → B is closer to client, A is closer to server
+            logger.debug(
+                f"Original TTL detected: server_ttl_b={server_ttl_b} (original), "
+                f"client_ttl_a={client_ttl_a} (original). B is closer to client."
+            )
+            return "B_CLOSER_TO_CLIENT"
+
         # Calculate TTL delta differences
         client_delta_diff = client_hops_b - client_hops_a
         server_delta_diff = server_hops_a - server_hops_b
