@@ -16,22 +16,46 @@ class TlsConnectionPair:
     """
     A matched pair of TCP connections using TLS Client Hello information.
     """
-    
+
     stream_id_1: int
     """TCP stream ID from first PCAP"""
-    
+
     stream_id_2: int
     """TCP stream ID from second PCAP"""
-    
+
     random: str
     """TLS Client Hello random field (used for matching)"""
-    
+
     session_id: str
     """TLS Client Hello session ID field (used for matching)"""
-    
+
+    src_ip_1: str = ""
+    """First PCAP source IP (for 5-tuple matching)"""
+
+    src_port_1: int = 0
+    """First PCAP source port (for 5-tuple matching)"""
+
+    dst_ip_1: str = ""
+    """First PCAP destination IP (for 5-tuple matching)"""
+
+    dst_port_1: int = 0
+    """First PCAP destination port (for 5-tuple matching)"""
+
+    src_ip_2: str = ""
+    """Second PCAP source IP (for 5-tuple matching)"""
+
+    src_port_2: int = 0
+    """Second PCAP source port (for 5-tuple matching)"""
+
+    dst_ip_2: str = ""
+    """Second PCAP destination IP (for 5-tuple matching)"""
+
+    dst_port_2: int = 0
+    """Second PCAP destination port (for 5-tuple matching)"""
+
     match_method: str = "TLS_CLIENT_HELLO"
     """Matching method (always TLS_CLIENT_HELLO)"""
-    
+
     def __str__(self) -> str:
         """String representation."""
         return (
@@ -39,6 +63,24 @@ class TlsConnectionPair:
             f"Stream2={self.stream_id_2}, "
             f"random={self.random[:16]}..., session_id={self.session_id[:16]}...)"
         )
+
+    def get_5tuple_1(self) -> tuple[str, int, str, int]:
+        """
+        Get first PCAP 5-tuple for connection matching.
+
+        Returns:
+            Tuple of (src_ip, src_port, dst_ip, dst_port)
+        """
+        return (self.src_ip_1, self.src_port_1, self.dst_ip_1, self.dst_port_1)
+
+    def get_5tuple_2(self) -> tuple[str, int, str, int]:
+        """
+        Get second PCAP 5-tuple for connection matching.
+
+        Returns:
+            Tuple of (src_ip, src_port, dst_ip, dst_port)
+        """
+        return (self.src_ip_2, self.src_port_2, self.dst_ip_2, self.dst_port_2)
 
 
 class TlsMatcher:
@@ -146,28 +188,36 @@ class TlsMatcher:
             List of matched connection pairs
         """
         matches: list[TlsConnectionPair] = []
-        
-        # Build reverse index: (random, session_id) -> list of stream_ids from PCAP 2
-        hello_key_to_streams: dict[tuple[str, str], list[int]] = defaultdict(list)
+
+        # Build reverse index: (random, session_id) -> (stream_id, TlsClientHelloInfo)
+        hello_key_to_streams: dict[tuple[str, str], list[tuple[int, TlsClientHelloInfo]]] = defaultdict(list)
         for stream_id, info in hello_map_2.items():
             key = (info.random, info.session_id)
-            hello_key_to_streams[key].append(stream_id)
-        
+            hello_key_to_streams[key].append((stream_id, info))
+
         # Match Client Hellos from PCAP 1 with PCAP 2
         for stream_id_1, info_1 in hello_map_1.items():
             key = (info_1.random, info_1.session_id)
-            
+
             # Look up matching streams in PCAP 2
-            matching_streams = hello_key_to_streams.get(key, [])
-            
-            for stream_id_2 in matching_streams:
+            matching_stream_infos = hello_key_to_streams.get(key, [])
+
+            for stream_id_2, info_2 in matching_stream_infos:
                 match = TlsConnectionPair(
                     stream_id_1=stream_id_1,
                     stream_id_2=stream_id_2,
                     random=info_1.random,
                     session_id=info_1.session_id,
+                    src_ip_1=info_1.src_ip,
+                    src_port_1=info_1.src_port,
+                    dst_ip_1=info_1.dst_ip,
+                    dst_port_1=info_1.dst_port,
+                    src_ip_2=info_2.src_ip,
+                    src_port_2=info_2.src_port,
+                    dst_ip_2=info_2.dst_ip,
+                    dst_port_2=info_2.dst_port,
                 )
                 matches.append(match)
-        
+
         return matches
 
