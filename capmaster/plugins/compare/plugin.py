@@ -10,7 +10,7 @@ import click
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
 from capmaster.core.connection.connection_extractor import extract_connections_from_pcap
-from capmaster.core.file_scanner import PcapScanner
+from capmaster.utils.input_parser import DualFileInputParser
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
 from capmaster.plugins.compare.packet_comparator import PacketComparator
@@ -109,40 +109,12 @@ class ComparePlugin(PluginBase):
             Exit code (0 for success, non-zero for failure)
         """
         try:
-            # Determine which input method is being used
-            if file1 and file2:
-                # Using --file1 and --file2
-                baseline_file = file1
-                compare_file = file2
-                # Create pcap_id mapping: file path -> pcap_id
-                pcap_id_mapping = {
-                    str(file1): file1_pcapid,
-                    str(file2): file2_pcapid,
-                }
-            else:
-                # Using -i/--input (legacy method)
-                # Parse input path (supports comma-separated file list)
-                if isinstance(input_path, str):
-                    input_paths = PcapScanner.parse_input(input_path)
-                    # Preserve order only for comma-separated file lists
-                    preserve_order = "," in input_path
-                else:
-                    input_paths = [str(input_path)]
-                    preserve_order = False
-
-                # Scan for PCAP files
-                pcap_files = PcapScanner.scan(input_paths, recursive=False, preserve_order=preserve_order)
-
-                if len(pcap_files) != 2:
-                    raise InsufficientFilesError(required=2, found=len(pcap_files))
-
-                # Determine baseline file (first file in input order)
-                # - For comma-separated files: first file in the list (order preserved)
-                # - For directory: first file in alphabetical order (sorted by PcapScanner)
-                baseline_file = pcap_files[0]
-                compare_file = pcap_files[1]
-                # No pcap_id mapping for legacy method
-                pcap_id_mapping = None
+            dual_input = DualFileInputParser.parse(
+                input_path, file1, file2, file1_pcapid, file2_pcapid
+            )
+            baseline_file = dual_input.file1
+            compare_file = dual_input.file2
+            pcap_id_mapping = dual_input.pcap_id_mapping
 
             logger.info(f"Baseline file: {baseline_file.name}")
             logger.info(f"Compare file: {compare_file.name}")

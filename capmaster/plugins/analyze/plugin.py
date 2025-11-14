@@ -15,6 +15,7 @@ from capmaster.core.protocol_detector import ProtocolDetector
 from capmaster.core.tshark_wrapper import TsharkWrapper
 from capmaster.plugins.analyze.executor import AnalysisExecutor
 from capmaster.plugins.analyze.modules import discover_modules, get_all_modules
+from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
 from capmaster.utils.errors import (
     NoPcapFilesError,
@@ -99,6 +100,7 @@ def _process_single_file(
         return (pcap_file, 0)
 
 
+@register_plugin
 class AnalyzePlugin(PluginBase):
     """Plugin for analyzing PCAP files and generating statistics."""
 
@@ -306,8 +308,11 @@ class AnalyzePlugin(PluginBase):
             # Initialize core components
             try:
                 tshark = TsharkWrapper()
-            except FileNotFoundError as e:
-                raise TsharkNotFoundError() from e
+            except (FileNotFoundError, RuntimeError) as e:
+                # Map tshark-not-found errors to a user-friendly CapMasterError
+                if "tshark not found" in str(e).lower():
+                    raise TsharkNotFoundError() from e
+                raise
 
             protocol_detector = ProtocolDetector(tshark)
             executor = AnalysisExecutor(tshark, protocol_detector)

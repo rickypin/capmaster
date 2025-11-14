@@ -1,5 +1,0 @@
-⠋ Scanning for PCAP files...                                            0%
-
-Error: Need at least 2 PCAP files, found 4
-Suggestion: Please provide a directory containing at least 2 PCAP files for 
-matching.

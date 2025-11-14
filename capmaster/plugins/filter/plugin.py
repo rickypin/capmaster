@@ -70,15 +70,40 @@ def _detect_one_way_streams_helper(pcap_file: Path, ack_threshold: int) -> list[
         logger.error(f"tshark failed: {e.stderr}")
         return []
 
-    # Parse packets and feed to detector
     detector = OneWayDetector(ack_threshold=ack_threshold)
+    _feed_detector_from_lines(
+        detector,
+        result.stdout.strip().split("\n"),
+        strip_lines=False,
+        log_invalid_lines=False,
+    )
+    return _collect_one_way_stream_ids(detector, log_analysis=False)
 
-    for line in result.stdout.strip().split("\n"):
+
+def _feed_detector_from_lines(
+    detector: OneWayDetector,
+    lines,
+    *,
+    strip_lines: bool,
+    log_invalid_lines: bool,
+) -> None:
+    """Feed TCP packet lines into a one-way detector.
+
+    Args:
+        detector: OneWayDetector instance
+        lines: Iterable of raw lines from tshark output
+        strip_lines: Whether to strip each line before processing
+        log_invalid_lines: Whether to log lines that cannot be parsed
+    """
+    for raw_line in lines:
+        line = raw_line.strip() if strip_lines else raw_line
         if not line:
             continue
 
         parts = line.split("\t")
         if len(parts) < 7:
+            if log_invalid_lines:
+                logger.debug("Skipping invalid line: %s", line.strip())
             continue
 
         try:
@@ -92,15 +117,38 @@ def _detect_one_way_streams_helper(pcap_file: Path, ack_threshold: int) -> list[
                 tcp_len=int(parts[6]) if parts[6] else 0,
             )
             detector.add_packet(packet)
-        except (ValueError, IndexError):
+        except (ValueError, IndexError) as e:
+            if log_invalid_lines:
+                logger.debug("Skipping invalid line: %s (%s)", line.strip(), e)
             continue
 
-    # Get one-way streams
-    one_way_streams = []
-    for analysis in detector.analyze():
-        one_way_streams.append(analysis.stream_id)
 
+def _collect_one_way_stream_ids(
+    detector: OneWayDetector,
+    *,
+    log_analysis: bool,
+) -> list[int]:
+    """Collect one-way stream IDs from detector analysis.
+
+    Args:
+        detector: OneWayDetector instance
+        log_analysis: Whether to log analysis details
+
+    Returns:
+        List of one-way stream IDs
+    """
+    one_way_streams: list[int] = []
+    for analysis in detector.analyze():
+        if log_analysis:
+            logger.info(
+                "One-way stream %s: %s, ACK delta=%s",
+                analysis.stream_id,
+                analysis.active_direction,
+                analysis.ack_delta,
+            )
+        one_way_streams.append(analysis.stream_id)
     return one_way_streams
+
 
 
 def _filter_single_file(
@@ -442,7 +490,7 @@ class FilterPlugin(PluginBase):
         ]
 
         # Build tshark arguments
-        args = ["-T", "fields", "-E", "separator=/t"]
+        args = ["-T", "fields", "-E", "separator=\t"]
         for field in fields:
             args.extend(["-e", field])
         args.extend(["-Y", "tcp"])
@@ -460,41 +508,17 @@ class FilterPlugin(PluginBase):
                 output_file=tmp_file,
             )
 
-            # Parse the output and detect one-way streams
             detector = OneWayDetector(ack_threshold=ack_threshold)
 
             with open(tmp_file, encoding="utf-8", errors="replace") as f:
-                for line in f:
-                    parts = line.strip().split("\t")
-                    if len(parts) < 7:
-                        continue
-
-                    try:
-                        packet = TcpPacketInfo(
-                            stream_id=int(parts[0]),
-                            src_ip=parts[1],
-                            src_port=int(parts[2]),
-                            dst_ip=parts[3],
-                            dst_port=int(parts[4]),
-                            ack=int(parts[5]) if parts[5] else 0,
-                            tcp_len=int(parts[6]) if parts[6] else 0,
-                        )
-                        detector.add_packet(packet)
-                    except (ValueError, IndexError) as e:
-                        logger.debug(f"Skipping invalid line: {line.strip()} ({e})")
-                        continue
-
-            # Get one-way streams
-            one_way_streams = []
-            for analysis in detector.analyze():
-                logger.info(
-                    f"One-way stream {analysis.stream_id}: "
-                    f"{analysis.active_direction}, "
-                    f"ACK delta={analysis.ack_delta}"
+                _feed_detector_from_lines(
+                    detector,
+                    f,
+                    strip_lines=True,
+                    log_invalid_lines=True,
                 )
-                one_way_streams.append(analysis.stream_id)
 
-            return one_way_streams
+            return _collect_one_way_stream_ids(detector, log_analysis=True)
 
         finally:
             # Clean up temporary file

@@ -142,12 +142,18 @@ class TsharkWrapper:
             if result.stderr:
                 logger.warning(f"tshark warning: {result.stderr.strip()}")
         else:
-            # Error - raise exception
+            # Error - log and then raise exception
+            if result.stderr:
+                logger.error(
+                    "tshark command failed with exit code %s: %s",
+                    result.returncode,
+                    result.stderr.strip(),
+                )
             raise subprocess.CalledProcessError(
                 result.returncode,
                 cmd,
                 output=result.stdout,
-                stderr=result.stderr
+                stderr=result.stderr,
             )
 
         return result
