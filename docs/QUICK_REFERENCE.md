@@ -1,7 +1,9 @@
 # CapMaster Quick Reference Card
 
-**Version:** 1.0.0  
-**Last Updated:** 2024-11-02
+> **Scope（范围）**：为常见 CLI 用法提供示例级“速查卡”，方便人类和 AI 快速拼出常用命令。
+> **Contract（契约）**：示例命令展示的是“推荐组合”和典型参数，不保证覆盖所有 flags；精确语义以 `capmaster --help` 输出和代码实现为准。
+> **Implementation Pointers**：需要确认参数含义或默认值时，请查看 `capmaster/plugins/*` 中各插件的 CLI 定义（`setup_cli`）以及相关测试用例。
+> **Maintenance**：仅在推荐命令模式发生明显变化时更新此文件，避免在此重复维护完整参数表。
 
 ---
 

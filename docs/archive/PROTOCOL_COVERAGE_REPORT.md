@@ -308,7 +308,7 @@ PCAP 文件:
 
 ## 开发参考
 
-**模块开发指南**: `docs/ANALYZE_MODULE_DEVELOPMENT_GUIDE.md`
+**模块开发指南**: 请参考 `capmaster/plugins/analyze/modules/` 中现有模块实现，以及 `docs/AI_PLUGIN_EXTENSION_GUIDE.md` 中的插件和模块开发说明。
 
 **参考现有模块**:
 - 简单: `protocol_hierarchy.py` (无后处理)
@@ -320,8 +320,8 @@ PCAP 文件:
 
 ---
 
-**分析工具**: `check_protocols.py`
-**生成命令**: `python check_protocols.py`
+**分析工具**: 使用内置 Analyze 插件和 `ProtocolHierarchyModule` 生成协议统计（历史脚本 `check_protocols.py` 已废弃）。
+**生成命令示例**: `python -m capmaster analyze -i <pcap_file> -m protocol_hierarchy -o <output_dir>`
 
 ---
 

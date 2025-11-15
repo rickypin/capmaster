@@ -1,4 +1,5 @@
 # CapMaster - Production Dependencies
+# Canonical dependency ranges are defined in pyproject.toml; this file is a pinned snapshot for convenience.
 # Generated from pyproject.toml [project.dependencies]
 # Install with: pip install -r requirements.txt
 

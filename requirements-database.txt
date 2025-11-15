@@ -1,4 +1,5 @@
 # CapMaster - Database Optional Dependencies
+# Canonical dependency ranges are defined in pyproject.toml; this file is a pinned snapshot for convenience.
 # Generated from pyproject.toml [project.optional-dependencies.database]
 # Install with: pip install -r requirements-database.txt
 

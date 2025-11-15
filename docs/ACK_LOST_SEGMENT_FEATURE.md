@@ -4,6 +4,11 @@
 
 新增 `tcp.analysis.ack_lost_segment` 指标，用于更准确地区分真实网络丢包和抓包遗漏。
 
+> **Scope（范围）**：定义 ACK Lost Segment / Real Loss 相关字段及其关系，用于网络质量分析和报表。
+> **Contract（契约）**：以字段名和公式为准，保证这些指标在代码中存在且语义一致；不在此重复实现细节。
+> **Implementation Pointers**：需要精确行为时，请查看 `QualityMetrics`、`TcpAnalysisPacket` 等数据类以及对应的解析与计算逻辑和测试。
+> **Maintenance**：新增或修改相关字段、公式或含义时务必同步更新本文件的“字段与公式”描述。
+
 ## 问题背景
 
 原有的 `tcp.analysis.lost_segment` 指标存在局限性：
@@ -133,7 +138,7 @@ capmaster comparative-analysis \
 
 运行测试脚本验证功能：
 ```bash
-python test_ack_lost_segment.py
+python scripts/manual/test_ack_lost_segment.py
 ```
 
 ## 参考

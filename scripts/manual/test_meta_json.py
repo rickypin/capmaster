@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Test script to verify meta.json file generation for match commands."""
+"""Manual/local test script to verify meta.json file generation for match commands.
+
+NOTE:
+- This script uses a hard-coded local path (/Users/ricky/Downloads/2hops/dbs_1112_2/) and is not portable.
+- It is not collected by pytest; treat it as a personal helper/legacy script.
+"""
 
 import json
 import subprocess

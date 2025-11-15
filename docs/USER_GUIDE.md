@@ -2,6 +2,11 @@
 
 This comprehensive guide covers all aspects of using CapMaster for PCAP analysis, TCP connection matching, and filtering.
 
+> **Scope（范围）**：面向人类用户和 AI Agent，描述 CapMaster CLI 的对外行为和典型使用场景。
+> **Contract（契约）**：只约定命令名称、关键参数和输入/输出形态，不保证穷举所有 flags 或内部实现细节。
+> **Implementation Pointers**：需要精确语义时，请直接阅读 `capmaster/plugins/*` 中各插件的 `setup_cli` / `execute` 实现，以及 `tests/` 目录下的端到端用例。
+> **Maintenance**：当 CLI 行为有变更时，仅更新受影响的小节；避免在文档中复制大段实现细节，以 `--help` 输出和测试为准。
+
 ## Table of Contents
 
 1. [Getting Started](#getting-started)

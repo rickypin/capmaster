@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Test script to verify compare command generates meta.json and uses markdown format."""
+"""Manual regression script to verify compare command generates meta.json and uses markdown format.
+
+NOTE:
+- This is a standalone script and is not part of the automated pytest suite.
+- It depends on local PCAP files under cases/dbs_20251028-Masked.
+"""
 
 import json
 import subprocess

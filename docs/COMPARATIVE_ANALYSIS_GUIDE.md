@@ -6,6 +6,11 @@
 - **服务级别对比** (`--service`): 按服务聚合统计网络质量
 - **连接对对比** (`--matched-connections`): 为每一对匹配的连接统计网络质量
 
+> **Scope（范围）**：说明对比分析子命令的外部行为、主要参数及输出结构。
+> **Contract（契约）**：约定输入/输出格式和关键指标含义（丢包率、重传率等），不保证在此维护完整实现细节。
+> **Implementation Pointers**：需要精确逻辑时，请查看 comparative-analysis 插件的实现代码以及相应测试用例。
+> **Maintenance**：当新增/移除参数或调整输出字段时，更新示例命令和指标说明；协议/模块列表以代码为准，不在文档重复维护。
+
 ## 功能特性
 
 - **对比分析**: 同时分析两个 PCAP 文件，识别差异和质量指标
@@ -138,9 +143,7 @@ Client -> Capture Point A -> Network Device(10.93.136.244:443) -> Capture Point 
      - 总数据包数
      - 重传数量和比率
      - 重复 ACK 数量和比率
-     - 丢失段数量和比率（可能包含抓包遗漏）
-     - ACK 丢失段数量和比率（抓包遗漏指标）
-     - 真实丢包数量和比率（排除抓包遗漏）
+     - 丢包数量和比率
 
 ### 输出示例
 
@@ -199,24 +202,7 @@ Service: 10.93.75.130:8443
 
 - `tcp.analysis.retransmission`: TCP 重传
 - `tcp.analysis.duplicate_ack`: 重复 ACK
-- `tcp.analysis.lost_segment`: 丢失的数据段（可能包含抓包遗漏）
-- `tcp.analysis.ack_lost_segment`: ACK 确认了未被捕获的数据段（表示抓包遗漏，非真实丢包）
-
-### 丢包判断逻辑
-
-为了区分真实网络丢包和抓包遗漏，系统使用以下逻辑：
-
-- **Lost Segment (丢失段)**: 检测到前序数据段未被捕获
-  - 可能原因：真实网络丢包 OR 抓包点遗漏
-- **ACK Lost Segment (ACK 丢失段)**: ACK 确认了一个未被捕获的数据段
-  - 说明：该数据段实际到达了对端，只是抓包点没抓到
-- **Real Loss (真实丢包)**: `Lost Segment - ACK Lost Segment`
-  - 计算公式：`Real Loss = max(0, lost_segments - ack_lost_segments)`
-  - 含义：排除抓包遗漏后的真实网络丢包
-
-**判断规则**：
-- `lost_segment` 高 + `ack_lost_segment` 高 → **抓包遗漏**（数据段实际到达，只是没抓到）
-- `lost_segment` 高 + `ack_lost_segment` 低 → **真实网络丢包**（数据段确实丢失）
+- `tcp.analysis.lost_segment`: 丢失的数据段
 
 ### 方向判断
 
@@ -229,17 +215,16 @@ Service: 10.93.75.130:8443
 
 ```
 Rate (%) = (Event Count / Total Packets) × 100
-Real Loss Rate (%) = (max(0, Lost Segments - ACK Lost Segments) / Total Packets) × 100
 ```
 
 ### 性能评分
 
 在连接对分析中，系统会为每个连接对计算性能评分（0-100 分）：
 
-- **评分算法**: 基于重传率、重复 ACK 率和**真实丢包率**的加权平均
+- **评分算法**: 基于重传率、重复 ACK 率和丢包率的加权平均
   - 重传率权重: 40%
   - 重复 ACK 率权重: 30%
-  - **真实丢包率**权重: 30% (使用 Real Loss Rate，排除抓包遗漏)
+  - 丢包率权重: 30%
 - **评分含义**:
   - 100 分: 完美性能，无任何网络质量问题
   - 90-99 分: 优秀性能，偶尔有轻微问题

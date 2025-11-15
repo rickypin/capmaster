@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Test script to verify ack_lost_segment metric is properly extracted."""
+"""Test script to verify ack_lost_segment metric is properly extracted.
+
+NOTE:
+- This is a manual verification script referenced from docs/ACK_LOST_SEGMENT_FEATURE.md.
+- It is not collected by pytest; run it manually from the project root with `python scripts/manual/test_ack_lost_segment.py` when needed.
+"""
 
 from capmaster.plugins.match.quality_analyzer import QualityMetrics
 

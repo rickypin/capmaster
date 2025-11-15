@@ -2,6 +2,8 @@
 
 Welcome to the CapMaster documentation! This directory contains comprehensive guides, references, and technical documentation for using and developing CapMaster.
 
+> **给 AI Agent 的约定**：请将 `capmaster/` 代码和 `tests/` 测试视为唯一真实来源，文档只提供导航、概念和不变量说明；当文档与代码冲突时，以代码和测试为准。
+
 ## 📚 Documentation Index
 
 ### Getting Started
@@ -26,11 +28,9 @@ Welcome to the CapMaster documentation! This directory contains comprehensive gu
   - Bucketing strategies
   - Match modes (one-to-one, one-to-many)
 
-- **[PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md)** - Performance benchmarks
-  - Benchmark results vs original shell scripts
-  - Performance analysis by dataset size
-  - Configuration recommendations
-  - Optimization strategies
+- **Performance & implementation notes**
+  - For up-to-date behavior and performance characteristics, inspect the code under `capmaster/core/` and `capmaster/plugins/` as well as relevant tests in `tests/`.
+  - Historical performance and optimization reports are archived under **[archive/](archive/)** (e.g. `PERFORMANCE_REPORT.md`, `MATCH_PLUGIN_PERFORMANCE_REVIEW.md`).
 
 - **[MATCH_PLUGIN_PERFORMANCE_REVIEW.md](MATCH_PLUGIN_PERFORMANCE_REVIEW.md)** - In-depth performance review
   - Detailed performance analysis
@@ -39,15 +39,16 @@ Welcome to the CapMaster documentation! This directory contains comprehensive gu
 
 ### Protocol & Feature Coverage
 
-- **[PROTOCOL_COVERAGE_REPORT.md](PROTOCOL_COVERAGE_REPORT.md)** - Protocol support
-  - 28 analysis modules
-  - Supported protocols (TCP, UDP, HTTP, DNS, VoIP, etc.)
-  - Module descriptions and output formats
-
 - **[COMPARATIVE_ANALYSIS_GUIDE.md](COMPARATIVE_ANALYSIS_GUIDE.md)** - Comparative analysis feature
-  - Service-level comparison
-  - Connection-pair comparison
-  - Quality metrics (packet loss, retransmission, duplicate ACK)
+  - Service-level and connection-pair level quality metrics
+  - Integrates with `capmaster match` output
+
+- **[ACK_LOST_SEGMENT_FEATURE.md](ACK_LOST_SEGMENT_FEATURE.md)** - ACK Lost Segment & Real Loss metrics
+  - Clarifies difference between capture misses and real network loss
+  - Defines derived fields and invariants for quality analysis
+
+- **Historical protocol coverage snapshot**
+  - See **[archive/PROTOCOL_COVERAGE_REPORT.md](archive/PROTOCOL_COVERAGE_REPORT.md)** for a past protocol coverage report; for current modules, inspect `capmaster/plugins/analyze/modules/` and corresponding tests.
 
 ### Development
 
@@ -63,14 +64,12 @@ Welcome to the CapMaster documentation! This directory contains comprehensive gu
   - `gil_demonstration.py` - Python GIL demonstration
   - `match_parallelization_analysis.py` - Parallelization analysis
 
-### Historical Documentation
+### Analysis & Historical Reports
 
-- **[archive/](archive/)** - Archived development documents
-  - Project specifications
-  - Task checklists (100% complete)
-  - Refactoring summaries
-  - Fix completion reports
-  - Changelogs
+- **[archive/](archive/)** - Historical analysis and design reports
+  - Matching strategy comparisons
+  - Behavioral matching tuning & validation
+  - Specific fix/design histories
 
 ## 🚀 Quick Start
 
@@ -78,7 +77,7 @@ Welcome to the CapMaster documentation! This directory contains comprehensive gu
 
 1. Start with **[USER_GUIDE.md](USER_GUIDE.md)** for comprehensive introduction
 2. Use **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** for quick command lookup
-3. Check **[PROTOCOL_COVERAGE_REPORT.md](PROTOCOL_COVERAGE_REPORT.md)** for supported protocols
+3. For supported protocols and modules, prefer inspecting `capmaster/plugins/analyze/modules/` and running CLI `--help`; historical protocol coverage snapshot is available at **[archive/PROTOCOL_COVERAGE_REPORT.md](archive/PROTOCOL_COVERAGE_REPORT.md)**.
 
 ### Advanced Users
 
@@ -90,7 +89,7 @@ Welcome to the CapMaster documentation! This directory contains comprehensive gu
 
 1. Start with **[AI_PLUGIN_EXTENSION_GUIDE.md](AI_PLUGIN_EXTENSION_GUIDE.md)**
 2. Review code in **[examples/](examples/)**
-3. Check **[archive/](archive/)** for historical context
+3. Check git history for historical context
 
 ## 📖 Documentation Organization
 
@@ -105,13 +104,14 @@ docs/
 ├── PROTOCOL_COVERAGE_REPORT.md            # Protocol support matrix
 ├── COMPARATIVE_ANALYSIS_GUIDE.md          # Comparative analysis feature
 ├── AI_PLUGIN_EXTENSION_GUIDE.md           # Plugin development guide
-├── archive/                               # Historical documents
+├── archive/                               # Historical analysis & design reports
 │   ├── README.md                          # Archive index
-│   ├── TASK_CHECKLIST.md                  # Development tasks (100% complete)
-│   ├── PROJECT_SPEC.md                    # Original project specification
-│   ├── REFACTORING_SUMMARY.md             # Code refactoring summary
-│   ├── *_FIX_SUMMARY.md                   # Various fix summaries
-│   └── changelogs/                        # Feature changelogs
+│   ├── BEHAVIORAL_MATCHING_TUNING.md      # Behavioral tuning report
+│   ├── BEHAVIORAL_PRECISION_ANALYSIS.md   # Behavioral precision analysis
+│   ├── BEHAVIORAL_VALIDATION_REPORT.md    # Behavioral validation report
+│   ├── MATCHING_STRATEGIES_COMPARISON.md  # Matching strategies comparison
+│   ├── MERGE_BY_5TUPLE_FIX.md             # --merge-by-5tuple fix notes
+│   └── STRATEGY_COMPARISON_SUMMARY.md     # Strategy comparison summary
 └── examples/                              # Code examples
     ├── README.md                          # Examples index
     ├── gil_demonstration.py               # GIL demonstration
@@ -125,10 +125,10 @@ docs/
 - **Installation**: USER_GUIDE.md → Getting Started
 - **Command Usage**: QUICK_REFERENCE.md or USER_GUIDE.md
 - **Matching Algorithm**: MATCH_LOGIC_COMPLETE.md
-- **Performance**: PERFORMANCE_REPORT.md
-- **Protocols**: PROTOCOL_COVERAGE_REPORT.md
+- **Performance**: runtime behavior from code (`capmaster/core/`, `capmaster/plugins/`) and tests; historical benchmarks in **[archive/PERFORMANCE_REPORT.md](archive/PERFORMANCE_REPORT.md)**
+- **Protocols**: current modules under `capmaster/plugins/analyze/modules/`; historical coverage snapshot in **[archive/PROTOCOL_COVERAGE_REPORT.md](archive/PROTOCOL_COVERAGE_REPORT.md)**
 - **Development**: AI_PLUGIN_EXTENSION_GUIDE.md
-- **History**: archive/README.md
+- **History**: git history (git log)
 
 ### By Use Case
 
@@ -154,7 +154,7 @@ For the complete list of changes, see the git history.
 1. Check **[USER_GUIDE.md](USER_GUIDE.md)** → Troubleshooting section
 2. Review **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** for command syntax
 3. Search documentation using your editor's search function
-4. Check **[archive/](archive/)** for historical context
+4. Check git history (git log) for historical context
 
 ## 📄 License
 

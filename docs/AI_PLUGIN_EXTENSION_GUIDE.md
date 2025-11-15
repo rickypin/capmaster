@@ -14,6 +14,8 @@
 - Analyze 模块：继承 `AnalysisModule` 且使用 `@register_module`
 - 禁止直接 `subprocess.run("tshark", ...)`，必须使用 `TsharkWrapper`
 
+> **Maintenance（维护约定）**：当插件体系结构、注册方式或对 AI 的约束发生变化时，优先更新本文件顶部的约定和示例，避免在多处重复描述同一规则。
+
 ## 1. 添加新的顶层插件
 
 ### 1.1 核心步骤
