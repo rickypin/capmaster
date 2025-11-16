@@ -45,40 +45,42 @@ class ServerDetector:
 
     # Well-known ports (IANA registered 0-1023 + common services)
     WELL_KNOWN_PORTS = {
-        20, 21,      # FTP
-        22,          # SSH
-        23,          # Telnet
-        25,          # SMTP
-        53,          # DNS
-        80,          # HTTP
-        110,         # POP3
-        143,         # IMAP
-        443,         # HTTPS
-        465,         # SMTPS
-        587,         # SMTP submission
-        993,         # IMAPS
-        995,         # POP3S
-        3389,        # RDP
-        5900,        # VNC
-        8080,        # HTTP alternate
-        8443,        # HTTPS alternate
+        20,
+        21,  # FTP
+        22,  # SSH
+        23,  # Telnet
+        25,  # SMTP
+        53,  # DNS
+        80,  # HTTP
+        110,  # POP3
+        143,  # IMAP
+        443,  # HTTPS
+        465,  # SMTPS
+        587,  # SMTP submission
+        993,  # IMAPS
+        995,  # POP3S
+        3389,  # RDP
+        5900,  # VNC
+        8080,  # HTTP alternate
+        8443,  # HTTPS alternate
     }
 
     # Database ports (extended list)
     DATABASE_PORTS = {
-        1433,        # MS SQL Server
-        1521,        # Oracle
-        3306,        # MySQL
-        5432,        # PostgreSQL
-        6379,        # Redis
-        7000, 7001,  # Cassandra
-        8529,        # ArangoDB
-        9042,        # Cassandra CQL
-        27017,       # MongoDB
-        50000,       # DB2
+        1433,  # MS SQL Server
+        1521,  # Oracle
+        3306,  # MySQL
+        5432,  # PostgreSQL
+        6379,  # Redis
+        7000,
+        7001,  # Cassandra
+        8529,  # ArangoDB
+        9042,  # Cassandra CQL
+        27017,  # MongoDB
+        50000,  # DB2
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the detector with cardinality tracking."""
         # Track unique client IPs for each IP:Port combination
         # Key: (ip, port), Value: set of client IPs
@@ -209,9 +211,7 @@ class ServerDetector:
 
         # Get port reuse patterns
         port1_server_ips = len(self._port_server_ips.get(connection.server_port, set()))
-        port1_client_ips = len(self._port_client_ips.get(connection.server_port, set()))
         port2_server_ips = len(self._port_server_ips.get(connection.client_port, set()))
-        port2_client_ips = len(self._port_client_ips.get(connection.client_port, set()))
 
         # Get port stability patterns (how many different peer ports each endpoint connects to)
         peer_ports1 = len(self._endpoint_peer_ports.get(endpoint1, set()))
@@ -490,4 +490,3 @@ class ServerDetector:
                 confidence="VERY_LOW",
                 method="FALLBACK_PORT_COMPARISON_SWAPPED",
             )
-

@@ -1,27 +1,46 @@
 """Match plugin for TCP connection matching."""
 
 from __future__ import annotations
+
+import json
 import logging
 from pathlib import Path
 
 import click
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+)
 
+from capmaster.core.connection.behavioral_matcher import BehavioralMatcher
 from capmaster.core.connection.connection_extractor import extract_connections_from_pcap
 from capmaster.core.connection.f5_matcher import F5Matcher
-from capmaster.core.connection.tls_matcher import TlsMatcher
 from capmaster.core.connection.matcher import BucketStrategy, ConnectionMatcher, MatchMode
-from capmaster.core.connection.behavioral_matcher import BehavioralMatcher
+from capmaster.core.connection.models import TcpConnection
+from capmaster.core.connection.tls_matcher import TlsMatcher
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
+from capmaster.plugins.match.cli_commands import register_comparative_analysis_command
 from capmaster.plugins.match.endpoint_stats import (
     EndpointStatsCollector,
+    ServiceKey,
+    aggregate_by_service,
     format_endpoint_stats,
-    format_endpoint_stats_table,
+    format_service_stats,
 )
-from capmaster.utils.meta_writer import write_meta_json
+from capmaster.plugins.match.output_formatter import (
+    output_match_results,
+    save_matches_json,
+)
 from capmaster.plugins.match.sampler import ConnectionSampler
 from capmaster.plugins.match.server_detector import ServerDetector
+from capmaster.plugins.match.strategies import (
+    convert_f5_matches_to_connection_matches,
+    convert_tls_matches_to_connection_matches,
+)
 from capmaster.utils.cli_options import (
     dual_file_input_options,
     validate_database_params,
@@ -32,13 +51,7 @@ from capmaster.utils.errors import (
     handle_error,
 )
 from capmaster.utils.input_parser import DualFileInputParser
-
-from capmaster.plugins.match.cli_commands import register_comparative_analysis_command
-from capmaster.plugins.match.output_formatter import output_match_results, save_matches_json
-from capmaster.plugins.match.strategies import (
-    convert_f5_matches_to_connection_matches,
-    convert_tls_matches_to_connection_matches,
-)
+from capmaster.utils.meta_writer import write_meta_json
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +202,7 @@ class MatchPlugin(PluginBase):
             "--service-group-mapping",
             type=click.Path(exists=True, path_type=Path),
             help="JSON file mapping service ports to group IDs for custom grouping. "
-            "Format: {\"8000\": 1, \"8080\": 1, \"443\": 2}. "
+            'Format: {"8000": 1, "8080": 1, "443": 2}. '
             "Only used when service aggregation is enabled (default behavior).",
         )
         @click.option(
@@ -326,9 +339,7 @@ class MatchPlugin(PluginBase):
             validate_dual_file_input(ctx, input_path, file1, file2, file1_pcapid, file2_pcapid)
 
             # Validate database parameters
-            validate_database_params(
-                ctx, db_connection, kase_id, "endpoint-stats", endpoint_stats
-            )
+            validate_database_params(ctx, db_connection, kase_id, "endpoint-stats", endpoint_stats)
 
             exit_code = self.execute(
                 input_path=input_path,
@@ -341,6 +352,10 @@ class MatchPlugin(PluginBase):
                 bucket_strategy=bucket,
                 score_threshold=threshold,
                 match_mode=match_mode,
+                behavioral_weight_overlap=behavioral_weight_overlap,
+                behavioral_weight_duration=behavioral_weight_duration,
+                behavioral_weight_iat=behavioral_weight_iat,
+                behavioral_weight_bytes=behavioral_weight_bytes,
                 endpoint_stats=endpoint_stats,
                 endpoint_stats_output=endpoint_stats_output,
                 enable_sampling=enable_sampling,
@@ -349,7 +364,6 @@ class MatchPlugin(PluginBase):
                 db_connection=db_connection,
                 kase_id=kase_id,
                 endpoint_stats_json=endpoint_stats_json,
-
                 merge_by_5tuple=merge_by_5tuple,
                 endpoint_pair_mode=endpoint_pair_mode,
                 service_group_mapping=service_group_mapping,
@@ -360,8 +374,6 @@ class MatchPlugin(PluginBase):
 
         # Register extracted comparative-analysis subcommand
         register_comparative_analysis_command(self, cli_group)
-
-
 
     def execute(  # type: ignore[override]
         self,
@@ -375,6 +387,10 @@ class MatchPlugin(PluginBase):
         bucket_strategy: str = "auto",
         score_threshold: float = 0.60,
         match_mode: str = "one-to-one",
+        behavioral_weight_overlap: float = 0.35,
+        behavioral_weight_duration: float = 0.25,
+        behavioral_weight_iat: float = 0.20,
+        behavioral_weight_bytes: float = 0.20,
         endpoint_stats: bool = False,
         endpoint_stats_output: Path | None = None,
         enable_sampling: bool = False,
@@ -403,6 +419,10 @@ class MatchPlugin(PluginBase):
             bucket_strategy: Bucketing strategy
             score_threshold: Minimum score threshold
             match_mode: Matching mode (one-to-one or one-to-many)
+            behavioral_weight_overlap: Weight for time overlap in behavioral matching
+            behavioral_weight_duration: Weight for duration similarity in behavioral matching
+            behavioral_weight_iat: Weight for inter-arrival-time similarity in behavioral matching
+            behavioral_weight_bytes: Weight for total-bytes similarity in behavioral matching
             endpoint_stats: Generate endpoint statistics
             endpoint_stats_output: Output file for endpoint statistics
             enable_sampling: Enable sampling for large datasets (default: False)
@@ -468,13 +488,15 @@ class MatchPlugin(PluginBase):
                 # Determine matching strategy: F5 > TLS > Feature-based, or explicit behavioral
                 use_f5_matching = False
                 use_tls_matching = False
-                use_behavioral = (mode.lower() == "behavioral")
+                use_behavioral = mode.lower() == "behavioral"
 
                 if use_behavioral:
                     logger.info("Behavioral-only mode selected - skipping F5/TLS detection")
                 else:
                     # Check for F5 Ethernet Trailer first (highest priority)
-                    detect_task = progress.add_task("[cyan]Detecting F5 Ethernet Trailer...", total=2)
+                    detect_task = progress.add_task(
+                        "[cyan]Detecting F5 Ethernet Trailer...", total=2
+                    )
                     f5_matcher = F5Matcher()
 
                     has_f5_file1 = f5_matcher.detect_f5_trailer(match_file1)
@@ -486,7 +508,9 @@ class MatchPlugin(PluginBase):
                     use_f5_matching = has_f5_file1 and has_f5_file2
 
                     if use_f5_matching:
-                        logger.info("F5 Ethernet Trailer detected in both files - using F5 matching mode")
+                        logger.info(
+                            "F5 Ethernet Trailer detected in both files - using F5 matching mode"
+                        )
                     else:
                         if has_f5_file1 or has_f5_file2:
                             logger.warning(
@@ -495,7 +519,9 @@ class MatchPlugin(PluginBase):
                             )
 
                         # Check for TLS Client Hello if F5 is not available (medium priority)
-                        detect_task = progress.add_task("[cyan]Detecting TLS Client Hello...", total=2)
+                        detect_task = progress.add_task(
+                            "[cyan]Detecting TLS Client Hello...", total=2
+                        )
                         tls_matcher = TlsMatcher()
 
                         has_tls_file1 = tls_matcher.detect_tls_client_hello(match_file1)
@@ -507,7 +533,9 @@ class MatchPlugin(PluginBase):
                         use_tls_matching = has_tls_file1 and has_tls_file2
 
                         if use_tls_matching:
-                            logger.info("TLS Client Hello detected in both files - using TLS matching mode")
+                            logger.info(
+                                "TLS Client Hello detected in both files - using TLS matching mode"
+                            )
                         else:
                             if has_tls_file1 or has_tls_file2:
                                 logger.warning(
@@ -529,15 +557,23 @@ class MatchPlugin(PluginBase):
                 # Extract connections from both files
                 extract_task = progress.add_task("[cyan]Extracting connections...", total=2)
 
-                progress.update(extract_task, description=f"[cyan]Extracting from {match_file1.name}...")
-                connections1 = self._extract_connections(match_file1, merge_by_5tuple=merge_by_5tuple)
+                progress.update(
+                    extract_task, description=f"[cyan]Extracting from {match_file1.name}..."
+                )
+                connections1 = self._extract_connections(
+                    match_file1, merge_by_5tuple=merge_by_5tuple
+                )
                 logger.info(f"Found {len(connections1)} connections in {match_file1.name}")
                 if merge_by_5tuple:
                     logger.info("  (merged by direction-independent 5-tuple)")
                 progress.update(extract_task, advance=1)
 
-                progress.update(extract_task, description=f"[cyan]Extracting from {match_file2.name}...")
-                connections2 = self._extract_connections(match_file2, merge_by_5tuple=merge_by_5tuple)
+                progress.update(
+                    extract_task, description=f"[cyan]Extracting from {match_file2.name}..."
+                )
+                connections2 = self._extract_connections(
+                    match_file2, merge_by_5tuple=merge_by_5tuple
+                )
                 logger.info(f"Found {len(connections2)} connections in {match_file2.name}")
                 if merge_by_5tuple:
                     logger.info("  (merged by direction-independent 5-tuple)")
@@ -551,7 +587,9 @@ class MatchPlugin(PluginBase):
                         sample_rate = 0.5
 
                     if sample_threshold < 1:
-                        logger.warning(f"Invalid sample threshold {sample_threshold}, using default 1000")
+                        logger.warning(
+                            f"Invalid sample threshold {sample_threshold}, using default 1000"
+                        )
                         sample_threshold = 1000
 
                     sampler = ConnectionSampler(
@@ -585,12 +623,17 @@ class MatchPlugin(PluginBase):
                         )
                         progress.update(sample_task, advance=1)
                 else:
-                    logger.info("Sampling disabled (default behavior). Use --enable-sampling to enable.")
+                    logger.info(
+                        "Sampling disabled (default behavior). Use --enable-sampling to enable."
+                    )
 
                 # Branch based on matching mode
+                matcher: ConnectionMatcher | BehavioralMatcher
                 if use_f5_matching:
                     # F5-based matching
-                    match_task = progress.add_task("[green]Matching connections using F5 trailers...", total=1)
+                    match_task = progress.add_task(
+                        "[green]Matching connections using F5 trailers...", total=1
+                    )
                     logger.info("Matching connections using F5 Ethernet Trailer...")
 
                     f5_matcher = F5Matcher()
@@ -611,7 +654,9 @@ class MatchPlugin(PluginBase):
                     )
                 elif use_tls_matching:
                     # TLS-based matching
-                    match_task = progress.add_task("[green]Matching connections using TLS Client Hello...", total=1)
+                    match_task = progress.add_task(
+                        "[green]Matching connections using TLS Client Hello...", total=1
+                    )
                     logger.info("Matching connections using TLS Client Hello...")
 
                     tls_matcher = TlsMatcher()
@@ -632,14 +677,20 @@ class MatchPlugin(PluginBase):
                     )
                 elif use_behavioral:
                     # Behavioral-only matching
-                    detector_task = progress.add_task("[yellow]Analyzing server/client roles...", total=1)
-                    logger.info("Performing cardinality analysis for server detection (behavioral mode)...")
+                    detector_task = progress.add_task(
+                        "[yellow]Analyzing server/client roles...", total=1
+                    )
+                    logger.info(
+                        "Performing cardinality analysis for server detection (behavioral mode)..."
+                    )
                     detector = self._create_and_populate_detector(connections1, connections2)
                     connections1 = self._improve_server_detection(connections1, detector)
                     connections2 = self._improve_server_detection(connections2, detector)
                     progress.update(detector_task, advance=1)
 
-                    match_task = progress.add_task("[green]Matching connections (behavioral)...", total=1)
+                    match_task = progress.add_task(
+                        "[green]Matching connections (behavioral)...", total=1
+                    )
                     logger.info("Matching connections using behavioral features only...")
                     bucket_enum = BucketStrategy(bucket_strategy)
                     match_mode_enum = MatchMode(match_mode)
@@ -658,7 +709,9 @@ class MatchPlugin(PluginBase):
                 else:
                     # Feature-based matching (original logic)
                     # Improve server detection using cardinality analysis
-                    detector_task = progress.add_task("[yellow]Analyzing server/client roles...", total=1)
+                    detector_task = progress.add_task(
+                        "[yellow]Analyzing server/client roles...", total=1
+                    )
                     logger.info("Performing cardinality analysis for server detection...")
 
                     # Create and populate detector using helper method
@@ -713,7 +766,9 @@ class MatchPlugin(PluginBase):
 
                 # Generate endpoint statistics if requested
                 if endpoint_stats:
-                    endpoint_task = progress.add_task("[green]Generating endpoint statistics...", total=1)
+                    endpoint_task = progress.add_task(
+                        "[green]Generating endpoint statistics...", total=1
+                    )
                     endpoint_stats_list = self._output_endpoint_stats(
                         matches,
                         match_file1,
@@ -725,7 +780,9 @@ class MatchPlugin(PluginBase):
                     # Aggregate by service by default (unless endpoint_pair_mode is enabled)
                     service_stats_list = None
                     if not endpoint_pair_mode:
-                        service_task = progress.add_task("[green]Aggregating by service...", total=1)
+                        service_task = progress.add_task(
+                            "[green]Aggregating by service...", total=1
+                        )
                         service_stats_list = self._aggregate_and_output_service_stats(
                             endpoint_stats_list,
                             match_file1,
@@ -772,17 +829,17 @@ class MatchPlugin(PluginBase):
         except (OSError, PermissionError) as e:
             # File system errors
             from capmaster.utils.errors import CapMasterError
+
             error = CapMasterError(
-                f"File system error: {e}",
-                "Check file permissions and ensure files are accessible"
+                f"File system error: {e}", "Check file permissions and ensure files are accessible"
             )
             return handle_error(error, show_traceback=logger.level <= logging.DEBUG)
         except RuntimeError as e:
             # Tshark or processing errors
             from capmaster.utils.errors import CapMasterError
+
             error = CapMasterError(
-                f"Processing error: {e}",
-                "Check that PCAP files are valid and tshark is working"
+                f"Processing error: {e}", "Check that PCAP files are valid and tshark is working"
             )
             return handle_error(error, show_traceback=logger.level <= logging.DEBUG)
         except Exception as e:
@@ -971,9 +1028,7 @@ class MatchPlugin(PluginBase):
 
         return matches
 
-    def _output_results(
-        self, matches: list, stats: dict, output_file: Path | None
-    ) -> None:
+    def _output_results(self, matches: list, stats: dict, output_file: Path | None) -> None:
         """Delegated to capmaster.plugins.match.output_formatter.output_match_results."""
         from capmaster.plugins.match.output_formatter import output_match_results
 
@@ -1103,7 +1158,6 @@ class MatchPlugin(PluginBase):
         Returns:
             List of ServiceStats objects
         """
-        from capmaster.plugins.match.endpoint_stats import aggregate_by_service, format_service_stats
 
         # Aggregate by service
         service_stats = aggregate_by_service(endpoint_stats_list)
@@ -1141,8 +1195,6 @@ class MatchPlugin(PluginBase):
         Raises:
             ValueError: If JSON file is invalid
         """
-        import json
-        from capmaster.plugins.match.endpoint_stats import ServiceKey
 
         try:
             with mapping_file.open("r") as f:
@@ -1162,7 +1214,7 @@ class MatchPlugin(PluginBase):
             return service_to_group
 
         except (json.JSONDecodeError, ValueError) as e:
-            raise ValueError(f"Invalid service group mapping file: {e}")
+            raise ValueError(f"Invalid service group mapping file: {e}") from e
 
     def _create_and_populate_detector(
         self,
@@ -1214,7 +1266,6 @@ class MatchPlugin(PluginBase):
         Returns:
             List of connections with improved server/client detection
         """
-        from capmaster.core.connection.models import TcpConnection
 
         improved_connections = []
 
@@ -1347,7 +1398,9 @@ class MatchPlugin(PluginBase):
 
         except ImportError as e:
             logger.error(f"Database functionality not available: {e}")
-            logger.error("Install psycopg2-binary to enable database output: pip install psycopg2-binary")
+            logger.error(
+                "Install psycopg2-binary to enable database output: pip install psycopg2-binary"
+            )
         except Exception as e:
             logger.error(f"Failed to write to database: {e}")
             raise
@@ -1379,8 +1432,7 @@ class MatchPlugin(PluginBase):
         # Skip JSON write if no endpoint pairs or service stats were matched
         if not endpoint_stats and not service_stats_list:
             logger.warning(
-                "No endpoint pairs found in match results. "
-                "Skipping JSON file write operation."
+                "No endpoint pairs found in match results. " "Skipping JSON file write operation."
             )
             return
 
@@ -1470,7 +1522,7 @@ class MatchPlugin(PluginBase):
                     )
                     file1 = dual_input.file1
                     file2 = dual_input.file2
-                    logger.info(f"Using files from input path:")
+                    logger.info("Using files from input path:")
                     logger.info(f"  File 1: {file1}")
                     logger.info(f"  File 2: {file2}")
                 except InsufficientFilesError as e:
@@ -1514,7 +1566,9 @@ class MatchPlugin(PluginBase):
             # Connection-pair analysis
             if analysis_type in ("connections", "both"):
                 if not matched_connections_file:
-                    logger.error("Matched connections file must be specified for connection pair analysis")
+                    logger.error(
+                        "Matched connections file must be specified for connection pair analysis"
+                    )
                     return 1
 
                 # Parse matched connections file
@@ -1532,7 +1586,9 @@ class MatchPlugin(PluginBase):
                 pair_results = analyzer.analyze_connection_pairs(file1, file2, connection_pairs)
 
                 # Format report
-                pair_report = format_connection_pair_report(pair_results, file1.name, file2.name, top_n=top_n)
+                pair_report = format_connection_pair_report(
+                    pair_results, file1.name, file2.name, top_n=top_n
+                )
                 reports.append(pair_report)
 
             # Combine reports
@@ -1545,7 +1601,7 @@ class MatchPlugin(PluginBase):
             if output_file:
                 logger.info(f"Writing comparative analysis report to: {output_file}")
                 output_file.parent.mkdir(parents=True, exist_ok=True)
-                with open(output_file, 'w', encoding='utf-8') as f:
+                with open(output_file, "w", encoding="utf-8") as f:
                     f.write(report)
                 logger.info(f"Comparative analysis report written to: {output_file}")
 

@@ -24,13 +24,14 @@ The messages are normalized by comparing ports and swapping if needed.
 """
 
 from __future__ import annotations
+
 import ipaddress
-import struct
 from enum import IntEnum
 
 
 class FlowSide(IntEnum):
     """Flow direction indicator."""
+
     UNKNOWN = 0
     LHS_GE_RHS = 1  # Left-hand side >= Right-hand side
     RHS_GT_LHS = 2  # Right-hand side > Left-hand side
@@ -66,7 +67,7 @@ def _siphash_round(v0: int, v1: int, v2: int, v3: int) -> tuple[int, int, int, i
 
 def _load_int_le(buf: bytes, offset: int, length: int) -> int:
     """Load integer from buffer in little-endian format."""
-    return int.from_bytes(buf[offset:offset+length], "little")
+    return int.from_bytes(buf[offset : offset + length], "little")
 
 
 def _u8to64_le(buf: bytes, start: int, length: int) -> int:
@@ -104,28 +105,28 @@ def siphash13(key: bytes, msgs: list[bytes]) -> int:
     k0 = int.from_bytes(key[:8], "little")
     k1 = int.from_bytes(key[8:], "little")
 
-    v0 = 0x736f6d6570736575 ^ k0
-    v1 = 0x646f72616e646f6d ^ k1
-    v2 = 0x6c7967656e657261 ^ k0
+    v0 = 0x736F6D6570736575 ^ k0
+    v1 = 0x646F72616E646F6D ^ k1
+    v2 = 0x6C7967656E657261 ^ k0
     v3 = 0x7465646279746573 ^ k1
 
     length = 0
     tail = 0
     ntail = 0
 
-    def sip_round():
+    def sip_round() -> None:
         nonlocal v0, v1, v2, v3
-        v0 = (v0 + v1) & 0xffffffffffffffff
+        v0 = (v0 + v1) & 0xFFFFFFFFFFFFFFFF
         v1 = _rotl64(v1, 13)
         v1 ^= v0
         v0 = _rotl64(v0, 32)
-        v2 = (v2 + v3) & 0xffffffffffffffff
+        v2 = (v2 + v3) & 0xFFFFFFFFFFFFFFFF
         v3 = _rotl64(v3, 16)
         v3 ^= v2
-        v0 = (v0 + v3) & 0xffffffffffffffff
+        v0 = (v0 + v3) & 0xFFFFFFFFFFFFFFFF
         v3 = _rotl64(v3, 21)
         v3 ^= v0
-        v2 = (v2 + v1) & 0xffffffffffffffff
+        v2 = (v2 + v1) & 0xFFFFFFFFFFFFFFFF
         v1 = _rotl64(v1, 17)
         v1 ^= v2
         v2 = _rotl64(v2, 32)
@@ -147,12 +148,12 @@ def siphash13(key: bytes, msgs: list[bytes]) -> int:
                 v0 ^= tail
                 ntail = 0
 
-        l = len(msg) - needed
-        left = l & 0x7
+        msg_len = len(msg) - needed
+        left = msg_len & 0x7
         offset = needed
 
-        while offset < l - left:
-            m = int.from_bytes(msg[offset:offset+8], "little")
+        while offset < msg_len - left:
+            m = int.from_bytes(msg[offset : offset + 8], "little")
             offset += 8
             v3 ^= m
             sip_round()  # c=1
@@ -162,19 +163,19 @@ def siphash13(key: bytes, msgs: list[bytes]) -> int:
         ntail = left
 
     # Final block
-    t = (length & 0xff) << 56 | tail
+    t = (length & 0xFF) << 56 | tail
 
     v3 ^= t
     sip_round()
     v0 ^= t
 
     # Finalization
-    v2 ^= 0xff
+    v2 ^= 0xFF
     sip_round()
     sip_round()
     sip_round()
 
-    return (v0 ^ v1 ^ v2 ^ v3) & 0xffffffffffffffff
+    return (v0 ^ v1 ^ v2 ^ v3) & 0xFFFFFFFFFFFFFFFF
 
 
 def _u64_to_i64(u: int) -> int:
@@ -186,16 +187,7 @@ def _u64_to_i64(u: int) -> int:
 
 
 def _compare_ports(port1: int, port2: int) -> FlowSide:
-    """
-    Compare two ports to determine flow side.
-    
-    Args:
-        port1: First port number
-        port2: Second port number
-    
-    Returns:
-        FlowSide indicating which side is greater
-    """
+    """Compare two ports and determine which side is greater."""
     if port1 >= port2:
         return FlowSide.LHS_GE_RHS
     else:
@@ -203,21 +195,15 @@ def _compare_ports(port1: int, port2: int) -> FlowSide:
 
 
 def _compare_addresses(addr1: str, addr2: str) -> FlowSide:
-    """
-    Compare two IP addresses to determine flow side.
-    
-    Args:
-        addr1: First IP address (string)
-        addr2: Second IP address (string)
-    
-    Returns:
-        FlowSide indicating which side is greater
-    """
+    """Compare two IP addresses and determine which side is greater."""
     try:
         ip1 = ipaddress.ip_address(addr1)
         ip2 = ipaddress.ip_address(addr2)
-        
-        if ip1 >= ip2:
+
+        key1 = (ip1.version, int(ip1))
+        key2 = (ip2.version, int(ip2))
+
+        if key1 >= key2:
             return FlowSide.LHS_GE_RHS
         else:
             return FlowSide.RHS_GT_LHS
@@ -305,7 +291,8 @@ def calculate_flow_hash(
         flow_side = FlowSide.RHS_GT_LHS
     else:
         # Ports equal, compare IPs
-        if ipaddress.ip_address(src_ip) >= ipaddress.ip_address(dst_ip):
+        addr_side = _compare_addresses(src_ip, dst_ip)
+        if addr_side is FlowSide.LHS_GE_RHS:
             p1, p2 = src_port, dst_port
             ip_1, ip_2 = src_ip, dst_ip
             flow_side = FlowSide.LHS_GE_RHS
@@ -410,4 +397,3 @@ def calculate_connection_flow_hash(
         dst_port=server_port,
         protocol=6,  # TCP
     )
-

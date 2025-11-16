@@ -2,31 +2,37 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from pathlib import Path
-import re
+from typing import TypedDict
 
 from capmaster.plugins.analyze.modules import register_module
 from capmaster.plugins.analyze.modules.base import AnalysisModule
 
 
+class StreamInfo(TypedDict):
+    src: str
+    dst: str
+    ssrc: str
+    codec: str
+    packets: int
+    lost: int
+    loss_percent: float
+    mean_jitter: float
+    max_jitter: float
+    duration: float
+    mos: float
+    rating: str
+    issues: list[str]
+
+
 @register_module
 class VoipQualityModule(AnalysisModule):
     """Generate VoIP quality assessment with MOS scores.
-    
-    Analyzes RTP streams to calculate Mean Opinion Score (MOS) based on:
-    - Packet loss rate
-    - Jitter (delay variation)
-    - Codec type
-    
-    MOS Scale:
-    - 5.0: Excellent (imperceptible impairment)
-    - 4.0-4.9: Good (perceptible but not annoying)
-    - 3.0-3.9: Fair (slightly annoying)
-    - 2.0-2.9: Poor (annoying)
-    - 1.0-1.9: Bad (very annoying)
-    
-    This provides a comprehensive VoIP quality assessment for troubleshooting.
+    Analyzes RTP streams to calculate Mean Opinion Score (MOS) based on packet loss,
+    jitter, and codec type.
+    MOS scale ranges from 1 (Bad) to 5 (Excellent).
     """
 
     @property
@@ -45,80 +51,45 @@ class VoipQualityModule(AnalysisModule):
         return {"rtp"}
 
     def build_tshark_args(self, input_file: Path) -> list[str]:
-        """
-        Build tshark command arguments.
-
-        Args:
-            input_file: Path to input PCAP file
-
-        Returns:
-            List of tshark arguments for RTP stream analysis
-        """
+        """Build tshark command arguments for RTP stream analysis."""
         return ["-q", "-z", "rtp,streams"]
 
-    def _calculate_mos(self, packet_loss: float, mean_jitter: float, codec: str) -> tuple[float, str]:
-        """
-        Calculate MOS (Mean Opinion Score) based on network metrics.
-        
-        Uses E-Model (ITU-T G.107) simplified calculation.
-        
-        Args:
-            packet_loss: Packet loss percentage (0-100)
-            mean_jitter: Mean jitter in milliseconds
-            codec: Codec name (e.g., 'g711U', 'g729', 'opus')
-            
-        Returns:
-            Tuple of (MOS score, quality rating)
-        """
-        # Base R-factor (transmission rating)
-        # Different codecs have different base quality
+    def _calculate_mos(
+        self,
+        packet_loss: float,
+        mean_jitter: float,
+        codec: str,
+    ) -> tuple[float, str]:
+        """Calculate MOS from packet loss, jitter, and codec."""
         codec_r_base = {
-            'g711u': 93.2,
-            'g711a': 93.2,
-            'g722': 92.0,
-            'g729': 83.0,
-            'opus': 92.0,
-            'ilbc': 82.0,
+            "g711u": 93.2,
+            "g711a": 93.2,
+            "g722": 92.0,
+            "g729": 83.0,
+            "opus": 92.0,
+            "ilbc": 82.0,
         }
-        
-        # Get base R-factor for codec (default to G.711)
         codec_lower = codec.lower()
         r_base = codec_r_base.get(codec_lower, 93.2)
-        
-        # Calculate impairment due to packet loss (Id)
-        # Simplified formula: Id = 10 + 40 * packet_loss
-        id_factor = 10 + (40 * packet_loss / 100)
-        
-        # Calculate impairment due to jitter (Ie-eff)
-        # Jitter impact increases non-linearly
-        if mean_jitter < 20:
-            ie_eff = 0
-        elif mean_jitter < 50:
-            ie_eff = (mean_jitter - 20) * 0.5
-        elif mean_jitter < 100:
-            ie_eff = 15 + (mean_jitter - 50) * 0.8
+        id_factor = 10.0 + (40.0 * packet_loss / 100.0)
+        ie_eff: float
+        if mean_jitter < 20.0:
+            ie_eff = 0.0
+        elif mean_jitter < 50.0:
+            ie_eff = (mean_jitter - 20.0) * 0.5
+        elif mean_jitter < 100.0:
+            ie_eff = 15.0 + (mean_jitter - 50.0) * 0.8
         else:
-            ie_eff = 55 + (mean_jitter - 100) * 1.0
-        
-        # Calculate R-factor
+            ie_eff = 55.0 + (mean_jitter - 100.0) * 1.0
         r_factor = r_base - id_factor - ie_eff
-        
-        # Ensure R-factor is within valid range
-        r_factor = max(0, min(100, r_factor))
-        
-        # Convert R-factor to MOS
-        # MOS = 1 + 0.035*R + R*(R-60)*(100-R)*7*10^-6
-        if r_factor < 0:
+        r_factor = max(0.0, min(100.0, r_factor))
+        if r_factor <= 0.0:
             mos = 1.0
-        elif r_factor > 100:
+        elif r_factor >= 100.0:
             mos = 4.5
         else:
-            mos = 1 + 0.035 * r_factor + r_factor * (r_factor - 60) * (100 - r_factor) * 7e-6
-        
-        # Ensure MOS is within valid range
+            mos = 1.0 + 0.035 * r_factor + r_factor * (r_factor - 60.0) * (100.0 - r_factor) * 7e-6
         mos = max(1.0, min(5.0, mos))
-        
-        # Determine quality rating
         if mos >= 4.3:
             rating = "Excellent"
         elif mos >= 4.0:
@@ -129,7 +100,6 @@ class VoipQualityModule(AnalysisModule):
             rating = "Poor"
         else:
             rating = "Bad"
-        
         return mos, rating
 
     def post_process(self, tshark_output: str, output_format: str = "txt") -> str:
@@ -149,7 +119,7 @@ class VoipQualityModule(AnalysisModule):
         if not tshark_output.strip():
             return "No RTP streams found for VoIP quality analysis\n"
 
-        streams = []
+        streams: list[StreamInfo] = []
         stream_pattern = re.compile(
             r"\s*(\d+\.\d+)\s+(\d+\.\d+)\s+"
             r"([\d.]+)\s+(\d+)\s+"
@@ -293,11 +263,8 @@ class VoipQualityModule(AnalysisModule):
                 "Prioritize investigation of high severity streams to address packet loss and jitter."
             )
         elif severity_counts["Medium"]:
-            lines.append(
-                "Monitor medium severity streams for early signs of degradation."
-            )
+            lines.append("Monitor medium severity streams for early signs of degradation.")
         else:
             lines.append("Quality metrics are stable; continue routine monitoring.")
 
         return "\n".join(lines) + "\n"
-

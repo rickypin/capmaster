@@ -2,9 +2,12 @@
 
 Only contains the comparative-analysis subcommand to keep MatchPlugin lean.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
+
 import click
 
 from capmaster.utils.cli_options import (
@@ -13,7 +16,7 @@ from capmaster.utils.cli_options import (
 )
 
 
-def register_comparative_analysis_command(plugin, cli_group: click.Group) -> None:
+def register_comparative_analysis_command(plugin: Any, cli_group: click.Group) -> None:
     """Register the comparative-analysis subcommand on the given click group.
 
     This function mirrors the inlined definition previously inside
@@ -107,7 +110,9 @@ def register_comparative_analysis_command(plugin, cli_group: click.Group) -> Non
 
         # Validate analysis type parameters
         if not service and not matched_connections:
-            ctx.fail("Please specify an analysis type: --service (requires --topology) or --matched-connections")
+            ctx.fail(
+                "Please specify an analysis type: --service (requires --topology) or --matched-connections"
+            )
 
         if service and not topology:
             ctx.fail("--service analysis requires --topology file")
@@ -135,4 +140,3 @@ def register_comparative_analysis_command(plugin, cli_group: click.Group) -> Non
             output_file=output_file,
         )
         ctx.exit(exit_code)
-

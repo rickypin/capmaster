@@ -41,7 +41,7 @@ class DualFileInputParser:
 
     @staticmethod
     def parse(
-        input_path: str | None,
+        input_path: str | Path | None,
         file1: Path | None,
         file2: Path | None,
         file1_pcapid: int | None,
@@ -69,7 +69,12 @@ class DualFileInputParser:
         """
         if file1 and file2:
             # Method 1: Using --file1/--file2
-            pcap_id_mapping = {
+            if file1_pcapid is None or file2_pcapid is None:
+                raise ValueError(
+                    "file1_pcapid and file2_pcapid must be provided when using --file1/--file2"
+                )
+
+            pcap_id_mapping: dict[str, int] = {
                 str(file1): file1_pcapid,
                 str(file2): file2_pcapid,
             }
@@ -80,10 +85,12 @@ class DualFileInputParser:
             )
         else:
             # Method 2: Using -i/--input
+            if input_path is None:
+                raise ValueError("input_path must be provided when file1/file2 are not set")
+
             input_paths = PcapScanner.parse_input(input_path)
             # Preserve order only for comma-separated file lists
-            # Convert Path to string if needed for comma check
-            input_str = str(input_path) if isinstance(input_path, Path) else input_path
+            input_str = str(input_path)
             preserve_order = "," in input_str
             pcap_files = PcapScanner.scan(
                 input_paths, recursive=False, preserve_order=preserve_order
@@ -97,4 +104,3 @@ class DualFileInputParser:
                 file2=pcap_files[1],
                 pcap_id_mapping=None,
             )
-

@@ -471,30 +471,31 @@ STEP_HANDLERS = {
 > 说明：下面的 checklist 更偏工程视角，可用于跟踪 preprocess 插件从“设计就绪”到“开发落地”的整体进度。
 
 1. **环境与工具准备**
-   - [ ] 确认 Wireshark 工具链已安装且版本满足要求（`tshark` / `editcap` / `capinfos`）。
-   - [ ] 在开发环境中配置好 `ToolsConfig` / 环境变量 / PATH，确保外部工具可以被发现并正确调用。
+   - [x] 确认 Wireshark 工具链已安装且版本满足要求（`tshark` / `editcap` / `capinfos`）。
+   - [x] 在开发环境中配置好 `ToolsConfig` / 环境变量 / PATH，确保外部工具可以被发现并正确调用。
 
 2. **配置与 CLI 层打通**
-   - [ ] 完成 `capmaster/plugins/preprocess/config.py` 中 `ToolsConfig` / `PreprocessConfig` / `PreprocessRuntimeConfig` 的定义及默认值（对应第 4 节）。
-   - [ ] 将 YAML / ENV / CLI 与配置对象的映射全部打通，包括步骤开关、dedup/time-align/oneway 参数、报告配置与 `workers` 等（对应第 5、6 节）。
-   - [ ] 实现 `capmaster preprocess` 子命令和 `--step` / `--enable-xxx` / `--disable-xxx` 等参数的冲突校验逻辑（对应第 6.3、6.4、6.5 节）。
+   - [x] 完成 `capmaster/plugins/preprocess/config.py` 中 `ToolsConfig` / `PreprocessConfig` / `PreprocessRuntimeConfig` 的定义及默认值（对应第 4 节）。
+   - [x] 将 YAML / ENV / CLI 与配置对象的映射全部打通，包括步骤开关、dedup/time-align/oneway 参数、报告配置与 `workers` 等（对应第 5、6 节）。
+   - [x] 实现 `capmaster preprocess` 子命令和 `--step` / `--enable-xxx` / `--disable-xxx` 等参数的冲突校验逻辑（对应第 6.3、6.4、6.5 节）。
 
 3. **Pipeline 主流程搭建**
-   - [ ] 按附录 A 定义 `PreprocessContext`、`STEP_HANDLERS`，实现自动模式与显式 steps 模式的调度规则。
-   - [ ] 实现一个对外 API（例如 `run_preprocess(...)`），负责构造 `PreprocessContext`、创建 `tmp_dir`、按顺序执行各步骤，并在全部成功后迁移产物到 `output_dir`。
+   - [x] 按附录 A 定义 `PreprocessContext`、`STEP_HANDLERS`，实现自动模式与显式 steps 模式的调度规则。
+   - [x] 实现一个对外 API（例如 `run_preprocess(...)`），负责构造 `PreprocessContext`、创建 `tmp_dir`、按顺序执行各步骤，并在全部成功后迁移产物到 `output_dir`。
 
 4. **外部工具封装与各步骤实现**
-   - [ ] 在 `pcap_tools.py` 或等价模块中封装 `capinfos` / `editcap` / `tshark` 的调用，以及基于 `workers` 的并发控制（对应第 3.1、附录 E）。
-   - [ ] 按附录 C / D / E 的语义实现 `time-align`、`dedup`、`oneway`、`archive-original` 四个步骤，并保证在多文件场景下行为正确。
-   - [ ] （可选）实现 time-align + dedup 的单次 `editcap` 优化调用，在大文件场景下降低 I/O 成本。
+   - [x] 在 `pcap_tools.py` 或等价模块中封装 `capinfos` / `editcap` / `tshark` 的调用。
+   - [x] 基于 `workers` 的并发控制（对应第 3.1、附录 E）。
+   - [x] 按附录 C / D / E 的语义实现 `time-align`、`dedup`、`oneway`、`archive-original` 四个步骤，并保证在多文件场景下行为正确。
+   - [x] （可选）实现 time-align + dedup 的单次 `editcap` 优化调用，在大文件场景下降低 I/O 成本。
 
 5. **报告与输出结构**
-   - [ ] 按附录 F 约定实现最终 PCAP 输出命名规则以及 `archive/` 目录结构，确保对上层只暴露“预处理完成”的结果文件。
-   - [ ] 按附录 G 约定生成 per-run Markdown 报告，并在 CLI / API 中接好 `report_enabled` / `report_path` 开关。
+   - [x] 按附录 F 约定实现最终 PCAP 输出命名规则以及 `archive/` 目录结构，确保对上层只暴露“预处理完成”的结果文件。
+   - [x] 按附录 G 约定生成 per-run Markdown 报告，并在 CLI / API 中接好 `report_enabled` / `report_path` 开关。
 
 6. **测试与验收闭环**
-   - [ ] 按 H.1 准备或同步 `tests/preprocess_cases` 目录结构，确保各案例数据到位（即使仅在本地存在、不入库）。
-   - [ ] 按 H.2 / H.3 逐步填充 `tests/test_plugins/test_preprocess/test_integration.py` 中各案例的集成测试，实现从 `xfail/skip` 向真实断言演进。
-   - [ ] 在 CI 中接入 preprocess 相关测试，保证后续改动可以自动回归。
+   - [x] 按 H.1 准备或同步 `tests/preprocess_cases` 目录结构，确保各案例数据到位（即使仅在本地存在、不入库）。
+   - [x] 按 H.2 / H.3 逐步填充 `tests/test_plugins/test_preprocess/test_integration.py` 中各案例的集成测试，实现从 `xfail/skip` 向真实断言演进。
+   - [x] 在 CI 中接入 preprocess 相关测试，保证后续改动可以自动回归。
 
 当以上 checklist 条目全部勾选完成时，可以认为 preprocess 插件已经从“设计就绪”进入“实现与验证闭环就绪”的状态，后续工作可以聚焦在功能迭代与性能优化上。

@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from capmaster.core.connection.extractor import TcpFieldExtractor
 from capmaster.core.connection.models import (
     ConnectionBuilder,
     FiveTupleConnectionBuilder,
-    StreamingConnectionBuilder,
     TcpConnection,
 )
-from capmaster.core.connection.extractor import TcpFieldExtractor
 
 
 def extract_connections_from_pcap(
@@ -41,6 +40,7 @@ def extract_connections_from_pcap(
     extractor = TcpFieldExtractor()
 
     # Choose builder based on merge_by_5tuple flag
+    builder: ConnectionBuilder
     if merge_by_5tuple:
         builder = FiveTupleConnectionBuilder()
     else:
@@ -52,4 +52,3 @@ def extract_connections_from_pcap(
 
     # Build and return connections
     return list(builder.build_connections())
-

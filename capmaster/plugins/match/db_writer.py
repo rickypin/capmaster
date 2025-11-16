@@ -6,6 +6,7 @@ import json
 import logging
 from pathlib import Path
 
+from capmaster.plugins.match.endpoint_stats import EndpointPairStats, ServiceStats
 from capmaster.utils.database import BaseDatabaseWriter
 
 logger = logging.getLogger(__name__)
@@ -181,7 +182,7 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
                 stream_cnt,
                 pktlen,
                 display_name,
-            )
+            ),
         )
 
     def _determine_network_position(
@@ -252,7 +253,12 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
         # This indicates the capture points are on opposite sides of the connection
         # Rule: The point seeing original client TTL is closer to SERVER
         #       The point seeing original server TTL is closer to CLIENT
-        if client_a_is_original and server_b_is_original and not server_a_is_original and not client_b_is_original:
+        if (
+            client_a_is_original
+            and server_b_is_original
+            and not server_a_is_original
+            and not client_b_is_original
+        ):
             # A sees original client TTL, B sees original server TTL
             # → A is closer to server, B is closer to client
             logger.debug(
@@ -261,7 +267,12 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
             )
             return "B_CLOSER_TO_CLIENT"
 
-        if server_a_is_original and client_b_is_original and not client_a_is_original and not server_b_is_original:
+        if (
+            server_a_is_original
+            and client_b_is_original
+            and not client_a_is_original
+            and not server_b_is_original
+        ):
             # A sees original server TTL, B sees original client TTL
             # → A is closer to client, B is closer to server
             logger.debug(
@@ -270,7 +281,12 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
             )
             return "A_CLOSER_TO_CLIENT"
 
-        if client_b_is_original and server_a_is_original and not server_b_is_original and not client_a_is_original:
+        if (
+            client_b_is_original
+            and server_a_is_original
+            and not server_b_is_original
+            and not client_a_is_original
+        ):
             # B sees original client TTL, A sees original server TTL
             # → B is closer to server, A is closer to client
             logger.debug(
@@ -279,7 +295,12 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
             )
             return "A_CLOSER_TO_CLIENT"
 
-        if server_b_is_original and client_a_is_original and not client_b_is_original and not server_a_is_original:
+        if (
+            server_b_is_original
+            and client_a_is_original
+            and not client_b_is_original
+            and not server_a_is_original
+        ):
             # B sees original server TTL, A sees original client TTL
             # → B is closer to client, A is closer to server
             logger.debug(
@@ -293,9 +314,8 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
         server_delta_diff = server_hops_a - server_hops_b
 
         # Detect potential NAT scenario (client and server deltas conflict)
-        is_nat_scenario = (
-            (client_delta_diff > 0 and server_delta_diff < 0) or
-            (client_delta_diff < 0 and server_delta_diff > 0)
+        is_nat_scenario = (client_delta_diff > 0 and server_delta_diff < 0) or (
+            client_delta_diff < 0 and server_delta_diff > 0
         )
 
         if is_nat_scenario:
@@ -430,7 +450,15 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
         for service in service_stats:
             group_id = service_to_group_mapping[service.service_key]
 
-            proto_str = "TCP" if service.service_key.protocol == 6 else "UDP" if service.service_key.protocol == 17 else f"Proto{service.service_key.protocol}"
+            proto_str = (
+                "TCP"
+                if service.service_key.protocol == 6
+                else (
+                    "UDP"
+                    if service.service_key.protocol == 17
+                    else f"Proto{service.service_key.protocol}"
+                )
+            )
 
             logger.info(
                 f"  Service: Port {service.service_key.server_port} ({proto_str}) -> Group {group_id}"
@@ -460,12 +488,10 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
 
         return records_inserted
 
-
-
     @staticmethod
     def _generate_endpoint_pair_nodes(
         group_id: int,
-        stat,  # EndpointPairStats
+        stat: EndpointPairStats,
         pcap_id_a: int,
         pcap_id_b: int,
     ) -> list[dict]:
@@ -533,135 +559,151 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
             net_area_a_client = [pcap_id_b]
 
         # File A - Client node (type=1, no port)
-        nodes.append({
-            "pcap_id": pcap_id_a,
-            "group_id": group_id,
-            "ip": stat.tuple_a.client_ip,
-            "port": None,
-            "proto": None,
-            "node_type": 1,
-            "is_capture": False,
-            "net_area": net_area_a_client,
-            "stream_cnt": 0,
-            "pktlen": 0,
-            "display_name": "",
-        })
+        nodes.append(
+            {
+                "pcap_id": pcap_id_a,
+                "group_id": group_id,
+                "ip": stat.tuple_a.client_ip,
+                "port": None,
+                "proto": None,
+                "node_type": 1,
+                "is_capture": False,
+                "net_area": net_area_a_client,
+                "stream_cnt": 0,
+                "pktlen": 0,
+                "display_name": "",
+            }
+        )
 
         # File A - Network device between client and capture point (type=1001)
         if stat.client_hops_a > 0 and position != "B_CLOSER_TO_CLIENT":
-            nodes.append({
-                "pcap_id": pcap_id_a,
-                "group_id": group_id,
-                "ip": None,
-                "port": None,
-                "proto": None,
-                "node_type": 1001,
-                "is_capture": False,
-                "net_area": [],
-                "stream_cnt": 0,
-                "pktlen": 0,
-                "display_name": f"Network Device (Client-Capture, {stat.client_hops_a} hops)",
-            })
+            nodes.append(
+                {
+                    "pcap_id": pcap_id_a,
+                    "group_id": group_id,
+                    "ip": None,
+                    "port": None,
+                    "proto": None,
+                    "node_type": 1001,
+                    "is_capture": False,
+                    "net_area": [],
+                    "stream_cnt": 0,
+                    "pktlen": 0,
+                    "display_name": f"Network Device (Client-Capture, {stat.client_hops_a} hops)",
+                }
+            )
 
         # File A - Server node (type=2, with port)
-        nodes.append({
-            "pcap_id": pcap_id_a,
-            "group_id": group_id,
-            "ip": stat.tuple_a.server_ip,
-            "port": stat.tuple_a.server_port,
-            "proto": proto_a,
-            "node_type": 2,
-            "is_capture": False,
-            "net_area": net_area_a_server,
-            "stream_cnt": stat.count,
-            "pktlen": stat.total_bytes_a,
-            "display_name": "",
-        })
+        nodes.append(
+            {
+                "pcap_id": pcap_id_a,
+                "group_id": group_id,
+                "ip": stat.tuple_a.server_ip,
+                "port": stat.tuple_a.server_port,
+                "proto": proto_a,
+                "node_type": 2,
+                "is_capture": False,
+                "net_area": net_area_a_server,
+                "stream_cnt": stat.count,
+                "pktlen": stat.total_bytes_a,
+                "display_name": "",
+            }
+        )
 
         # File A - Network device between capture point and server (type=1002)
         if stat.server_hops_a > 0 and position != "A_CLOSER_TO_CLIENT":
-            nodes.append({
-                "pcap_id": pcap_id_a,
-                "group_id": group_id,
-                "ip": None,
-                "port": None,
-                "proto": None,
-                "node_type": 1002,
-                "is_capture": False,
-                "net_area": [],
-                "stream_cnt": 0,
-                "pktlen": 0,
-                "display_name": f"Network Device (Capture-Server, {stat.server_hops_a} hops)",
-            })
+            nodes.append(
+                {
+                    "pcap_id": pcap_id_a,
+                    "group_id": group_id,
+                    "ip": None,
+                    "port": None,
+                    "proto": None,
+                    "node_type": 1002,
+                    "is_capture": False,
+                    "net_area": [],
+                    "stream_cnt": 0,
+                    "pktlen": 0,
+                    "display_name": f"Network Device (Capture-Server, {stat.server_hops_a} hops)",
+                }
+            )
 
         # File B - Client node (type=1, no port)
-        nodes.append({
-            "pcap_id": pcap_id_b,
-            "group_id": group_id,
-            "ip": stat.tuple_b.client_ip,
-            "port": None,
-            "proto": None,
-            "node_type": 1,
-            "is_capture": False,
-            "net_area": net_area_b_client,
-            "stream_cnt": 0,
-            "pktlen": 0,
-            "display_name": "",
-        })
+        nodes.append(
+            {
+                "pcap_id": pcap_id_b,
+                "group_id": group_id,
+                "ip": stat.tuple_b.client_ip,
+                "port": None,
+                "proto": None,
+                "node_type": 1,
+                "is_capture": False,
+                "net_area": net_area_b_client,
+                "stream_cnt": 0,
+                "pktlen": 0,
+                "display_name": "",
+            }
+        )
 
         # File B - Network device between client and capture point (type=1001)
         if stat.client_hops_b > 0 and position != "A_CLOSER_TO_CLIENT":
-            nodes.append({
-                "pcap_id": pcap_id_b,
-                "group_id": group_id,
-                "ip": None,
-                "port": None,
-                "proto": None,
-                "node_type": 1001,
-                "is_capture": False,
-                "net_area": [],
-                "stream_cnt": 0,
-                "pktlen": 0,
-                "display_name": f"Network Device (Client-Capture, {stat.client_hops_b} hops)",
-            })
+            nodes.append(
+                {
+                    "pcap_id": pcap_id_b,
+                    "group_id": group_id,
+                    "ip": None,
+                    "port": None,
+                    "proto": None,
+                    "node_type": 1001,
+                    "is_capture": False,
+                    "net_area": [],
+                    "stream_cnt": 0,
+                    "pktlen": 0,
+                    "display_name": f"Network Device (Client-Capture, {stat.client_hops_b} hops)",
+                }
+            )
 
         # File B - Server node (type=2, with port)
-        nodes.append({
-            "pcap_id": pcap_id_b,
-            "group_id": group_id,
-            "ip": stat.tuple_b.server_ip,
-            "port": stat.tuple_b.server_port,
-            "proto": proto_b,
-            "node_type": 2,
-            "is_capture": False,
-            "net_area": net_area_b_server,
-            "stream_cnt": stat.count,
-            "pktlen": stat.total_bytes_b,
-            "display_name": "",
-        })
+        nodes.append(
+            {
+                "pcap_id": pcap_id_b,
+                "group_id": group_id,
+                "ip": stat.tuple_b.server_ip,
+                "port": stat.tuple_b.server_port,
+                "proto": proto_b,
+                "node_type": 2,
+                "is_capture": False,
+                "net_area": net_area_b_server,
+                "stream_cnt": stat.count,
+                "pktlen": stat.total_bytes_b,
+                "display_name": "",
+            }
+        )
 
         # File B - Network device between capture point and server (type=1002)
         if stat.server_hops_b > 0 and position != "B_CLOSER_TO_CLIENT":
-            nodes.append({
-                "pcap_id": pcap_id_b,
-                "group_id": group_id,
-                "ip": None,
-                "port": None,
-                "proto": None,
-                "node_type": 1002,
-                "is_capture": False,
-                "net_area": [],
-                "stream_cnt": 0,
-                "pktlen": 0,
-                "display_name": f"Network Device (Capture-Server, {stat.server_hops_b} hops)",
-            })
+            nodes.append(
+                {
+                    "pcap_id": pcap_id_b,
+                    "group_id": group_id,
+                    "ip": None,
+                    "port": None,
+                    "proto": None,
+                    "node_type": 1002,
+                    "is_capture": False,
+                    "net_area": [],
+                    "stream_cnt": 0,
+                    "pktlen": 0,
+                    "display_name": f"Network Device (Capture-Server, {stat.server_hops_b} hops)",
+                }
+            )
 
         return nodes
 
     @staticmethod
     def _generate_service_nodes(
         group_id: int,
-        service,  # ServiceStats
+        service: ServiceStats,
         pcap_id_a: int,
         pcap_id_b: int,
     ) -> list[dict]:
@@ -723,99 +765,111 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
 
         # File A - Client nodes (type=1, no port)
         for client_ip in sorted(service.unique_client_ips_a):
-            nodes.append({
-                "pcap_id": pcap_id_a,
-                "group_id": group_id,
-                "ip": client_ip,
-                "port": None,
-                "proto": None,
-                "node_type": 1,
-                "is_capture": False,
-                "net_area": net_area_a_client,
-                "stream_cnt": 0,
-                "pktlen": 0,
-                "display_name": "",
-            })
+            nodes.append(
+                {
+                    "pcap_id": pcap_id_a,
+                    "group_id": group_id,
+                    "ip": client_ip,
+                    "port": None,
+                    "proto": None,
+                    "node_type": 1,
+                    "is_capture": False,
+                    "net_area": net_area_a_client,
+                    "stream_cnt": 0,
+                    "pktlen": 0,
+                    "display_name": "",
+                }
+            )
 
         # File A - Network device between client and capture point (type=1001)
         if first_pair.client_hops_a > 0 and position != "B_CLOSER_TO_CLIENT":
-            nodes.append({
-                "pcap_id": pcap_id_a,
-                "group_id": group_id,
-                "ip": None,
-                "port": None,
-                "proto": None,
-                "node_type": 1001,
-                "is_capture": False,
-                "net_area": [],
-                "stream_cnt": 0,
-                "pktlen": 0,
-                "display_name": "",
-            })
+            nodes.append(
+                {
+                    "pcap_id": pcap_id_a,
+                    "group_id": group_id,
+                    "ip": None,
+                    "port": None,
+                    "proto": None,
+                    "node_type": 1001,
+                    "is_capture": False,
+                    "net_area": [],
+                    "stream_cnt": 0,
+                    "pktlen": 0,
+                    "display_name": "",
+                }
+            )
 
         # File A - Server nodes (type=2, with port)
         for server_ip in sorted(service.unique_server_ips_a):
-            nodes.append({
-                "pcap_id": pcap_id_a,
-                "group_id": group_id,
-                "ip": server_ip,
-                "port": server_port,
-                "proto": protocol,
-                "node_type": 2,
-                "is_capture": False,
-                "net_area": net_area_a_server,
-                "stream_cnt": service.total_connections,
-                "pktlen": total_bytes_a,
-                "display_name": "",
-            })
+            nodes.append(
+                {
+                    "pcap_id": pcap_id_a,
+                    "group_id": group_id,
+                    "ip": server_ip,
+                    "port": server_port,
+                    "proto": protocol,
+                    "node_type": 2,
+                    "is_capture": False,
+                    "net_area": net_area_a_server,
+                    "stream_cnt": service.total_connections,
+                    "pktlen": total_bytes_a,
+                    "display_name": "",
+                }
+            )
 
         # File A - Network device between capture point and server (type=1002)
         if first_pair.server_hops_a > 0 and position != "A_CLOSER_TO_CLIENT":
-            nodes.append({
-                "pcap_id": pcap_id_a,
-                "group_id": group_id,
-                "ip": None,
-                "port": None,
-                "proto": None,
-                "node_type": 1002,
-                "is_capture": False,
-                "net_area": [],
-                "stream_cnt": 0,
-                "pktlen": 0,
-                "display_name": "",
-            })
+            nodes.append(
+                {
+                    "pcap_id": pcap_id_a,
+                    "group_id": group_id,
+                    "ip": None,
+                    "port": None,
+                    "proto": None,
+                    "node_type": 1002,
+                    "is_capture": False,
+                    "net_area": [],
+                    "stream_cnt": 0,
+                    "pktlen": 0,
+                    "display_name": "",
+                }
+            )
 
         # File B - Client nodes (type=1, no port)
         for client_ip in sorted(service.unique_client_ips_b):
-            nodes.append({
-                "pcap_id": pcap_id_b,
-                "group_id": group_id,
-                "ip": client_ip,
-                "port": None,
-                "proto": None,
-                "node_type": 1,
-                "is_capture": False,
-                "net_area": net_area_b_client,
-                "stream_cnt": 0,
-                "pktlen": 0,
-                "display_name": "",
-            })
+            nodes.append(
+                {
+                    "pcap_id": pcap_id_b,
+                    "group_id": group_id,
+                    "ip": client_ip,
+                    "port": None,
+                    "proto": None,
+                    "node_type": 1,
+                    "is_capture": False,
+                    "net_area": net_area_b_client,
+                    "stream_cnt": 0,
+                    "pktlen": 0,
+                    "display_name": "",
+                }
+            )
 
         # File B - Network device between client and capture point (type=1001)
         if first_pair.client_hops_b > 0 and position != "A_CLOSER_TO_CLIENT":
-            nodes.append({
-                "pcap_id": pcap_id_b,
-                "group_id": group_id,
-                "ip": None,
-                "port": None,
-                "proto": None,
-                "node_type": 1001,
-                "is_capture": False,
-                "net_area": [],
-                "stream_cnt": 0,
-                "pktlen": 0,
-                "display_name": "",
-            })
+            nodes.append(
+                {
+                    "pcap_id": pcap_id_b,
+                    "group_id": group_id,
+                    "ip": None,
+                    "port": None,
+                    "proto": None,
+                    "node_type": 1001,
+                    "is_capture": False,
+                    "net_area": [],
+                    "stream_cnt": 0,
+                    "pktlen": 0,
+                    "display_name": "",
+                }
+            )
 
         # File B - Server nodes (type=2, with port)
         # CRITICAL FIX: For each server IP in file B, use the actual port from file B
@@ -831,39 +885,41 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
         for server_ip in sorted(service.unique_server_ips_b):
             # Use the actual port from file B for this server IP
             actual_port_b = server_ip_to_port_b.get(server_ip, server_port)
-            nodes.append({
-                "pcap_id": pcap_id_b,
-                "group_id": group_id,
-                "ip": server_ip,
-                "port": actual_port_b,
-                "proto": protocol,
-                "node_type": 2,
-                "is_capture": False,
-                "net_area": net_area_b_server,
-                "stream_cnt": service.total_connections,
-                "pktlen": total_bytes_b,
-                "display_name": "",
-            })
+            nodes.append(
+                {
+                    "pcap_id": pcap_id_b,
+                    "group_id": group_id,
+                    "ip": server_ip,
+                    "port": actual_port_b,
+                    "proto": protocol,
+                    "node_type": 2,
+                    "is_capture": False,
+                    "net_area": net_area_b_server,
+                    "stream_cnt": service.total_connections,
+                    "pktlen": total_bytes_b,
+                    "display_name": "",
+                }
+            )
 
         # File B - Network device between capture point and server (type=1002)
         if first_pair.server_hops_b > 0 and position != "B_CLOSER_TO_CLIENT":
-            nodes.append({
-                "pcap_id": pcap_id_b,
-                "group_id": group_id,
-                "ip": None,
-                "port": None,
-                "proto": None,
-                "node_type": 1002,
-                "is_capture": False,
-                "net_area": [],
-                "stream_cnt": 0,
-                "pktlen": 0,
-                "display_name": "",
-            })
+            nodes.append(
+                {
+                    "pcap_id": pcap_id_b,
+                    "group_id": group_id,
+                    "ip": None,
+                    "port": None,
+                    "proto": None,
+                    "node_type": 1002,
+                    "is_capture": False,
+                    "net_area": [],
+                    "stream_cnt": 0,
+                    "pktlen": 0,
+                    "display_name": "",
+                }
+            )
 
         return nodes
-
-
 
     @staticmethod
     def write_endpoint_stats_to_json(
@@ -922,9 +978,9 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Write to file (one JSON object per line)
-        with open(output_file, 'w', encoding='utf-8') as f:
+        with open(output_file, "w", encoding="utf-8") as f:
             for record in records:
-                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
         logger.info(f"Successfully wrote {len(records)} records to {output_file}")
         return len(records)
@@ -1007,9 +1063,9 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Write to file (one JSON object per line)
-        with open(output_file, 'w', encoding='utf-8') as f:
+        with open(output_file, "w", encoding="utf-8") as f:
             for record in records:
-                f.write(json.dumps(record, ensure_ascii=False) + '\n')
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
         logger.info(f"Successfully wrote {len(records)} records to {output_file}")
         return len(records)
@@ -1063,7 +1119,12 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
         # Rule: The point seeing original client TTL is closer to SERVER
         #       The point seeing original server TTL is closer to CLIENT
         # Reason: 255 is a network device (router/LB) TTL signature
-        if client_a_is_original and server_b_is_original and not server_a_is_original and not client_b_is_original:
+        if (
+            client_a_is_original
+            and server_b_is_original
+            and not server_a_is_original
+            and not client_b_is_original
+        ):
             # A sees original client TTL, B sees original server TTL
             # → A is closer to server, B is closer to client
             logger.debug(
@@ -1072,7 +1133,12 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
             )
             return "B_CLOSER_TO_CLIENT"
 
-        if server_a_is_original and client_b_is_original and not client_a_is_original and not server_b_is_original:
+        if (
+            server_a_is_original
+            and client_b_is_original
+            and not client_a_is_original
+            and not server_b_is_original
+        ):
             # A sees original server TTL, B sees original client TTL
             # → A is closer to client, B is closer to server
             logger.debug(
@@ -1081,7 +1147,12 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
             )
             return "A_CLOSER_TO_CLIENT"
 
-        if client_b_is_original and server_a_is_original and not server_b_is_original and not client_a_is_original:
+        if (
+            client_b_is_original
+            and server_a_is_original
+            and not server_b_is_original
+            and not client_a_is_original
+        ):
             # B sees original client TTL, A sees original server TTL
             # → B is closer to server, A is closer to client
             logger.debug(
@@ -1090,7 +1161,12 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
             )
             return "A_CLOSER_TO_CLIENT"
 
-        if server_b_is_original and client_a_is_original and not client_b_is_original and not server_a_is_original:
+        if (
+            server_b_is_original
+            and client_a_is_original
+            and not client_b_is_original
+            and not server_a_is_original
+        ):
             # B sees original server TTL, A sees original client TTL
             # → B is closer to client, A is closer to server
             logger.debug(
@@ -1104,9 +1180,8 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
         server_delta_diff = server_hops_a - server_hops_b
 
         # Detect potential NAT scenario (client and server deltas conflict)
-        is_nat_scenario = (
-            (client_delta_diff > 0 and server_delta_diff < 0) or
-            (client_delta_diff < 0 and server_delta_diff > 0)
+        is_nat_scenario = (client_delta_diff > 0 and server_delta_diff < 0) or (
+            client_delta_diff < 0 and server_delta_diff > 0
         )
 
         if is_nat_scenario:
@@ -1125,4 +1200,3 @@ class MatchDatabaseWriter(BaseDatabaseWriter):
         else:
             # Same distance to server or cannot determine
             return "SAME_POSITION"
-
