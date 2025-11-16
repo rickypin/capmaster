@@ -24,6 +24,10 @@ from capmaster.core.connection.tls_matcher import TlsMatcher
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
 from capmaster.plugins.match.cli_commands import register_comparative_analysis_command
+from capmaster.plugins.match.runner import (
+    match_connections_in_memory as run_match_in_memory,
+    run_match_pipeline,
+)
 from capmaster.plugins.match.endpoint_stats import (
     EndpointStatsCollector,
     ServiceKey,
@@ -437,6 +441,40 @@ class MatchPlugin(PluginBase):
 
         Returns:
             Exit code (0 for success, non-zero for failure)
+
+
+        # Delegate to runner.run_match_pipeline for the actual implementation.
+        # The runner function preserves the original behaviour (parameter
+        # validation, progress reporting, matching logic, and error handling).
+        return run_match_pipeline(
+            input_path=input_path,
+            file1=file1,
+            file1_pcapid=file1_pcapid,
+            file2=file2,
+            file2_pcapid=file2_pcapid,
+            output_file=output_file,
+            mode=mode,
+            bucket_strategy=bucket_strategy,
+            score_threshold=score_threshold,
+            match_mode=match_mode,
+            behavioral_weight_overlap=behavioral_weight_overlap,
+            behavioral_weight_duration=behavioral_weight_duration,
+            behavioral_weight_iat=behavioral_weight_iat,
+            behavioral_weight_bytes=behavioral_weight_bytes,
+            endpoint_stats=endpoint_stats,
+            endpoint_stats_output=endpoint_stats_output,
+            enable_sampling=enable_sampling,
+            sample_threshold=sample_threshold,
+            sample_rate=sample_rate,
+            db_connection=db_connection,
+            kase_id=kase_id,
+            endpoint_stats_json=endpoint_stats_json,
+            merge_by_5tuple=merge_by_5tuple,
+            endpoint_pair_mode=endpoint_pair_mode,
+            service_group_mapping=service_group_mapping,
+            match_json=match_json,
+            topology=topology,
+        )
 
         Raises:
             ValueError: If parameters are invalid
@@ -852,8 +890,7 @@ class MatchPlugin(PluginBase):
         score_threshold: float = 0.60,
         match_mode: str = "one-to-one",
     ) -> list:
-        """
-        Match connections in memory with full ServerDetector processing.
+        """Match connections in memory with full ServerDetector processing.
 
         This method provides the same matching logic as the execute() method,
         but operates on pre-extracted connections in memory without file I/O.
@@ -861,56 +898,16 @@ class MatchPlugin(PluginBase):
 
         This is designed to be called by other plugins (e.g., compare plugin)
         to ensure consistent matching results.
-
-        Args:
-            connections1: List of TcpConnection objects from first PCAP
-            connections2: List of TcpConnection objects from second PCAP
-            bucket_strategy: Bucketing strategy (auto, server, port, none)
-            score_threshold: Minimum normalized score threshold (0.0-1.0)
-            match_mode: Matching mode (one-to-one or one-to-many)
-
-        Returns:
-            List of ConnectionMatch objects
-
-        Example:
-            >>> plugin = MatchPlugin()
-            >>> connections1 = extract_connections_from_pcap(file1)
-            >>> connections2 = extract_connections_from_pcap(file2)
-            >>> matches = plugin.match_connections_in_memory(
-            ...     connections1, connections2,
-            ...     bucket_strategy="auto",
-            ...     score_threshold=0.60,
-            ...     match_mode="one-to-many"
-            ... )
         """
-        logger.info("Matching connections in memory...")
-        logger.info(f"Connections: {len(connections1)} vs {len(connections2)}")
 
-        # Step 1: Improve server detection using cardinality analysis
-        logger.info("Performing cardinality analysis for server detection...")
-
-        # Create and populate detector using helper method
-        detector = self._create_and_populate_detector(connections1, connections2)
-
-        # Re-detect server/client roles with improved detection
-        connections1 = self._improve_server_detection(connections1, detector)
-        connections2 = self._improve_server_detection(connections2, detector)
-        logger.info("Server detection improved using cardinality analysis")
-
-        # Step 2: Match connections
-        logger.info("Matching connections...")
-        bucket_enum = BucketStrategy(bucket_strategy)
-        match_mode_enum = MatchMode(match_mode)
-        matcher = ConnectionMatcher(
-            bucket_strategy=bucket_enum,
+        logger.info("Delegating in-memory matching to runner.match_connections_in_memory")
+        return run_match_in_memory(
+            connections1,
+            connections2,
+            bucket_strategy=bucket_strategy,
             score_threshold=score_threshold,
-            match_mode=match_mode_enum,
+            match_mode=match_mode,
         )
-
-        matches = matcher.match(connections1, connections2)
-        logger.info(f"Found {len(matches)} matches")
-
-        return matches
 
     def _extract_connections(self, pcap_file: Path, merge_by_5tuple: bool = False) -> list:
         """
