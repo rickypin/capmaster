@@ -60,9 +60,9 @@ class YourPlugin(PluginBase):
 plugin_modules = [
     "capmaster.plugins.analyze",
     "capmaster.plugins.match",
-    "capmaster.plugins.filter",
     "capmaster.plugins.clean",
     "capmaster.plugins.compare",
+    "capmaster.plugins.preprocess",
     "capmaster.plugins.your_plugin",  # 新增插件
 ]
 ```
@@ -70,7 +70,7 @@ plugin_modules = [
 ### 1.4 参考现有插件
 
 - **简单**: `clean/plugin.py` - 单一功能
-- **中等**: `filter/plugin.py` - 包含检测器
+- **中等**: `compare/plugin.py` - 双文件比较逻辑
 - **复杂**: `analyze/plugin.py` - 包含子模块系统
 
 ---
@@ -141,7 +141,7 @@ def build_tshark_args(self, input_file: Path) -> list[str]:
 **类型 2: 字段提取** (带后处理)
 ```python
 def build_tshark_args(self, input_file: Path) -> list[str]:
-    return ["-Y", "filter", "-T", "fields", "-e", "field1", "-e", "field2"]
+    return ["-Y", "tcp.port == 80", "-T", "fields", "-e", "field1", "-e", "field2"]
 ```
 参考: `dns_stats.py` 等 *_stats 模块
 
@@ -164,7 +164,7 @@ def post_process(self, tshark_output: str) -> str:
 
 ## 4. 并发与批处理中的错误处理（AI 重点）
 
-本节专门约束 AI Agent 在实现 / 修改支持「多文件处理」或「并发处理」的插件（例如 `analyze`, `filter`）时的行为，避免出现“跑完但没算对”的静默失败。
+本节专门约束 AI Agent 在实现 / 修改支持「多文件处理」或「并发处理」的插件（例如 `analyze`, `preprocess`）时的行为，避免出现“跑完但没算对”的静默失败。
 
 ### 4.1 必须遵守的原则
 

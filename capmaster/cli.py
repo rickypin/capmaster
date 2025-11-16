@@ -27,15 +27,16 @@ def cli(ctx: click.Context, verbose: int) -> None:
     """
     CapMaster - Unified PCAP Analysis Tool.
 
-    A Python CLI tool for PCAP analysis, TCP connection matching, filtering, and comparison.
+    A Python CLI tool for PCAP analysis, preprocessing, TCP connection matching, and comparison.
 
     \b
     Available Commands:
-      analyze    Analyze PCAP files and generate statistics
-      match      Match TCP connections between PCAP files
-      compare    Compare TCP connections at packet level between PCAP files
-      filter     Remove one-way TCP connections from PCAP files
-      clean      Remove statistics directories
+      analyze               Analyze PCAP files and generate statistics
+      match                 Match TCP connections between PCAP files
+      compare               Compare TCP connections at packet level between PCAP files
+      comparative-analysis  Perform comparative analysis between two PCAP files
+      preprocess            Preprocess PCAP files before further analysis
+      clean                 Remove statistics directories and their contents
 
     \b
     Examples:
@@ -48,8 +49,8 @@ def cli(ctx: click.Context, verbose: int) -> None:
       # Compare connections at packet level
       capmaster compare -i captures/
 
-      # Filter one-way connections
-      capmaster filter -i capture.pcap -o clean.pcap
+      # Preprocess PCAP files (time-align, deduplicate, one-way analysis)
+      capmaster preprocess -i capture.pcap
 
       # Clean statistics directories
       capmaster clean -i /path/to/data

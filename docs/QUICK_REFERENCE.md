@@ -66,24 +66,7 @@ capmaster match -i /path/to/pcaps/ \
   -o results.txt
 ```
 
-### Filter One-Way Connections
 
-```bash
-# Basic filtering
-capmaster filter -i input.pcap
-
-# Custom output
-capmaster filter -i input.pcap -o clean.pcap
-
-# Custom threshold
-capmaster filter -i input.pcap -t 50
-
-# Combined options
-capmaster filter -i input.pcap -o clean.pcap -t 100
-
-# Filter directory recursively with concurrent processing
-capmaster filter -i captures/ -w 4
-```
 
 ### Clean Statistics Directories
 
@@ -280,11 +263,7 @@ Match #1 (Score: 0.95)
   File 2: Stream 12 | 10.0.0.50:54321 -> 93.184.216.34:443
 ```
 
-### Filter Output
 
-```
-<input>_filtered.pcap
-```
 
 ---
 
@@ -300,16 +279,7 @@ capmaster analyze -i captures/ -r
 ls captures/statistics/
 ```
 
-### 2. Match and Filter
 
-```bash
-# Match connections
-capmaster match -i captures/ -o matches.txt
-
-# Filter both files
-capmaster filter -i captures/client.pcap -o captures/client_clean.pcap
-capmaster filter -i captures/server.pcap -o captures/server_clean.pcap
-```
 
 ### 3. Debug Workflow
 

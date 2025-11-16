@@ -13,11 +13,10 @@ This comprehensive guide covers all aspects of using CapMaster for PCAP analysis
 2. [Analyze Command](#analyze-command)
 3. [Match Command](#match-command)
 4. [Compare Command](#compare-command)
-5. [Filter Command](#filter-command)
-6. [Clean Command](#clean-command)
-7. [Advanced Usage](#advanced-usage)
-8. [Troubleshooting](#troubleshooting)
-9. [Best Practices](#best-practices)
+5. [Clean Command](#clean-command)
+6. [Advanced Usage](#advanced-usage)
+7. [Troubleshooting](#troubleshooting)
+8. [Best Practices](#best-practices)
 
 ## Getting Started
 
@@ -571,66 +570,7 @@ capmaster compare -i captures/ --show-flow-hash -o results.txt
 capmaster compare -i captures/ --bucket port --threshold 0.70
 ```
 
-## Filter Command
 
-The `filter` command removes one-way TCP connections from PCAP files.
-
-### What are One-Way Connections?
-
-One-way connections occur when:
-- Only one side of the communication is captured
-- Network issues prevent bidirectional traffic
-- Asymmetric routing causes incomplete captures
-
-### Basic Usage
-
-```bash
-# Filter a single file
-capmaster filter -i noisy.pcap -o clean.pcap
-
-# Use default output name
-capmaster filter -i noisy.pcap
-# Output: noisy_filtered.pcap
-```
-
-### Detection Algorithm
-
-The filter identifies one-way connections by:
-
-1. Analyzing ACK number increments in each TCP stream
-2. Counting pure ACK packets (tcp.len==0)
-3. Marking streams exceeding the threshold as one-way
-
-### Threshold Adjustment
-
-The threshold determines how many pure ACK packets indicate a one-way connection:
-
-```bash
-# Default threshold (20)
-capmaster filter -i capture.pcap
-
-# More aggressive filtering
-capmaster filter -i capture.pcap -t 10
-
-# More conservative filtering
-capmaster filter -i capture.pcap -t 100
-```
-
-**Recommendations:**
-- **10-20**: Aggressive (removes more connections)
-- **20-50**: Balanced (default range)
-- **50-100**: Conservative (keeps more connections)
-
-### Handling Sequence Number Wraparound
-
-CapMaster correctly handles 32-bit TCP sequence number wraparound:
-
-```python
-# Example: ACK numbers near wraparound
-ACK1: 4294967290 (near max)
-ACK2: 10 (wrapped around)
-Delta: 16 (correctly calculated)
-```
 
 ## Clean Command
 

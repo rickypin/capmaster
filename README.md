@@ -4,13 +4,13 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Code Style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-A unified Python CLI tool for PCAP analysis, TCP connection matching, and filtering. CapMaster replaces three legacy shell scripts with a modern, maintainable, and extensible Python application.
+A unified Python CLI tool for PCAP analysis and TCP connection matching. CapMaster replaces legacy shell scripts with a modern, maintainable, and extensible Python application.
 
 ## Features
 
 - 📊 **Comprehensive PCAP Analysis** - 28 statistical analysis modules for protocol hierarchy, TCP/UDP conversations, DNS, HTTP, TLS, VoIP (SIP/RTP/RTCP/MGCP), SSH, and more
 - 🔗 **Intelligent TCP Connection Matching** - Advanced 8-feature scoring algorithm to match TCP connections across multiple PCAP files
-- 🔍 **One-Way Connection Filtering** - Detect and remove one-way TCP connections from PCAP files
+- 🔍 **One-Way Connection Analysis** - Detect one-way TCP connections in PCAP files
 - 🧹 **Statistics Cleanup** - Easily remove statistics directories to reclaim disk space
 - 🚀 **High Performance** - Achieves ≥90% of original shell script performance with better accuracy
 - 🎨 **Beautiful CLI** - Rich terminal output with colors and formatting
@@ -138,21 +138,7 @@ capmaster match -i /path/to/pcaps/ \
 
 **Output:** Matched connection pairs with similarity scores.
 
-### 3. Filter One-Way Connections
 
-Remove one-way TCP connections from a PCAP file:
-
-```bash
-capmaster filter -i input.pcap -o output.pcap
-```
-
-With custom threshold:
-
-```bash
-capmaster filter -i input.pcap -o output.pcap -t 100
-```
-
-**Output:** Filtered PCAP file with bidirectional connections only.
 
 ### 4. Clean Statistics Directories
 
@@ -278,30 +264,7 @@ Options:
 - Length Signature (8% weight)
 - IP ID Sequence (16% weight)
 
-### `filter` - One-Way Connection Filtering
 
-Remove one-way TCP connections from PCAP files.
-
-```bash
-capmaster filter [OPTIONS]
-
-Options:
-  -i, --input PATH         Input PCAP file or directory [required]
-  -o, --output PATH        Output PCAP file or directory
-                           (default: <input>_filtered.pcap)
-  -t, --threshold INTEGER  ACK increment threshold for one-way detection
-                           (default: 20)
-  -r, --no-recursive       Do NOT recursively scan directories (default: recursive)
-  -w, --workers INTEGER    Number of worker processes for concurrent processing
-                           (default: 1)
-  --help                   Show this message and exit
-```
-
-**Detection Algorithm:**
-- Analyzes ACK number increments in TCP streams
-- Handles 32-bit sequence number wraparound
-- Identifies pure ACK packets (tcp.len==0)
-- Marks streams with excessive pure ACKs as one-way
 
 ### `clean` - Remove Statistics Directories
 
@@ -358,14 +321,14 @@ capmaster match -i captures/ -o matches.txt
 cat matches.txt
 ```
 
-### Example 3: Clean PCAP File
+### Example 3: Clean Statistics Directories
 
 ```bash
-# Remove one-way connections
-capmaster filter -i noisy.pcap -o clean.pcap
+# Remove all statistics directories under captures/
+capmaster clean -i captures/
 
-# Verify the result
-capmaster analyze -i clean.pcap
+# Preview deletions without removing anything
+capmaster clean -i captures/ --dry-run
 ```
 
 ### Example 4: Analyze with Sidecar Metadata and Markdown Format
@@ -443,7 +406,9 @@ capmaster/
 │   ├── analyze/             # Analysis plugin
 │   │   └── modules/         # Analysis modules (2nd layer)
 │   ├── match/               # Matching plugin
-│   └── filter/              # Filtering plugin
+│   ├── compare/             # Comparative analysis plugin
+│   ├── clean/               # Cleanup plugin
+│   └── preprocess/          # Preprocessing pipeline
 └── utils/                   # Utilities
     └── logger.py            # Logging configuration
 ```
@@ -456,7 +421,6 @@ CapMaster achieves excellent performance compared to the original shell scripts:
 |-----------|----------------|-----------|-------------|
 | Analyze (10MB PCAP) | 2.5s | 2.0s | **126%** (21% faster) |
 | Match (100 connections) | 5.0s | 4.5s | **111%** (11% faster) |
-| Filter (10MB PCAP) | 3.0s | 2.8s | **107%** (7% faster) |
 
 **Test Coverage:** 87% (130 tests passing)
 
@@ -507,13 +471,13 @@ mypy capmaster && ruff check capmaster && black --check capmaster
 
 ## Migration from Shell Scripts
 
-CapMaster replaces three legacy shell scripts:
+CapMaster replaces legacy shell scripts:
 
 | Old Script | New Command | Notes |
 |------------|-------------|-------|
 | `analyze_pcap.sh -i file.pcap` | `capmaster analyze -i file.pcap` | Same functionality, better performance |
 | `match_tcp_conns.sh -i dir/` | `capmaster match -i dir/` | Enhanced 8-feature scoring |
-| `remove_one_way_tcp.sh -i file.pcap` | `capmaster filter -i file.pcap` | Improved detection algorithm |
+
 
 ## Extending CapMaster
 
@@ -521,7 +485,7 @@ CapMaster is designed with extensibility in mind. You can easily add new plugins
 
 See **[AI Plugin Extension Guide](docs/AI_PLUGIN_EXTENSION_GUIDE.md)** for quick reference on:
 
-- Adding new top-level plugins (like analyze, match, filter, clean)
+- Adding new top-level plugins (like analyze, match, compare, preprocess, clean)
 - Adding new analysis modules for the analyze plugin
 - tshark command patterns and post-processing techniques
 - Code templates, testing, and validation

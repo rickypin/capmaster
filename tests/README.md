@@ -15,8 +15,8 @@ tests/
 │   ├── test_analyze/       # Analyze plugin tests
 │   ├── test_clean/         # Clean plugin tests
 │   ├── test_compare/       # Compare plugin tests
-│   ├── test_filter/        # Filter plugin tests
-│   └── test_match/         # Match plugin tests
+│   ├── test_match/         # Match plugin tests
+│   └── test_preprocess/    # Preprocess plugin tests
 ├── test_flow_hash.py       # Flow hash unit tests
 ├── test_flow_hash_rust_compatibility.py  # Rust compatibility tests
 └── conftest.py             # Shared fixtures
@@ -29,7 +29,7 @@ Fast, isolated tests that mock external dependencies.
 
 **Examples:**
 - `test_core/test_file_scanner.py` - File scanning logic
-- `test_plugins/test_filter/test_detector.py` - One-way stream detection
+- `test_plugins/test_preprocess/test_pcap_tools_unit.py` - Preprocess helpers and one-way detection
 - `test_flow_hash.py` - Flow hash calculation
 
 **Run unit tests only:**
@@ -42,7 +42,7 @@ Tests that use real components and may require external dependencies.
 
 **Examples:**
 - `test_plugins/test_analyze/test_integration.py` - Full analyze workflow
-- `test_plugins/test_filter/test_integration.py` - Filter with real PCAP files
+- `test_plugins/test_preprocess/test_integration.py` - Preprocess workflow with real PCAP files
 - `test_plugins/test_match/test_integration.py` - Match workflow
 
 **Run integration tests only:**
@@ -80,11 +80,14 @@ pytest tests/test_core/ -v
 # Analyze plugin
 pytest tests/test_plugins/test_analyze/ -v
 
-# Filter plugin
-pytest tests/test_plugins/test_filter/ -v
+# Compare plugin
+pytest tests/test_plugins/test_compare/ -v
 
 # Match plugin
 pytest tests/test_plugins/test_match/ -v
+
+# Preprocess plugin
+pytest tests/test_plugins/test_preprocess/ -v
 
 # All plugins
 pytest tests/test_plugins/ -v
