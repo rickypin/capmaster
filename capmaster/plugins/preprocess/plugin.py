@@ -161,6 +161,46 @@ class PreprocessPlugin(PluginBase):
             no_report: bool,
             report_path: Path | None,
         ) -> None:
+            """Preprocess PCAP files before further analysis.
+
+            This command prepares raw capture files by aligning capture times,
+            deduplicating packets, detecting one-way streams, and optionally
+            archiving the original inputs. The resulting PCAPs are cleaner and
+            more consistent for downstream commands like ``analyze`` and
+            ``match``.
+
+            \b
+            Steps:
+              - archive-original: copy or move original PCAPs to a safe location
+              - time-align: compute a common time window and trim captures
+              - dedup: remove duplicate packets within a sliding window
+              - oneway: detect and optionally remove one-way TCP streams
+
+            \b
+            Examples:
+              # Run with default configuration (automatic steps from config)
+              capmaster preprocess -i capture.pcap
+
+              # Explicitly specify output directory
+              capmaster preprocess -i capture.pcap -o preprocessed/
+
+              # Process multiple files (comma-separated list)
+              capmaster preprocess -i "a.pcap,b.pcap,c.pcap"
+
+              # Run only selected steps in order
+              capmaster preprocess -i capture.pcap --step archive-original --step time-align
+
+              # Override individual settings from CLI
+              capmaster preprocess -i capture.pcap --enable-dedup --dedup-window-packets 10
+
+            \b
+            Configuration:
+              By default, settings are loaded from the preprocess YAML config
+              file. CLI flags such as ``--enable/--disable-*``,
+              ``--dedup-window-packets`` and ``--oneway-ack-threshold``
+              override the configuration file values.
+            """
+
             exit_code = self.execute(
                 input_path=input_path,
                 output_dir=output_dir,

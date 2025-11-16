@@ -654,8 +654,12 @@ def run_preprocess(
         cfg = context.runtime.preprocess
         _archive_changed_originals(context, final_files)
 
-        # Optionally compress the archive directory after all other outputs
-        # have been written.
+        # Generate a minimal Markdown report if enabled. Report generation
+        # errors should not cause the preprocess run to fail.
+        maybe_write_report(context, steps=list(steps), final_files=final_files)
+
+        # Optionally compress the archive directory after the report has been
+        # written, then remove the uncompressed archive directory to save space.
         if cfg.archive_original and cfg.archive_compress:
             archive_dir = context.output_dir / "archive"
             if archive_dir.exists():
@@ -666,10 +670,14 @@ def run_preprocess(
                     logger.warning(
                         "Failed to create archive tarball for %s", archive_dir
                     )
-
-        # Generate a minimal Markdown report if enabled. Report generation
-        # errors should not cause the preprocess run to fail.
-        maybe_write_report(context, steps=list(steps), final_files=final_files)
+                else:
+                    try:
+                        shutil.rmtree(archive_dir)
+                    except OSError:
+                        logger.warning(
+                            "Failed to remove archive directory after compression: %s",
+                            archive_dir,
+                        )
 
         return final_files
     finally:

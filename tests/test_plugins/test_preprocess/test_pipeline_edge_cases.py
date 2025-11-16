@@ -459,8 +459,8 @@ def test_archive_compress_creates_tarball_when_archive_exists(tmp_path, monkeypa
     assert [p.name for p in outputs] == ["a.preprocessed.pcap"]
 
     archive_dir = out_dir / "archive"
-    assert archive_dir.is_dir()
-    assert (archive_dir / "a.pcap").is_file()
+    # After compression we should keep only the tarball and remove the archive directory.
+    assert not archive_dir.exists()
 
     # Compression should have been invoked exactly once with gztar format.
     assert len(make_archive_calls) == 1

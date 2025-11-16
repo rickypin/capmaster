@@ -23,6 +23,13 @@ if TYPE_CHECKING:  # pragma: no cover - type checking only
 logger = logging.getLogger(__name__)
 
 
+def _format_timestamp_for_report(ts: float) -> str:
+    """Format a UNIX epoch timestamp as a human-readable UTC string for reports."""
+    dt = datetime.fromtimestamp(ts, timezone.utc)
+    return dt.strftime("%Y-%m-%d %H:%M:%S.%fZ")
+
+
+
 def maybe_write_report(
     context: "PreprocessContext",
     *,
@@ -128,15 +135,20 @@ def maybe_write_report(
                 orig_tr = get_time_range(tools=tools, input_file=original)
                 final_tr = get_time_range(tools=tools, input_file=final)
 
+                orig_first = _format_timestamp_for_report(orig_tr.first_ts)
+                orig_last = _format_timestamp_for_report(orig_tr.last_ts)
+                final_first = _format_timestamp_for_report(final_tr.first_ts)
+                final_last = _format_timestamp_for_report(final_tr.last_ts)
+
                 row = (
-                    f"| {original} | {final} | {orig_count} | {final_count} | "
-                    f"{orig_tr.first_ts:.6f} | {orig_tr.last_ts:.6f} | "
-                    f"{final_tr.first_ts:.6f} | {final_tr.last_ts:.6f} | {archived_str} |"
+                    f"| {original.name} | {final.name} | {orig_count} | {final_count} | "
+                    f"{orig_first} | {orig_last} | "
+                    f"{final_first} | {final_last} | {archived_str} |"
                 )
             except CapMasterError as exc:
                 logger.warning("Failed to collect stats for %s/%s: %s", original, final, exc)
                 row = (
-                    f"| {original} | {final} | N/A | N/A | N/A | N/A | N/A | N/A | "
+                    f"| {original.name} | {final.name} | N/A | N/A | N/A | N/A | N/A | N/A | "
                     f"{archived_str} |"
                 )
 
