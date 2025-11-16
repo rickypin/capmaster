@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 import click
 
-from capmaster.utils.cli_options import validate_database_params, validate_dual_file_input
+from capmaster.utils.cli_options import dual_file_input_options, validate_database_params
 
 
 def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) -> None:
@@ -20,33 +20,7 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
     """
 
     @cli_group.command(name=plugin.name)
-    @click.option(
-        "-i",
-        "--input",
-        "input_path",
-        type=str,
-        help="Input directory or comma-separated list of exactly 2 PCAP files",
-    )
-    @click.option(
-        "--file1",
-        type=click.Path(exists=True, path_type=Path),
-        help="First PCAP file (baseline file)",
-    )
-    @click.option(
-        "--file1-pcapid",
-        type=int,
-        help="PCAP ID for file1 (0 or 1)",
-    )
-    @click.option(
-        "--file2",
-        type=click.Path(exists=True, path_type=Path),
-        help="Second PCAP file (compare file)",
-    )
-    @click.option(
-        "--file2-pcapid",
-        type=int,
-        help="PCAP ID for file2 (0 or 1)",
-    )
+    @dual_file_input_options
     @click.option(
         "-o",
         "--output",
@@ -206,8 +180,7 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
           When --db-connection and --kase-id are provided, flow hash results will
           also be written to the database table public.kase_{kase_id}_tcp_stream_extra.
         """
-        # Validate input parameters
-        validate_dual_file_input(ctx, input_path, file1, file2, file1_pcapid, file2_pcapid)
+        # Dual-file input validation is handled by @dual_file_input_options callback.
 
         # Validate database parameters
         validate_database_params(

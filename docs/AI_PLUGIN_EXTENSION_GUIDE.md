@@ -38,7 +38,7 @@ class YourPlugin(PluginBase):
     @property
     def name(self) -> str:
         return "command_name"  # CLI 子命令名
-    
+
     def setup_cli(self, cli_group: click.Group) -> None:
         @cli_group.command(name=self.name)
         @click.option("-i", "--input", required=True)
@@ -46,7 +46,7 @@ class YourPlugin(PluginBase):
         def command(ctx, input):
             exit_code = self.execute(input=input)
             ctx.exit(exit_code)
-    
+
     def execute(self, **kwargs) -> int:
         # 实现业务逻辑
         return 0  # 0=成功, 非0=失败
@@ -98,19 +98,19 @@ class YourModule(AnalysisModule):
     @property
     def name(self) -> str:
         return "module_name"
-    
+
     @property
     def output_suffix(self) -> str:
         return "output-file.txt"
-    
+
     @property
     def required_protocols(self) -> set[str]:
         return {"protocol"}  # 或 set() 表示总是执行
-    
+
     def build_tshark_args(self, input_file: Path) -> list[str]:
         # 返回 tshark 命令参数
         return ["-q", "-z", "command"]
-    
+
     def post_process(self, tshark_output: str) -> str:
         # 可选: 后处理 tshark 输出
         return tshark_output
@@ -161,6 +161,59 @@ def post_process(self, tshark_output: str) -> str:
 - 后处理时，可以自由使用标准库（如 `collections`, `re` 等），不再在本文中展开。
 
 ---
+
+## 4. 并发与批处理中的错误处理（AI 重点）
+
+本节专门约束 AI Agent 在实现 / 修改支持「多文件处理」或「并发处理」的插件（例如 `analyze`, `filter`）时的行为，避免出现“跑完但没算对”的静默失败。
+
+### 4.1 必须遵守的原则
+
+- **不要在 worker 中吞掉所有异常然后返回“看起来像成功”的结果**
+  - 例如：在 `ProcessPoolExecutor` 的子进程 worker 里 `except Exception: ... return (pcap_file, 0)` 是禁止的。
+- worker 级别的异常必须：
+  - 要么直接抛出，让主进程在 `future.result()` 处感知到；
+  - 要么显式封装成“失败”的返回值，并且主进程必须据此统计失败数量。
+- 顶层 `execute()` 在并发 / 批处理场景中必须：
+  - 统计 **成功文件数** 与 **失败文件数**；
+  - 对任意失败文件返回 **非 0 exit code**（推荐 `1`）；
+  - 在日志中清晰区分：
+    - 「0 个输出，因为没有匹配结果」vs
+    - 「0 个输出，因为所有文件都处理失败」。
+
+### 4.2 推荐实现模式（示意）
+
+```python
+# worker: 不吞异常
+def _process_single_file(pcap_file: Path, ...) -> tuple[Path, int]:
+    ...
+    return (pcap_file, num_outputs)
+
+# execute: 并发聚合时统计失败
+failed_files = 0
+total_outputs = 0
+
+with ProcessPoolExecutor(max_workers=workers) as executor:
+    ...
+    for future in as_completed(futures):
+        pcap_file = futures[future]
+        try:
+            _, num_outputs = future.result()
+            total_outputs += num_outputs
+        except Exception as e:
+            failed_files += 1
+            logger.error(f"Failed to process {pcap_file.name}: {e}")
+
+if failed_files > 0:
+    logger.error(
+        f"Completed with errors: {failed_files} of {len(pcap_files)} file(s) failed"
+    )
+    return 1
+
+return 0
+```
+
+> 提示：新增或修改并发逻辑时，AI Agent 应同时补充至少 1 条测试，用来断言「有 worker 失败时 `execute()` 返回非 0」。
+
 
 ## 5. 核心组件使用
 
@@ -262,6 +315,50 @@ result = tshark.execute(
 )
 ```
 
+### 5.4 CLI 双文件输入约束（AI 重点）
+
+> 适用于需要“两个 PCAP 输入”的顶层命令，例如 `match`、`compare` 以及相关子命令（如 `match comparative-analysis`）。
+
+1. **必须使用统一装饰器 `dual_file_input_options`**
+   - 所有“双文件输入”命令必须使用 `capmaster.utils.cli_options.dual_file_input_options` 来声明：
+     - `-i/--input`
+     - `--file1/--file2`
+     - `--file1-pcapid/--file2-pcapid`
+   - **禁止**在各个命令中手写上述选项，避免与全局规则 / 校验不一致。
+
+2. **禁止调用已废弃的 `validate_dual_file_input`**
+   - 函数 `capmaster.utils.cli_options.validate_dual_file_input(...)` 仅为兼容旧代码保留，其实现是 no-op。
+   - AI Agent 和人类开发者在新代码中 **不得调用** 该函数；
+   - 如果在修改旧命令逻辑时遇到它，应顺便移除调用，改为完全依赖 `dual_file_input_options` 的 Click callback 校验。
+
+3. **单一真相源：规则与错误信息**
+   - 双文件输入在 CLI 层的**参数组合规则**与**错误提示文案**，统一定义在：
+     - `capmaster/utils/cli_options.py` 中的 `_validate_dual_file_input_callback`；
+   - 双文件输入在执行层的**语义解析与文件数量检查**，统一由：
+     - `capmaster/utils/input_parser.py` 中的 `DualFileInputParser` 负责。
+   - 如需修改：
+     - `-i` 与 `--file1/--file2` 是否互斥；
+     - `pcapid` 的合法取值范围；
+     - 错误提示文本；
+     - 以及其他与“双文件输入”相关的规则；
+     **必须只在上述集中位置修改**，不得在单个插件 / 命令中重新实现一套局部规则。
+
+4. **新增双文件命令的推荐模式**
+   - CLI 层：使用 `@dual_file_input_options` 获取 `input_path` / `file1` / `file2` / `file1_pcapid` / `file2_pcapid`。
+   - 执行层：调用 `DualFileInputParser` 进行语义解析与安全检查。
+   - 业务层：仅在解析结果的基础上编写与当前命令相关的业务逻辑，**不得重新解释双文件输入的含义**。
+
+5. **CLI 负向测试要求**
+   - 对任意使用 `dual_file_input_options` 的命令，如有新增或修改逻辑，推荐至少增加以下场景的 CLI 级负向测试：
+     - 未提供任何输入（既无 `-i/--input`，也无 `--file1/--file2`）；
+     - 同时提供 `-i/--input` 与 `--file1/--file2`；
+     - 使用 `--file1/--file2` 却缺少对应的 `pcapid`；
+     - `pcapid` 不在允许的取值范围内（当前为 `0` 或 `1`）。
+   - 推荐使用 `subprocess.run(["python", "-m", "capmaster", ...])` 直接调用 CLI，并断言：
+     - 返回码 `returncode != 0`；
+     - 标准错误输出中包含来自 `_validate_dual_file_input_callback` 的预期错误信息。
+
+
 ---
 
 ## 6. 测试要求（简化）
@@ -286,6 +383,7 @@ result = tshark.execute(
 - [ ] 使用 `@register_plugin`
 - [ ] 在 `discover_plugins()` 的 `plugin_modules` 列表中注册你的插件模块
 - [ ] **使用 `TsharkWrapper` 而非 `subprocess.run`**
+- [ ] **并发/批处理场景：不得静默吞掉 worker 异常，必须统计失败数并在有失败时返回非 0 exit code**
 - [ ] 添加类型提示
 - [ ] 编写测试 (覆盖率 ≥ 80%)
 - [ ] 运行 `mypy` 和 `ruff`

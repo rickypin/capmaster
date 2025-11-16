@@ -44,7 +44,6 @@ from capmaster.plugins.match.strategies import (
 from capmaster.utils.cli_options import (
     dual_file_input_options,
     validate_database_params,
-    validate_dual_file_input,
 )
 from capmaster.utils.errors import (
     InsufficientFilesError,
@@ -335,8 +334,7 @@ class MatchPlugin(PluginBase):
                 --endpoint-stats \\
                 --endpoint-stats-json endpoint_stats.json
             """
-            # Validate input parameters
-            validate_dual_file_input(ctx, input_path, file1, file2, file1_pcapid, file2_pcapid)
+            # Dual-file input validation is handled by @dual_file_input_options callback.
 
             # Validate database parameters
             validate_database_params(ctx, db_connection, kase_id, "endpoint-stats", endpoint_stats)
@@ -927,106 +925,6 @@ class MatchPlugin(PluginBase):
         """
         return extract_connections_from_pcap(pcap_file, merge_by_5tuple=merge_by_5tuple)
 
-    def _convert_f5_matches_to_connection_matches(
-        self,
-        f5_matches: list,
-        connections1: list,
-        connections2: list,
-    ) -> list:
-        """
-        Convert F5 matches to standard ConnectionMatch format.
-
-        Args:
-            f5_matches: List of F5ConnectionPair objects
-            connections1: List of TcpConnection objects from file1
-            connections2: List of TcpConnection objects from file2
-
-        Returns:
-            List of ConnectionMatch objects
-        """
-        from capmaster.core.connection.matcher import ConnectionMatch
-        from capmaster.core.connection.scorer import MatchScore
-
-        # Build lookup tables: stream_id -> connection
-        conn1_map = {conn.stream_id: conn for conn in connections1}
-        conn2_map = {conn.stream_id: conn for conn in connections2}
-
-        matches = []
-        for f5_match in f5_matches:
-            # Look up connections by stream ID
-            conn1 = conn1_map.get(f5_match.snat_stream_id)
-            conn2 = conn2_map.get(f5_match.vip_stream_id)
-
-            if conn1 and conn2:
-                # Create a perfect match score for F5-based matches
-                score = MatchScore(
-                    normalized_score=1.0,
-                    raw_score=1.0,
-                    available_weight=1.0,
-                    ipid_match=True,
-                    evidence=f"F5_TRAILER(client={f5_match.client_ip}:{f5_match.client_port})",
-                    force_accept=True,
-                )
-
-                match = ConnectionMatch(
-                    conn1=conn1,
-                    conn2=conn2,
-                    score=score,
-                )
-                matches.append(match)
-
-        return matches
-
-    def _convert_tls_matches_to_connection_matches(
-        self,
-        tls_matches: list,
-        connections1: list,
-        connections2: list,
-    ) -> list:
-        """
-        Convert TLS matches to standard ConnectionMatch format.
-
-        Args:
-            tls_matches: List of TlsConnectionPair objects
-            connections1: List of TcpConnection objects from file1
-            connections2: List of TcpConnection objects from file2
-
-        Returns:
-            List of ConnectionMatch objects
-        """
-        from capmaster.core.connection.matcher import ConnectionMatch
-        from capmaster.core.connection.scorer import MatchScore
-
-        # Build lookup tables: stream_id -> connection
-        conn1_map = {conn.stream_id: conn for conn in connections1}
-        conn2_map = {conn.stream_id: conn for conn in connections2}
-
-        matches = []
-        for tls_match in tls_matches:
-            # Look up connections by stream ID
-            conn1 = conn1_map.get(tls_match.stream_id_1)
-            conn2 = conn2_map.get(tls_match.stream_id_2)
-
-            if conn1 and conn2:
-                # Create a perfect match score for TLS-based matches
-                # TLS Client Hello random (32 bytes) + session_id provides strong uniqueness
-                score = MatchScore(
-                    normalized_score=1.0,
-                    raw_score=1.0,
-                    available_weight=1.0,
-                    ipid_match=True,
-                    evidence=f"TLS_CLIENT_HELLO(random={tls_match.random[:16]}..., session_id={tls_match.session_id[:16]}...)",
-                    force_accept=True,
-                )
-
-                match = ConnectionMatch(
-                    conn1=conn1,
-                    conn2=conn2,
-                    score=score,
-                )
-                matches.append(match)
-
-        return matches
 
     def _output_results(self, matches: list, stats: dict, output_file: Path | None) -> None:
         """Delegated to capmaster.plugins.match.output_formatter.output_match_results."""

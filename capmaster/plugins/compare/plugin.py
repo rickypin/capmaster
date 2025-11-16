@@ -15,7 +15,7 @@ from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
 from capmaster.plugins.compare.packet_comparator import PacketComparator
 from capmaster.plugins.compare.packet_extractor import PacketExtractor
-from capmaster.utils.cli_options import validate_database_params, validate_dual_file_input
+from capmaster.utils.cli_options import validate_database_params
 from capmaster.utils.errors import (
     InsufficientFilesError,
     handle_error,

@@ -10,10 +10,7 @@ from typing import Any
 
 import click
 
-from capmaster.utils.cli_options import (
-    dual_file_input_options,
-    validate_dual_file_input,
-)
+from capmaster.utils.cli_options import dual_file_input_options
 
 
 def register_comparative_analysis_command(plugin: Any, cli_group: click.Group) -> None:
@@ -105,8 +102,7 @@ def register_comparative_analysis_command(plugin: Any, cli_group: click.Group) -
           Comparative analysis report showing differences and metrics
           between the two PCAP files.
         """
-        # Validate input parameters
-        validate_dual_file_input(ctx, input_path, file1, file2, file1_pcapid, file2_pcapid)
+        # Dual-file input validation is handled by @dual_file_input_options callback.
 
         # Validate analysis type parameters
         if not service and not matched_connections:

@@ -52,52 +52,39 @@ def _process_single_file(
     Returns:
         Tuple of (pcap_file, number of outputs generated)
     """
-    try:
-        # Initialize components (each worker needs its own instances)
-        # These are lightweight and necessary for thread safety
-        tshark = TsharkWrapper()
-        protocol_detector = ProtocolDetector(tshark)
-        executor = AnalysisExecutor(tshark, protocol_detector)
+    # Initialize components (each worker needs its own instances)
+    # These are lightweight and necessary for process safety
+    tshark = TsharkWrapper()
+    protocol_detector = ProtocolDetector(tshark)
+    executor = AnalysisExecutor(tshark, protocol_detector)
 
-        # Get module classes from registry
-        # If registry is empty (spawn mode), discover modules
+    # Get module classes from registry
+    # If registry is empty (spawn mode), discover modules
+    module_classes = get_all_modules()
+    if not module_classes:
+        discover_modules()
         module_classes = get_all_modules()
-        if not module_classes:
-            discover_modules()
-            module_classes = get_all_modules()
 
-        modules = [module_class() for module_class in module_classes]
+    modules = [module_class() for module_class in module_classes]
 
-        # Filter modules if specific modules are requested
-        if selected_modules:
-            modules = [m for m in modules if m.name in selected_modules]
+    # Filter modules if specific modules are requested
+    if selected_modules:
+        modules = [m for m in modules if m.name in selected_modules]
 
-        # Create output directory
-        output_path = OutputManager.create_output_dir(pcap_file, output_dir)
+    # Create output directory
+    output_path = OutputManager.create_output_dir(pcap_file, output_dir)
 
-        # Execute analysis modules
-        # Note: sequence parameter is no longer needed as it's handled internally per module
-        results = executor.execute_modules(
-            input_file=pcap_file,
-            output_dir=output_path,
-            modules=modules,
-            output_format=output_format,
-            generate_sidecar=generate_sidecar,
-        )
+    # Execute analysis modules
+    # Note: sequence parameter is no longer needed as it's handled internally per module
+    results = executor.execute_modules(
+        input_file=pcap_file,
+        output_dir=output_path,
+        modules=modules,
+        output_format=output_format,
+        generate_sidecar=generate_sidecar,
+    )
 
-        return (pcap_file, len(results))
-    except (OSError, PermissionError) as e:
-        # File system errors (permissions, disk full, etc.)
-        logger.error(f"File system error processing {pcap_file}: {e}")
-        return (pcap_file, 0)
-    except RuntimeError as e:
-        # Tshark execution errors or other runtime issues
-        logger.error(f"Runtime error processing {pcap_file}: {e}")
-        return (pcap_file, 0)
-    except Exception as e:
-        # Unexpected errors - log with more detail for debugging
-        logger.exception(f"Unexpected error processing {pcap_file}: {e}")
-        return (pcap_file, 0)
+    return (pcap_file, len(results))
 
 
 @register_plugin
@@ -357,6 +344,7 @@ class AnalyzePlugin(PluginBase):
 
             # Process files with progress bar
             total_outputs = 0
+            failed_files = 0
             with Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
@@ -395,6 +383,7 @@ class AnalyzePlugin(PluginBase):
                                 total_outputs += num_outputs
                                 logger.debug(f"Completed {pcap_file.name}: {num_outputs} outputs")
                             except Exception as e:
+                                failed_files += 1
                                 logger.error(f"Failed to process {pcap_file.name}: {e}")
 
                             progress.update(overall_task, advance=1)
@@ -437,6 +426,16 @@ class AnalyzePlugin(PluginBase):
 
                         # Update overall progress
                         progress.update(overall_task, advance=1)
+
+            if failed_files > 0:
+                logger.error(
+                    f"Analysis completed with errors. "
+                    f"{failed_files} of {len(pcap_files)} file(s) failed"
+                )
+                logger.info(
+                    f"Total outputs generated from successful files: {total_outputs}"
+                )
+                return 1
 
             logger.info(f"Analysis complete. Total outputs: {total_outputs}")
             return 0
