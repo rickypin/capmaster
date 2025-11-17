@@ -35,7 +35,7 @@ def test_maybe_write_report_uses_human_readable_timestamps_and_filenames(tmp_pat
     original = input_dir / "example.pcap"
     original.touch()
 
-    final = output_dir / "example.preprocessed.pcap"
+    final = output_dir / "example.ready.pcap"
     final.touch()
 
     context = PreprocessContext(

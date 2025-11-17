@@ -20,7 +20,7 @@ CapMaster 需要一个新的 **预处理插件（preprocess）**，在进行 mat
 
 ### 2.1 当前范围
 - 仅为 **preprocess 插件** 引入配置对象 + YAML + ENV + CLI 映射。
-- 实现以下步骤：`archive-original`、`dedup`（editcap）、`oneway`（迁移自 filter 插件）、`time-align`（使用 Wireshark 系列工具，如 capinfos/tshark + editcap，按性能优先级选择）。
+- 实现以下步骤：`dedup`（editcap）、`oneway`（迁移自 filter 插件）、`time-align`（使用 Wireshark 系列工具，如 capinfos/tshark + editcap，按性能优先级选择），以及一个可选的原始文件归档选项 `archive_original_files`（非 pipeline 步骤，在全部处理完成后执行）。
 - 提供 Python API，供上层项目直接调用，无需绕 CLI。
 - 在 preprocess 引入 oneway 能力后，filter 插件中对应的 oneway 功能计划弃用并删除，实现逻辑统一收敛到 preprocess。
 
@@ -88,8 +88,7 @@ class PreprocessConfig:
     dedup_enabled: bool = True
     oneway_enabled: bool = True
     time_align_enabled: bool = True
-    archive_original: bool = False
-    archive_compress: bool = False
+    archive_original_files: bool = False
 
     # Dedup params (editcap-based)
     dedup_window_packets: int | None = None  # None -> use editcap -d (默认窗口)，否则使用 -D N
@@ -143,8 +142,7 @@ preprocess:
   dedup_enabled: true
   oneway_enabled: true
   time_align_enabled: true
-  archive_original: false
-  archive_compress: false
+  archive_original_files: false
 
   dedup_window_packets: null
   dedup_ignore_bytes: 0
@@ -179,12 +177,12 @@ preprocess:
 ### 6.2 输入输出
 
 - `-i, --input TEXT`（必选）：文件/目录/逗号分隔列表，使用 `PcapScanner` 解析。
-- `-o, --output PATH`（可选）：输出目录；未指定时使用约定默认（例如 `<input>_preprocessed` 或 `preprocessed/` 子目录）。
+- `-o, --output PATH`（可选）：输出目录；未指定时使用约定默认（例如 `<input>_prep` 或 `prep/` 子目录）。
 - `--config PATH`（可选）：指定 YAML；否则使用 `CAPMASTER_CONFIG` 或默认文件名。
 
 ### 6.3 步骤控制：自动模式 vs 显式 steps
 
-- `--step [STEP]`（多次）：`STEP ∈ {dedup, oneway, time-align, archive-original}`。
+- `--step [STEP]`（多次）：`STEP ∈ {dedup, oneway, time-align}`。
   - 若至少指定一次 `--step`：
     - 视为“显式步骤模式”，实际执行步骤 = `--step` 列表（顺序同 CLI）；
     - 此时 `*_enabled` 不再控制步骤集合，只作默认文档。
@@ -197,7 +195,6 @@ preprocess:
   - `--enable-dedup` / `--disable-dedup` → `PreprocessConfig.dedup_enabled`。
   - `--enable-oneway` / `--disable-oneway` → `PreprocessConfig.oneway_enabled`。
   - `--enable-time-align` / `--disable-time-align` → `PreprocessConfig.time_align_enabled`。
-  - `--enable-archive-original` / `--disable-archive-original` → `PreprocessConfig.archive_original`。
 - 校验规则：
   - 同一对中若同时出现 enable/disable，CLI 应报错；
   - 当 CLI 中指定了一个或多个 `--step` 时，禁止同时指定影响这些步骤的 `--enable-xxx/--disable-xxx`；如同时出现，CLI 应报错，并提示用户在“自动模式 + enable/disable”与“显式 steps 模式（--step）”之间二选一。
@@ -213,7 +210,7 @@ preprocess:
 - Time align：
   - `--enable-time-align-allow-empty` / `--disable-time-align-allow-empty` → `time_align_allow_empty`。
 - Archive：
-  - `--archive-compress` / `--no-archive-compress` → `archive_compress`。
+  - `--archive-original-files` / `--no-archive-original-files` → `archive_original_files`。
 - 并行度：
   - `-w, --workers N` → `workers`。
 - 报告：
@@ -296,7 +293,6 @@ class PreprocessContext:
 
 ```python
 STEP_HANDLERS = {
-    "archive-original": archive_step,
     "dedup": dedup_step,
     "oneway": oneway_step,
     "time-align": time_align_step,
@@ -304,8 +300,7 @@ STEP_HANDLERS = {
 ```
 
 - 显式步骤模式：若 CLI 指定了一个或多个 `--step`，则 `steps_to_run` = CLI 中出现的步骤（按出现顺序）；
-- 自动模式：未指定 `--step` 时，按固定顺序 `["archive-original", "time-align", "dedup", "oneway"]` 过滤出对应 `*_enabled == True` 的步骤作为 `steps_to_run`，以保证：
-  - `archive-original` 总是最先执行，只对原始输入做备份；
+- 自动模式：未指定 `--step` 时，按固定顺序 `["time-align", "dedup", "oneway"]` 过滤出对应 `*_enabled == True` 的步骤作为 `steps_to_run`，以保证：
   - time-align 尽早裁剪到重叠时间区间，减少后续步骤的数据量；
   - dedup 和 oneway 只在对齐后的时间窗口上进行，降低 2GB 级文件上的 CPU 与 I/O 开销。
 
@@ -334,14 +329,20 @@ STEP_HANDLERS = {
     - 为每个输入生成空 PCAP 文件（例如使用 `editcap` 生成仅包含全局头的空文件），并替换 `PreprocessContext.input_files` 中对应的路径；
     - 在日志中输出明确的 warning，说明“无重叠区间，已按配置生成空 PCAP 输出”。
 
-### D. Archive-original 行为
+### D. Archive-original-files 行为（简化后）
 
-- 当 `archive_original == True` 时：
-  - 在输出目录下创建 `archive/` 子目录；
-  - 保持输入相对路径结构，将所有原始 PCAP 拷贝到 `archive/`，**后续 preprocess 的各步骤始终基于未压缩的输入/中间文件执行，不依赖 `archive/` 中的拷贝**；
-- 当 `archive_original == True` 且 `archive_compress == True` 时：
-  - 在所有预处理步骤成功完成后，将 `archive/` 目录打包为 `archive.tar.gz`（例如使用 `shutil.make_archive`）；
-  - 默认同时保留 `archive/` 目录和压缩包，如需只保留压缩包可在后续版本中引入额外选项控制。
+- 当 `archive_original_files == True` 时：
+  - 在所有预处理步骤（包括报告生成）全部成功完成后，收集 **作为输入传入的原始 PCAP 文件**（即来自 `--input`，且文件名本身不包含 `.ready.` / `.prep.` / `.preprocessed.` / `.preprocess.` 这类已处理标记的文件）；
+  - 将这些原始 PCAP 一次性打包为 `archive.tar.gz`（位于输出目录根部，使用 `tar.gz` 压缩格式）；
+  - 打包成功后，删除这些原始 PCAP 文件，效果类似于：`tar -czf archive.tar.gz a b --remove-files`；
+  - 该归档逻辑只关心“是不是输入的原始文件”，**不再根据“是否有实质变化”做任何筛选**。
+- 当 `archive_original_files == False` 时：
+  - 不执行任何归档/删除原始文件的操作。
+
+- 设计要点：
+  - 归档操作与实际预处理步骤、报告生成解耦，**总是在它们之后执行**，避免中间步骤访问不到原始输入；
+  - 整个运行中不再创建 `archive/` 子目录，也不再存在“先拷贝原始再压缩目录”的双阶段逻辑，只有最终的 `archive.tar.gz`；
+  - 归档与否完全由 `archive_original_files` 决定。
 
 ### E. 性能策略与并行
 
@@ -374,7 +375,7 @@ STEP_HANDLERS = {
     - 运行时间（UTC 与本地时间）、CapMaster 版本、preprocess 插件版本；
     - 调用入口（CLI 命令行或上层 API 摘要）、配置来源（YAML 路径等）。
   - **步骤摘要**：
-    - 实际执行的步骤列表（按 pipeline 顺序，例如 `archive-original → time-align → dedup → oneway`）；
+    - 实际执行的步骤列表（按 pipeline 顺序，例如 `time-align → dedup → oneway`）；
     - 各步骤关键参数（如 `dedup_window_packets`、`dedup_ignore_bytes`、`time_align_allow_empty`、`oneway_ack_threshold` 等）。
   - **文件级对比（原始 vs 最终）**：
     - 对每个输入 PCAP，记录至少以下信息：
@@ -394,10 +395,10 @@ STEP_HANDLERS = {
 ### F. 输出文件命名与目录结构
 
 - 对于输入文件 `<name>.pcap` 或 `<name>.pcapng`：
-  - 最终预处理后的输出命名为 `<name>.preprocessed.pcap` 或 `<name>.preprocessed.pcapng`；
+  - 最终预处理后的输出命名为 `<name>.ready.pcap` 或 `<name>.ready.pcapng`；
 - 为避免过度复杂：
   - 中间步骤（如 dedup/oneway/time-align 分步输出）统一使用临时文件名并放在 `tmp_dir` 中，不对外暴露；
-  - 用户可见的最终结果仅保留一份“预处理完成”的 PCAP 文件，以及可选的 `archive/` 目录。
+  - 用户可见的最终结果仅保留一份“预处理完成”的 PCAP 文件，以及最终的 `archive.tar.gz`（若启用原始文件归档）。
 
 ### H. 实现路线与测试约定（基于测试骨架）
 
@@ -433,7 +434,7 @@ STEP_HANDLERS = {
       - 确保未来如移动/删除测试数据时，同步更新设计文档和测试；
     - `TestPreprocessPluginIntegration` 集成测试类：
       - 针对每个案例提供一条集成测试骨架（目前以 `@pytest.mark.xfail + pytest.skip` 形式存在）；
-      - 每个测试方法的 docstring 明确对应步骤（time-align/dedup/oneway/archive-original）和报告行为的预期；
+      - 每个测试方法的 docstring 明确对应步骤（time-align/dedup/oneway）和报告行为的预期；
       - preprocess 插件实现完成后，应逐步用真实逻辑替换 `pytest.skip(...)`，并根据本设计文档补充断言。
 
 #### H.3 从测试骨架出发的实现路线建议
@@ -446,7 +447,7 @@ STEP_HANDLERS = {
    - 此阶段可先补充纯单元测试（不依赖真实 PCAP），确保配置与调度行为符合文档描述。
 2. **外部工具封装与步骤实现**：
    - 在 `pcap_tools.py` 或等价模块中封装 `capinfos` / `editcap` / `tshark` 调用；
-   - 根据附录 C/D/E 实现 `time-align`、`dedup`、`oneway`、`archive-original` 四个步骤；
+   - 根据附录 C/D/E 实现 `time-align`、`dedup`、`oneway` 三个步骤，并按附录 D 实现独立的原始文件归档逻辑（非 pipeline 步骤）；
    - 使用 `tests/preprocess_cases` 中对应案例，逐步为 `TestPreprocessPluginIntegration` 中各测试方法填充真实逻辑与断言：
      - `TC-060-2-20210730` → 验证 dedup 前后包数及与 `*-dedup.pcap` 的接近程度；
      - `TC-035-06-20240704` → 验证 one-way 连接删除效果；
@@ -486,7 +487,7 @@ STEP_HANDLERS = {
 4. **外部工具封装与各步骤实现**
    - [x] 在 `pcap_tools.py` 或等价模块中封装 `capinfos` / `editcap` / `tshark` 的调用。
    - [x] 基于 `workers` 的并发控制（对应第 3.1、附录 E）。
-   - [x] 按附录 C / D / E 的语义实现 `time-align`、`dedup`、`oneway`、`archive-original` 四个步骤，并保证在多文件场景下行为正确。
+   - [x] 按附录 C / D / E 的语义实现 `time-align`、`dedup`、`oneway` 三个步骤，并保证在多文件场景下行为正确；同时按附录 D 实现独立的原始文件归档逻辑（非 pipeline 步骤）。
    - [x] （可选）实现 time-align + dedup 的单次 `editcap` 优化调用，在大文件场景下降低 I/O 成本。
 
 5. **报告与输出结构**

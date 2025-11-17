@@ -12,6 +12,7 @@ behaves as expected:
 from __future__ import annotations
 
 from pathlib import Path
+import tarfile
 
 import pytest
 
@@ -52,7 +53,7 @@ def test_time_align_no_overlap_skips_step_and_preserves_files(tmp_path, monkeypa
         time_align_enabled=True,
         dedup_enabled=False,
         oneway_enabled=False,
-        archive_original=False,
+        archive_original_files=False,
         report_enabled=False,
     )
     runtime = PreprocessRuntimeConfig(tools=tools, preprocess=cfg)
@@ -73,9 +74,9 @@ def test_time_align_no_overlap_skips_step_and_preserves_files(tmp_path, monkeypa
         steps=[preprocess_pipeline.STEP_TIME_ALIGN],
     )
 
-    assert [p.name for p in outputs] == ["a.preprocessed.pcap", "b.preprocessed.pcap"]
-    assert (out_dir / "a.preprocessed.pcap").read_bytes() == b"one"
-    assert (out_dir / "b.preprocessed.pcap").read_bytes() == b"two"
+    assert [p.name for p in outputs] == ["a.ready.pcap", "b.ready.pcap"]
+    assert (out_dir / "a.ready.pcap").read_bytes() == b"one"
+    assert (out_dir / "b.ready.pcap").read_bytes() == b"two"
 
 
 def test_oneway_no_streams_copies_input_unchanged(tmp_path, monkeypatch):
@@ -94,7 +95,7 @@ def test_oneway_no_streams_copies_input_unchanged(tmp_path, monkeypatch):
         time_align_enabled=False,
         dedup_enabled=False,
         oneway_enabled=True,
-        archive_original=False,
+        archive_original_files=False,
         report_enabled=False,
     )
     runtime = PreprocessRuntimeConfig(tools=tools, preprocess=cfg)
@@ -123,7 +124,7 @@ def test_oneway_no_streams_copies_input_unchanged(tmp_path, monkeypatch):
 
     assert len(outputs) == 1
     out = outputs[0]
-    assert out.name == "a.preprocessed.pcap"
+    assert out.name == "a.ready.pcap"
     assert out.read_bytes() == b"payload"
 
 
@@ -144,8 +145,7 @@ def test_no_steps_config_keeps_original_and_emits_report(tmp_path, monkeypatch):
         time_align_enabled=False,
         dedup_enabled=False,
         oneway_enabled=False,
-        archive_original=False,
-        archive_compress=False,
+        archive_original_files=False,
         report_enabled=True,
     )
     runtime = PreprocessRuntimeConfig(tools=tools, preprocess=cfg)
@@ -167,10 +167,10 @@ def test_no_steps_config_keeps_original_and_emits_report(tmp_path, monkeypatch):
 
     assert len(outputs) == 1
     out = outputs[0]
-    assert out.name == "a.preprocessed.pcap"
+    assert out.name == "a.ready.pcap"
     assert out.read_bytes() == b"data"
 
-    # No archive directory should be created when archive_original is False.
+    # No archive directory should be created when archiving originals is disabled.
     assert not (out_dir / "archive").exists()
 
     # Report should have been written by the stub.
@@ -180,12 +180,12 @@ def test_no_steps_config_keeps_original_and_emits_report(tmp_path, monkeypatch):
 
 
 
-def test_archive_skipped_when_no_effective_changes(tmp_path, monkeypatch):
-    """archive_original=True but no changes: do not create an archive.
+def test_archive_original_files_archives_even_when_no_effective_changes(tmp_path, monkeypatch):
+    """archive_original_files=True should archive originals even if stats are unchanged.
 
-    This exercises the per-file archiving logic: a run where all PCAPs are
-    effectively untouched should not produce an archive directory even when
-    the archive flag is enabled.
+    In the simplified design we no longer skip archiving based on "effective"
+    changes. As long as archiving is enabled, all original inputs must be
+    packed into ``archive.tar.gz`` and removed from the input directory.
     """
 
     input_dir = tmp_path / "in"
@@ -196,22 +196,10 @@ def test_archive_skipped_when_no_effective_changes(tmp_path, monkeypatch):
         time_align_enabled=False,
         dedup_enabled=False,
         oneway_enabled=False,
-        archive_original=True,
-        archive_compress=False,
+        archive_original_files=True,
         report_enabled=False,
     )
     runtime = PreprocessRuntimeConfig(tools=tools, preprocess=cfg)
-
-    def fake_get_packet_count(*, tools: ToolsConfig, input_file: Path) -> int:  # type: ignore[override]
-        assert input_file.exists()
-        return 100
-
-    def fake_get_time_range(*, tools: ToolsConfig, input_file: Path):  # type: ignore[override]
-        assert input_file.exists()
-        return preprocess_pipeline.TimeRange(0.0, 10.0)
-
-    monkeypatch.setattr(preprocess_pipeline, "get_packet_count", fake_get_packet_count)
-    monkeypatch.setattr(preprocess_pipeline, "get_time_range", fake_get_time_range)
 
     out_dir = tmp_path / "out"
     outputs = preprocess_pipeline.run_preprocess(
@@ -220,16 +208,20 @@ def test_archive_skipped_when_no_effective_changes(tmp_path, monkeypatch):
         output_dir=out_dir,
     )
 
-    assert [p.name for p in outputs] == ["a.preprocessed.pcap"]
-    # No archive directory should be created because nothing effectively changed.
-    assert not (out_dir / "archive").exists()
+    # In the simplified behaviour, originals are always archived when
+    # archiving is enabled, regardless of whether there are "effective"
+    # changes. We continue to get a processed output file.
+    assert [p.name for p in outputs] == ["a.ready.pcap"]
+    assert not src.exists()
+    assert (out_dir / "archive.tar.gz").is_file()
 
 
-def test_archive_only_for_files_with_effective_changes(tmp_path, monkeypatch):
-    """Archive originals only for files whose stats indicate real changes.
+def test_archive_original_files_and_report_mark_all_archived(tmp_path, monkeypatch):
+    """archive_original_files=True archives all originals and marks them as archived.
 
-    This test also validates that the Markdown report marks only the
-    effectively changed file as archived.
+    In the simplified design we always archive *all* original input PCAP files
+    when archiving is enabled, and the report exposes this via a global
+    "Archived" flag per row.
     """
 
     input_dir = tmp_path / "in"
@@ -241,51 +233,23 @@ def test_archive_only_for_files_with_effective_changes(tmp_path, monkeypatch):
         time_align_enabled=False,
         dedup_enabled=False,
         oneway_enabled=False,
-        archive_original=True,
-        archive_compress=False,
+        archive_original_files=True,
         report_enabled=True,
     )
     runtime = PreprocessRuntimeConfig(tools=tools, preprocess=cfg)
 
+    # Avoid invoking external tools during stats gathering: use simple
+    # deterministic stubs for packet counts and time ranges.
     def fake_get_packet_count(*, tools: ToolsConfig, input_file: Path) -> int:  # type: ignore[override]
-        name = input_file.name
-        if name.startswith("a") and name.endswith(".preprocessed.pcap"):
-            return 80
-        if name.startswith("a"):
-            return 100
-        # b.* files: keep packet count unchanged
-        return 50
+        assert input_file.exists()
+        return 100
 
     def fake_get_time_range(*, tools: ToolsConfig, input_file: Path):  # type: ignore[override]
-        name = input_file.name
-        if name.startswith("a") and name.endswith(".preprocessed.pcap"):
-            return preprocess_pipeline.TimeRange(1.0, 9.0)
-        if name.startswith("a"):
-            return preprocess_pipeline.TimeRange(0.0, 10.0)
-        # For b, keep identical range before/after.
-        return preprocess_pipeline.TimeRange(0.0, 5.0)
+        assert input_file.exists()
+        return preprocess_pipeline.TimeRange(0.0, 10.0)
 
-    monkeypatch.setattr(preprocess_pipeline, "get_packet_count", fake_get_packet_count)
-    monkeypatch.setattr(preprocess_pipeline, "get_time_range", fake_get_time_range)
-
-    # The reporting module uses its own imports of get_packet_count/get_time_range;
-    # patch them so that report generation does not invoke external tools.
-    def fake_report_get_packet_count(*, tools: ToolsConfig, input_file: Path) -> int:  # type: ignore[override]
-        return fake_get_packet_count(tools=tools, input_file=input_file)
-
-    def fake_report_get_time_range(*, tools: ToolsConfig, input_file: Path):  # type: ignore[override]
-        return fake_get_time_range(tools=tools, input_file=input_file)
-
-    monkeypatch.setattr(
-        preprocess_reporting,
-        "get_packet_count",
-        fake_report_get_packet_count,
-    )
-    monkeypatch.setattr(
-        preprocess_reporting,
-        "get_time_range",
-        fake_report_get_time_range,
-    )
+    monkeypatch.setattr(preprocess_reporting, "get_packet_count", fake_get_packet_count)
+    monkeypatch.setattr(preprocess_reporting, "get_time_range", fake_get_time_range)
 
     out_dir = tmp_path / "out"
     outputs = preprocess_pipeline.run_preprocess(
@@ -295,17 +259,22 @@ def test_archive_only_for_files_with_effective_changes(tmp_path, monkeypatch):
     )
 
     assert sorted(p.name for p in outputs) == [
-        "a.preprocessed.pcap",
-        "b.preprocessed.pcap",
+        "a.ready.pcap",
+        "b.ready.pcap",
     ]
 
-    archive_dir = out_dir / "archive"
-    # Only "a.pcap" should be archived; "b.pcap" had no effective changes.
-    assert (archive_dir / "a.pcap").is_file()
-    assert not (archive_dir / "b.pcap").exists()
+    # Both originals must be stored in archive.tar.gz and removed from disk.
+    tar_path = out_dir / "archive.tar.gz"
+    assert tar_path.is_file()
+    with tarfile.open(tar_path, "r:gz") as tf:
+        members = {Path(m.name).name for m in tf.getmembers() if m.isfile()}
+    assert "a.pcap" in members
+    assert "b.pcap" in members
+    assert not a.exists()
+    assert not b.exists()
 
-    # The report should include an "Archived" column reflecting the same
-    # per-file decisions as the on-disk archive structure.
+    # The report should include an "Archived" column marking both rows as
+    # archived.
     report_path = out_dir / "preprocess_report.md"
     assert report_path.is_file()
     lines = report_path.read_text(encoding="utf-8").splitlines()
@@ -316,16 +285,16 @@ def test_archive_only_for_files_with_effective_changes(tmp_path, monkeypatch):
     row_a = next(
         line
         for line in lines
-        if "a.pcap" in line and "a.preprocessed.pcap" in line
+        if "a.pcap" in line and "a.ready.pcap" in line
     )
     row_b = next(
         line
         for line in lines
-        if "b.pcap" in line and "b.preprocessed.pcap" in line
+        if "b.pcap" in line and "b.ready.pcap" in line
     )
 
     assert "| yes |" in row_a
-    assert "| no |" in row_b
+    assert "| yes |" in row_b
 
 
 def test_time_align_allow_empty_generates_empty_files(tmp_path, monkeypatch):
@@ -345,7 +314,7 @@ def test_time_align_allow_empty_generates_empty_files(tmp_path, monkeypatch):
         time_align_enabled=True,
         dedup_enabled=False,
         oneway_enabled=False,
-        archive_original=False,
+        archive_original_files=False,
         report_enabled=False,
         time_align_allow_empty=True,
     )
@@ -390,8 +359,8 @@ def test_time_align_allow_empty_generates_empty_files(tmp_path, monkeypatch):
 
     # We still get two outputs, but they are empty PCAP files.
     assert [p.name for p in outputs] == [
-        "a.preprocessed.pcap",
-        "b.preprocessed.pcap",
+        "a.ready.pcap",
+        "b.ready.pcap",
     ]
     for out in outputs:
         assert out.read_bytes() == b""
@@ -401,74 +370,6 @@ def test_time_align_allow_empty_generates_empty_files(tmp_path, monkeypatch):
     for (_, _, start, end) in calls:
         assert start == 0.0
         assert end == -1.0
-
-
-
-def test_archive_compress_creates_tarball_when_archive_exists(tmp_path, monkeypatch):
-    """archive_compress=True should create a compressed archive when there are originals.
-
-    This focuses on the compression behaviour itself. The detailed logic that decides
-    which files are archived is covered by separate tests.
-    """
-
-    input_dir = tmp_path / "in"
-    src = _make_dummy_pcap(input_dir, "a.pcap", b"data")
-
-    tools = ToolsConfig()
-    cfg = PreprocessConfig(
-        time_align_enabled=False,
-        dedup_enabled=False,
-        oneway_enabled=False,
-        archive_original=True,
-        archive_compress=True,
-        report_enabled=False,
-    )
-    runtime = PreprocessRuntimeConfig(tools=tools, preprocess=cfg)
-
-    def fake_archive_changed_originals(context, final_files):  # type: ignore[override]
-        # Create a simple archive directory with one file so that the compression
-        # logic has something to work with.
-        archive_dir = context.output_dir / "archive"
-        archive_dir.mkdir(parents=True, exist_ok=True)
-        for src in context.input_files:
-            dest = archive_dir / src.name
-            dest.write_bytes(b"orig")
-
-    monkeypatch.setattr(
-        preprocess_pipeline,
-        "_archive_changed_originals",
-        fake_archive_changed_originals,
-    )
-
-    make_archive_calls: list[tuple[str, str, Path | None]] = []
-
-    def fake_make_archive(base_name: str, format: str, root_dir=None):
-        make_archive_calls.append((base_name, format, root_dir))
-        # Simulate returning the path to the created .tar.gz file.
-        return str(Path(base_name).with_suffix(".tar.gz"))
-
-    monkeypatch.setattr(preprocess_pipeline.shutil, "make_archive", fake_make_archive)
-
-    out_dir = tmp_path / "out"
-    outputs = preprocess_pipeline.run_preprocess(
-        runtime=runtime,
-        input_files=[src],
-        output_dir=out_dir,
-    )
-
-    assert [p.name for p in outputs] == ["a.preprocessed.pcap"]
-
-    archive_dir = out_dir / "archive"
-    # After compression we should keep only the tarball and remove the archive directory.
-    assert not archive_dir.exists()
-
-    # Compression should have been invoked exactly once with gztar format.
-    assert len(make_archive_calls) == 1
-    base_name, format, root_dir = make_archive_calls[0]
-    assert format == "gztar"
-    assert Path(base_name).name == "archive"
-    assert Path(base_name).parent == out_dir
-    assert root_dir == archive_dir
 
 
 
@@ -487,8 +388,7 @@ def test_report_uses_na_when_stats_collection_fails(tmp_path, monkeypatch):
         time_align_enabled=False,
         dedup_enabled=False,
         oneway_enabled=False,
-        archive_original=True,
-        archive_compress=False,
+        archive_original_files=True,
         report_enabled=True,
     )
     runtime = PreprocessRuntimeConfig(tools=tools, preprocess=cfg)
@@ -499,9 +399,8 @@ def test_report_uses_na_when_stats_collection_fails(tmp_path, monkeypatch):
     def failing_get_time_range(*, tools: ToolsConfig, input_file: Path):  # type: ignore[override]
         raise CapMasterError("capinfos failed", "hint")
 
-    # Ensure both the pipeline and reporting modules see the same failures.
-    monkeypatch.setattr(preprocess_pipeline, "get_packet_count", failing_get_packet_count)
-    monkeypatch.setattr(preprocess_pipeline, "get_time_range", failing_get_time_range)
+    # Ensure the reporting module sees the failures so that per-file stats
+    # fall back to N/A while the pipeline itself still completes successfully.
     monkeypatch.setattr(preprocess_reporting, "get_packet_count", failing_get_packet_count)
     monkeypatch.setattr(preprocess_reporting, "get_time_range", failing_get_time_range)
 
@@ -512,7 +411,7 @@ def test_report_uses_na_when_stats_collection_fails(tmp_path, monkeypatch):
         output_dir=out_dir,
     )
 
-    assert [p.name for p in outputs] == ["a.preprocessed.pcap"]
+    assert [p.name for p in outputs] == ["a.ready.pcap"]
 
     report_path = out_dir / "preprocess_report.md"
     assert report_path.is_file()
@@ -521,7 +420,7 @@ def test_report_uses_na_when_stats_collection_fails(tmp_path, monkeypatch):
     row = next(
         line
         for line in lines
-        if "a.pcap" in line and "a.preprocessed.pcap" in line
+        if "a.pcap" in line and "a.ready.pcap" in line
     )
 
     # All numeric/stat fields should be N/A when stats gathering fails.

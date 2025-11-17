@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+import logging
 import click
 
 from capmaster.core.file_scanner import PcapScanner
@@ -12,7 +13,6 @@ from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
 from capmaster.plugins.preprocess.config import build_runtime_config
 from capmaster.plugins.preprocess.pipeline import (
-    STEP_ARCHIVE_ORIGINAL,
     STEP_DEDUP,
     STEP_ONEWAY,
     STEP_TIME_ALIGN,
@@ -24,7 +24,6 @@ from capmaster.utils.logger import get_logger
 logger = get_logger(__name__)
 
 VALID_STEPS: Sequence[str] = (
-    STEP_ARCHIVE_ORIGINAL,
     STEP_TIME_ALIGN,
     STEP_DEDUP,
     STEP_ONEWAY,
@@ -79,7 +78,7 @@ class PreprocessPlugin(PluginBase):
             "steps",
             type=click.Choice(VALID_STEPS, case_sensitive=False),
             multiple=True,
-            help="Explicit step list (archive-original,time-align,dedup,oneway)",
+            help="Explicit step list (time-align,dedup,oneway)",
         )
         @click.option("--enable-dedup", is_flag=True, default=False, help="Enable dedup step")
         @click.option("--disable-dedup", is_flag=True, default=False, help="Disable dedup step")
@@ -87,8 +86,6 @@ class PreprocessPlugin(PluginBase):
         @click.option("--disable-oneway", is_flag=True, default=False, help="Disable oneway step")
         @click.option("--enable-time-align", is_flag=True, default=False, help="Enable time-align step")
         @click.option("--disable-time-align", is_flag=True, default=False, help="Disable time-align step")
-        @click.option("--enable-archive-original", is_flag=True, default=False, help="Enable archive-original step")
-        @click.option("--disable-archive-original", is_flag=True, default=False, help="Disable archive-original step")
         @click.option(
             "--dedup-window-packets",
             type=int,
@@ -119,8 +116,18 @@ class PreprocessPlugin(PluginBase):
             default=False,
             help="Disallow empty aligned result in time-align step",
         )
-        @click.option("--archive-compress", is_flag=True, default=False, help="Compress archived originals")
-        @click.option("--no-archive-compress", is_flag=True, default=False, help="Do not compress archived originals")
+        @click.option(
+            "--archive-original-files",
+            is_flag=True,
+            default=False,
+            help="Archive input PCAP files into archive.tar.gz and remove the originals",
+        )
+        @click.option(
+            "--no-archive-original-files",
+            is_flag=True,
+            default=False,
+            help="Do not archive and remove original input PCAP files",
+        )
         @click.option(
             "-w",
             "--workers",
@@ -135,6 +142,16 @@ class PreprocessPlugin(PluginBase):
             default=None,
             help="Custom path for Markdown report",
         )
+        @click.option(
+            "--silent",
+            "silent",
+            is_flag=True,
+            default=False,
+            help=(
+                "Silent mode: suppress info and warning logs from preprocess "
+                "steps (errors are still shown)"
+            ),
+        )
         @click.pass_context
         def preprocess_command(  # noqa: PLR0913 - many CLI options by design
             ctx: click.Context,
@@ -148,18 +165,17 @@ class PreprocessPlugin(PluginBase):
             disable_oneway: bool,
             enable_time_align: bool,
             disable_time_align: bool,
-            enable_archive_original: bool,
-            disable_archive_original: bool,
             dedup_window_packets: int | None,
             dedup_ignore_bytes: int | None,
             oneway_ack_threshold: int | None,
             enable_time_align_allow_empty: bool,
             disable_time_align_allow_empty: bool,
-            archive_compress: bool,
-            no_archive_compress: bool,
+            archive_original_files: bool,
+            no_archive_original_files: bool,
             workers: int | None,
             no_report: bool,
             report_path: Path | None,
+            silent: bool,
         ) -> None:
             """Preprocess PCAP files before further analysis.
 
@@ -171,10 +187,13 @@ class PreprocessPlugin(PluginBase):
 
             \b
             Steps:
-              - archive-original: copy or move original PCAPs to a safe location
               - time-align: compute a common time window and trim captures
               - dedup: remove duplicate packets within a sliding window
               - oneway: detect and optionally remove one-way TCP streams
+
+            Additionally, you can archive the original input PCAP files into
+            a compressed tarball and remove them afterwards using the
+            ``--archive-original-files`` flag.
 
             \b
             Examples:
@@ -182,13 +201,13 @@ class PreprocessPlugin(PluginBase):
               capmaster preprocess -i capture.pcap
 
               # Explicitly specify output directory
-              capmaster preprocess -i capture.pcap -o preprocessed/
+              capmaster preprocess -i capture.pcap -o prep/
 
               # Process multiple files (comma-separated list)
               capmaster preprocess -i "a.pcap,b.pcap,c.pcap"
 
               # Run only selected steps in order
-              capmaster preprocess -i capture.pcap --step archive-original --step time-align
+              capmaster preprocess -i capture.pcap --step time-align --step dedup
 
               # Override individual settings from CLI
               capmaster preprocess -i capture.pcap --enable-dedup --dedup-window-packets 10
@@ -212,18 +231,17 @@ class PreprocessPlugin(PluginBase):
                 disable_oneway=disable_oneway,
                 enable_time_align=enable_time_align,
                 disable_time_align=disable_time_align,
-                enable_archive_original=enable_archive_original,
-                disable_archive_original=disable_archive_original,
                 dedup_window_packets=dedup_window_packets,
                 dedup_ignore_bytes=dedup_ignore_bytes,
                 oneway_ack_threshold=oneway_ack_threshold,
                 enable_time_align_allow_empty=enable_time_align_allow_empty,
                 disable_time_align_allow_empty=disable_time_align_allow_empty,
-                archive_compress=archive_compress,
-                no_archive_compress=no_archive_compress,
+                archive_original_files=archive_original_files,
+                no_archive_original_files=no_archive_original_files,
                 workers=workers,
                 no_report=no_report,
                 report_path=report_path,
+                silent=silent,
             )
             ctx.exit(exit_code)
 
@@ -239,20 +257,24 @@ class PreprocessPlugin(PluginBase):
         disable_oneway: bool = False,
         enable_time_align: bool = False,
         disable_time_align: bool = False,
-        enable_archive_original: bool = False,
-        disable_archive_original: bool = False,
         dedup_window_packets: int | None = None,
         dedup_ignore_bytes: int | None = None,
         oneway_ack_threshold: int | None = None,
         enable_time_align_allow_empty: bool = False,
         disable_time_align_allow_empty: bool = False,
-        archive_compress: bool = False,
-        no_archive_compress: bool = False,
+        archive_original_files: bool = False,
+        no_archive_original_files: bool = False,
         workers: int | None = None,
         no_report: bool = False,
         report_path: Path | None = None,
+        silent: bool = False,
     ) -> int:
         """Execute the preprocess pipeline with merged configuration."""
+        capmaster_logger = logging.getLogger("capmaster")
+        previous_level = capmaster_logger.level
+
+        if silent:
+            capmaster_logger.setLevel(logging.ERROR)
 
         try:
             # Validate flag pairs
@@ -260,18 +282,17 @@ class PreprocessPlugin(PluginBase):
             _check_flag_pair(enable_oneway, disable_oneway, "oneway")
             _check_flag_pair(enable_time_align, disable_time_align, "time-align")
             _check_flag_pair(
-                enable_archive_original,
-                disable_archive_original,
-                "archive-original",
-            )
-            _check_flag_pair(
                 enable_time_align_allow_empty,
                 disable_time_align_allow_empty,
                 "time-align-allow-empty",
             )
-            _check_flag_pair(archive_compress, no_archive_compress, "archive-compress")
+            _check_flag_pair(
+                archive_original_files,
+                no_archive_original_files,
+                "archive-original-files",
+            )
 
-            # Disallow mixing --step with enable/disable flags
+            # Disallow mixing --step with enable/disable flags (for step-toggling flags only)
             if steps:
                 flag_used = any(
                     [
@@ -281,8 +302,6 @@ class PreprocessPlugin(PluginBase):
                         disable_oneway,
                         enable_time_align,
                         disable_time_align,
-                        enable_archive_original,
-                        disable_archive_original,
                     ]
                 )
                 if flag_used:
@@ -301,10 +320,14 @@ class PreprocessPlugin(PluginBase):
                 raise NoPcapFilesError(Path(input_paths[0]))
 
             if output_dir is None:
-                # Default: create "preprocessed" directory next to first input path
+                # Default: write outputs next to the original input PCAPs
                 base = Path(input_paths[0])
-                base_dir = base if base.is_dir() else base.parent
-                output_dir = base_dir / "preprocessed"
+                if base.is_dir():
+                    # Input is a directory: keep outputs in the same directory
+                    output_dir = base
+                else:
+                    # Input is a file or comma-separated list: use the parent directory
+                    output_dir = base.parent
 
             # Build CLI overrides for configuration
             cli_overrides: dict[str, Any] = {}
@@ -324,20 +347,15 @@ class PreprocessPlugin(PluginBase):
             elif disable_time_align:
                 cli_overrides["time_align_enabled"] = False
 
-            if enable_archive_original:
-                cli_overrides["archive_original"] = True
-            elif disable_archive_original:
-                cli_overrides["archive_original"] = False
-
             if enable_time_align_allow_empty:
                 cli_overrides["time_align_allow_empty"] = True
             elif disable_time_align_allow_empty:
                 cli_overrides["time_align_allow_empty"] = False
 
-            if archive_compress:
-                cli_overrides["archive_compress"] = True
-            elif no_archive_compress:
-                cli_overrides["archive_compress"] = False
+            if archive_original_files:
+                cli_overrides["archive_original_files"] = True
+            elif no_archive_original_files:
+                cli_overrides["archive_original_files"] = False
 
             if dedup_window_packets is not None:
                 cli_overrides["dedup_window_packets"] = dedup_window_packets
@@ -365,9 +383,12 @@ class PreprocessPlugin(PluginBase):
                 f"File system error: {e}",
                 "Check file permissions and disk space.",
             )
-            return handle_error(error, show_traceback=logger.level <= 10)
+            show_traceback = logger.getEffectiveLevel() <= logging.DEBUG
+            return handle_error(error, show_traceback=show_traceback)
         except Exception as e:  # pragma: no cover - generic safety net
-            import logging
-
-            return handle_error(e, show_traceback=logger.level <= logging.DEBUG)
+            show_traceback = logger.getEffectiveLevel() <= logging.DEBUG
+            return handle_error(e, show_traceback=show_traceback)
+        finally:
+            if silent:
+                capmaster_logger.setLevel(previous_level)
 
