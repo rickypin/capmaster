@@ -19,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 import logging
 import os
 import shutil
+import tarfile
 import tempfile
 
 from capmaster.utils.errors import CapMasterError
@@ -27,7 +28,6 @@ from .config import PreprocessConfig, PreprocessRuntimeConfig
 from .pcap_tools import (
     TimeRange,
     get_time_range,
-    get_packet_count,
     run_editcap_dedup,
     run_editcap_time_crop,
     run_editcap_time_crop_and_dedup,
@@ -38,7 +38,6 @@ from .reporting import maybe_write_report
 logger = logging.getLogger(__name__)
 
 # Step name constants used in CLI and reports
-STEP_ARCHIVE_ORIGINAL = "archive-original"
 STEP_TIME_ALIGN = "time-align"
 STEP_DEDUP = "dedup"
 STEP_ONEWAY = "oneway"
@@ -65,8 +64,8 @@ def _build_final_output_path(output_dir: Path, original: Path) -> Path:
 
     The naming follows the design doc convention:
 
-    * ``<name>.preprocessed.pcap``
-    * ``<name>.preprocessed.pcapng``
+    * ``<name>.ready.pcap``
+    * ``<name>.ready.pcapng``
     """
 
     name = original.name
@@ -80,114 +79,98 @@ def _build_final_output_path(output_dir: Path, original: Path) -> Path:
         base = original.stem
         suffix = original.suffix
 
-    return output_dir / f"{base}.preprocessed{suffix}"
+    return output_dir / f"{base}.ready{suffix}"
 
 # Type alias for step handler functions
 StepHandler = Callable[[PreprocessContext, list[Path]], list[Path]]
 
 
-def _archive_original_step(context: PreprocessContext, files: list[Path]) -> list[Path]:
-    """Legacy archive step retained for reporting/CLI compatibility.
+def _archive_original_inputs(context: PreprocessContext) -> None:
+    """Archive all original input PCAP files into a tar.gz and remove them.
 
-    Historically this step copied all original PCAPs into ``output_dir/archive``.
-    Archiving is now performed after all steps have run so that we can decide
-    per file whether any effective change occurred. Keeping this step as a
-    no-op preserves the step name in reports and in explicit ``steps`` lists
-    without changing semantics.
-    """
-
-    logger.debug(
-        "archive-original step is now a no-op; archiving happens during finalisation",
-    )
-    return files
-
-
-def _archive_changed_originals(context: PreprocessContext, final_files: list[Path]) -> None:
-    """Archive only those original files whose effective content changed.
-
-    A file is considered changed if packet count or time range differs between
-    the original input and the final preprocessed output. If statistics cannot
-    be obtained, the file is conservatively treated as changed so that it is
-    still archived.
+    This is controlled by ``PreprocessConfig.archive_original_files`` and is
+    executed only after all preprocess steps and report generation have
+    completed successfully.
     """
 
     cfg = context.runtime.preprocess
-    if not cfg.archive_original:
+    if not cfg.archive_original_files:
         return
 
-    if not context.input_files or not final_files:
+    if not context.input_files:
         return
 
-    if len(context.input_files) != len(final_files):
-        logger.warning(
-            "Input/output file count mismatch (%d != %d); archiving all originals.",
-            len(context.input_files),
-            len(final_files),
+    # Filter input files to identify originals. We treat files whose names
+    # already contain a known "preprocessed" marker as non-original to avoid
+    # archiving outputs from previous runs.
+    def _is_preprocessed_name(path: Path) -> bool:
+        name = path.name
+        return (
+            ".ready." in name
+            or ".prep." in name
+            or ".preprocessed." in name
+            or ".preprocess." in name
         )
-        changed_flags: list[bool] = [True] * len(context.input_files)
-    else:
-        tools = context.runtime.tools
-        changed_flags = []
-        for original, final in zip(context.input_files, final_files):
-            try:
-                orig_count = get_packet_count(tools=tools, input_file=original)
-                final_count = get_packet_count(tools=tools, input_file=final)
 
-                orig_range = get_time_range(tools=tools, input_file=original)
-                final_range = get_time_range(tools=tools, input_file=final)
-            except CapMasterError as exc:  # pragma: no cover - defensive
-                logger.warning(
-                    "Failed to collect statistics for %s / %s; archiving original conservatively: %s",
-                    original,
-                    final,
-                    exc,
-                )
-                changed_flags.append(True)
-                continue
-
-            eps = 1e-6
-            changed = (
-                orig_count != final_count
-                or abs(orig_range.first_ts - final_range.first_ts) > eps
-                or abs(orig_range.last_ts - final_range.last_ts) > eps
-            )
-            changed_flags.append(changed)
-
-    try:
-        common_root_str = os.path.commonpath([str(p) for p in context.input_files])
-        common_root = Path(common_root_str)
-    except ValueError:
-        common_root = None
-
-    archive_root = context.output_dir / "archive"
-    to_archive: list[tuple[Path, Path]] = []
-
-    for src, changed in zip(context.input_files, changed_flags):
-        if not changed:
-            logger.info(
-                "No effective preprocess changes detected for %s; skipping archive copy",
+    original_files: list[Path] = []
+    for src in context.input_files:
+        if _is_preprocessed_name(src):
+            logger.debug(
+                "Skipping already-preprocessed input when archiving originals: %s",
                 src,
             )
             continue
 
-        if common_root is not None:
-            try:
-                rel_path = src.relative_to(common_root)
-            except ValueError:
-                rel_path = Path(src.name)
-        else:
-            rel_path = Path(src.name)
+        if src.suffix.lower() not in {".pcap", ".pcapng"}:
+            logger.debug(
+                "Skipping non-PCAP input when archiving originals: %s",
+                src,
+            )
+            continue
 
-        dest = archive_root / rel_path
-        to_archive.append((src, dest))
+        original_files.append(src)
 
-    if not to_archive:
+    if not original_files:
+        logger.info("No original input PCAP files to archive")
         return
 
-    for src, dest in to_archive:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        logger.debug("Archiving changed original %s -> %s", src, dest)
-        shutil.copy2(src, dest)
+    try:
+        common_root_str = os.path.commonpath([str(p) for p in original_files])
+        common_root = Path(common_root_str)
+    except ValueError:  # pragma: no cover - defensive
+        common_root = None
+
+    archive_path = context.output_dir / "archive.tar.gz"
+    logger.info(
+        "Archiving %d original input PCAP file(s) into %s and removing originals",
+        len(original_files),
+        archive_path,
+    )
+
+    try:
+        with tarfile.open(archive_path, "w:gz") as tar:
+            for src in original_files:
+                if common_root is not None:
+                    try:
+                        arcname = src.relative_to(common_root)
+                    except ValueError:  # pragma: no cover - defensive
+                        arcname = src.name
+                else:
+                    arcname = src.name
+
+                logger.debug("Adding %s to archive as %s", src, arcname)
+                tar.add(src, arcname=str(arcname))
+    except OSError as exc:  # pragma: no cover - defensive
+        logger.warning("Failed to create archive tarball %s: %s", archive_path, exc)
+        return
+
+    for src in original_files:
+        try:
+            src.unlink()
+        except OSError as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "Failed to remove original file after archiving: %s (%s)", src, exc
+            )
 
 
 def _time_align_step(context: PreprocessContext, files: list[Path]) -> list[Path]:
@@ -508,7 +491,6 @@ def _oneway_step(context: PreprocessContext, files: list[Path]) -> list[Path]:
 
 
 STEP_HANDLERS: Mapping[StepName, StepHandler] = {
-    STEP_ARCHIVE_ORIGINAL: _archive_original_step,
     STEP_TIME_ALIGN: _time_align_step,
     STEP_DEDUP: _dedup_step,
     STEP_ONEWAY: _oneway_step,
@@ -517,7 +499,6 @@ STEP_HANDLERS: Mapping[StepName, StepHandler] = {
 
 # Default automatic execution order
 DEFAULT_AUTOMATIC_ORDER: Sequence[StepName] = (
-    STEP_ARCHIVE_ORIGINAL,
     STEP_TIME_ALIGN,
     STEP_DEDUP,
     STEP_ONEWAY,
@@ -533,8 +514,6 @@ def _automatic_steps(config: PreprocessConfig) -> list[StepName]:
 
     steps: list[StepName] = []
 
-    if config.archive_original:
-        steps.append(STEP_ARCHIVE_ORIGINAL)
     if config.time_align_enabled:
         steps.append(STEP_TIME_ALIGN)
     if config.dedup_enabled:
@@ -637,7 +616,7 @@ def run_preprocess(
             current_files = handler(context, current_files)
 
         # Materialise final outputs in ``output_dir`` with the
-        # ``<name>.preprocessed.pcap[ng]`` naming convention.
+        # ``<name>.ready.pcap[ng]`` naming convention.
 
         final_files: list[Path] = []
         for original, current in zip(context.input_files, current_files):
@@ -650,34 +629,13 @@ def run_preprocess(
 
             final_files.append(final_path)
 
-        # Archive originals for files that were effectively modified.
-        cfg = context.runtime.preprocess
-        _archive_changed_originals(context, final_files)
-
         # Generate a minimal Markdown report if enabled. Report generation
         # errors should not cause the preprocess run to fail.
         maybe_write_report(context, steps=list(steps), final_files=final_files)
 
-        # Optionally compress the archive directory after the report has been
-        # written, then remove the uncompressed archive directory to save space.
-        if cfg.archive_original and cfg.archive_compress:
-            archive_dir = context.output_dir / "archive"
-            if archive_dir.exists():
-                base_name = archive_dir.parent / "archive"
-                try:
-                    shutil.make_archive(str(base_name), "gztar", root_dir=archive_dir)
-                except OSError:
-                    logger.warning(
-                        "Failed to create archive tarball for %s", archive_dir
-                    )
-                else:
-                    try:
-                        shutil.rmtree(archive_dir)
-                    except OSError:
-                        logger.warning(
-                            "Failed to remove archive directory after compression: %s",
-                            archive_dir,
-                        )
+        # After all processing and reporting has completed, optionally archive
+        # all original input PCAP files into a single tar.gz and remove them.
+        _archive_original_inputs(context)
 
         return final_files
     finally:

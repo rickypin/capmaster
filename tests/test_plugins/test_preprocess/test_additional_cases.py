@@ -52,7 +52,7 @@ def test_tc0541_no_steps_pipeline_is_noop(tmp_path: Path) -> None:
 
     This test explicitly disables ``dedup``, ``time-align`` and
     ``oneway`` so that the pipeline effectively copies input PCAPs
-    to ``*.preprocessed.pcap[ng]`` while still generating a report.
+    to ``*.ready.pcap[ng]`` while still generating a report.
     Packet counts must remain unchanged.
     """
 
@@ -72,8 +72,7 @@ def test_tc0541_no_steps_pipeline_is_noop(tmp_path: Path) -> None:
         dedup_enabled=False,
         oneway_enabled=False,
         time_align_enabled=False,
-        archive_original=False,
-        archive_compress=False,
+        archive_original_files=False,
     )
     runtime = PreprocessRuntimeConfig(tools=tools, preprocess=preprocess_cfg)
 
@@ -124,8 +123,7 @@ def test_tc0612_time_align_and_oneway(tmp_path: Path) -> None:
         dedup_enabled=False,
         oneway_enabled=True,
         time_align_enabled=True,
-        archive_original=False,
-        archive_compress=False,
+        archive_original_files=False,
     )
     runtime = PreprocessRuntimeConfig(tools=tools, preprocess=preprocess_cfg)
 

@@ -10,7 +10,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
-import os
 import logging
 
 from capmaster.utils.errors import CapMasterError
@@ -82,7 +81,7 @@ def maybe_write_report(
 
         lines.append("## Effective configuration (subset)")
         lines.append("")
-        lines.append(f"- archive_original: {cfg.archive_original}")
+        lines.append(f"- archive_original_files: {cfg.archive_original_files}")
         lines.append(f"- time_align_enabled: {cfg.time_align_enabled}")
         lines.append(f"- dedup_enabled: {cfg.dedup_enabled}")
         lines.append(f"- oneway_enabled: {cfg.oneway_enabled}")
@@ -102,31 +101,11 @@ def maybe_write_report(
         )
 
         tools = context.runtime.tools
-        archive_dir = output_dir / "archive"
-
-        common_root: Path | None = None
-        if cfg.archive_original and archive_dir.is_dir() and context.input_files:
-            try:
-                common_root_str = os.path.commonpath([str(p) for p in context.input_files])
-                common_root = Path(common_root_str)
-            except ValueError:
-                common_root = None
+        archived_globally = cfg.archive_original_files
+        archived_str_global = "yes" if archived_globally else "no"
 
         for original, final in zip(context.input_files, final_files):
-            archived = False
-            if cfg.archive_original and archive_dir.is_dir():
-                if common_root is not None:
-                    try:
-                        rel_path = original.relative_to(common_root)
-                    except ValueError:
-                        rel_path = Path(original.name)
-                else:
-                    rel_path = Path(original.name)
-
-                dest = archive_dir / rel_path
-                archived = dest.exists()
-
-            archived_str = "yes" if archived else "no"
+            archived_str = archived_str_global
 
             try:
                 orig_count = get_packet_count(tools=tools, input_file=original)

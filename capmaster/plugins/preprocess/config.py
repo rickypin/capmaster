@@ -103,8 +103,7 @@ class PreprocessConfig:
     dedup_enabled: bool = True
     oneway_enabled: bool = True
     time_align_enabled: bool = True
-    archive_original: bool = False
-    archive_compress: bool = False
+    archive_original_files: bool = False
 
     # Dedup params (editcap-based)
     dedup_window_packets: int | None = None

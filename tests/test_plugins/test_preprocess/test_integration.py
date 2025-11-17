@@ -160,8 +160,7 @@ class TestPreprocessPluginIntegration:
             dedup_enabled=True,
             oneway_enabled=False,
             time_align_enabled=False,
-            archive_original=False,
-            archive_compress=False,
+            archive_original_files=False,
         )
         runtime = PreprocessRuntimeConfig(tools=tools, preprocess=preprocess_cfg)
 
@@ -227,8 +226,7 @@ class TestPreprocessPluginIntegration:
             dedup_enabled=False,
             oneway_enabled=True,
             time_align_enabled=False,
-            archive_original=False,
-            archive_compress=False,
+            archive_original_files=False,
         )
         runtime = PreprocessRuntimeConfig(tools=tools, preprocess=preprocess_cfg)
 
@@ -317,8 +315,7 @@ class TestPreprocessPluginIntegration:
             dedup_enabled=True,
             oneway_enabled=False,
             time_align_enabled=True,
-            archive_original=False,
-            archive_compress=False,
+            archive_original_files=False,
         )
         runtime = PreprocessRuntimeConfig(tools=tools, preprocess=preprocess_cfg)
 
@@ -401,8 +398,7 @@ class TestPreprocessPluginIntegration:
             dedup_enabled=False,
             oneway_enabled=False,
             time_align_enabled=True,
-            archive_original=False,
-            archive_compress=False,
+            archive_original_files=False,
         )
         runtime = PreprocessRuntimeConfig(tools=tools, preprocess=preprocess_cfg)
 
@@ -474,8 +470,7 @@ class TestPreprocessPluginIntegration:
             dedup_enabled=True,
             oneway_enabled=True,
             time_align_enabled=False,
-            archive_original=False,
-            archive_compress=False,
+            archive_original_files=False,
         )
         runtime = PreprocessRuntimeConfig(tools=tools, preprocess=preprocess_cfg)
 
@@ -524,8 +519,7 @@ class TestPreprocessPluginIntegration:
             dedup_enabled=False,
             oneway_enabled=False,
             time_align_enabled=True,
-            archive_original=False,
-            archive_compress=False,
+            archive_original_files=False,
         )
         runtime = PreprocessRuntimeConfig(tools=tools, preprocess=preprocess_cfg)
 

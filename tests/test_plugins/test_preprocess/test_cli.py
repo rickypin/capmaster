@@ -7,6 +7,7 @@ These tests focus on Click wiring and argument handling for the
 pipeline behaviour (which is covered by other tests).
 """
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -37,7 +38,7 @@ class TestPreprocessPluginCLI:
         assert "--enable-dedup" in result.output
         assert "--enable-oneway" in result.output
         assert "--enable-time-align" in result.output
-        assert "--archive-compress" in result.output
+        assert "--archive-original-files" in result.output
         assert "--silent" in result.output
 
     def test_missing_input_is_error(self, runner) -> None:
@@ -101,7 +102,7 @@ class TestPreprocessPluginCLI:
                     "-i",
                     "a.pcap,b.pcap",
                     "--enable-dedup",
-                    "--archive-compress",
+                    "--archive-original-files",
                     "--no-report",
                     "--report-path",
                     "report.md",
@@ -115,10 +116,64 @@ class TestPreprocessPluginCLI:
         # Basic argument forwarding
         assert called_kwargs["input_path"] == "a.pcap,b.pcap"
         assert called_kwargs["enable_dedup"] is True
-        assert called_kwargs["archive_compress"] is True
+        assert called_kwargs["archive_original_files"] is True
         assert called_kwargs["no_report"] is True
         # report_path is created by Click as a Path object
         assert str(called_kwargs["report_path"]).endswith("report.md")
         assert called_kwargs["workers"] == 4
         assert called_kwargs["silent"] is True
+
+
+
+    def test_default_output_dir_for_directory_input(self, tmp_path, monkeypatch) -> None:
+        """When -o/--output is omitted and input is a directory, outputs go into that directory."""
+
+        input_dir = tmp_path / "pcaps"
+        input_dir.mkdir()
+        pcap_path = input_dir / "sample.pcap"
+        pcap_path.write_bytes(b"dummy")
+
+        captured_output_dir: Path | None = None
+
+        def fake_run_preprocess(runtime, input_files, output_dir, *, steps=None, tmp_dir=None):  # type: ignore[unused-argument]
+            nonlocal captured_output_dir
+            captured_output_dir = output_dir
+            return []
+
+        monkeypatch.setattr(
+            "capmaster.plugins.preprocess.plugin.run_preprocess",
+            fake_run_preprocess,
+        )
+
+        plugin = PreprocessPlugin()
+        exit_code = plugin.execute(input_path=str(input_dir))
+
+        assert exit_code == 0
+        assert captured_output_dir == input_dir
+
+    def test_default_output_dir_for_file_input(self, tmp_path, monkeypatch) -> None:
+        """When -o/--output is omitted and input is a file, outputs go to its parent directory."""
+
+        input_dir = tmp_path / "pcaps"
+        input_dir.mkdir()
+        pcap_path = input_dir / "sample.pcap"
+        pcap_path.write_bytes(b"dummy")
+
+        captured_output_dir: Path | None = None
+
+        def fake_run_preprocess(runtime, input_files, output_dir, *, steps=None, tmp_dir=None):  # type: ignore[unused-argument]
+            nonlocal captured_output_dir
+            captured_output_dir = output_dir
+            return []
+
+        monkeypatch.setattr(
+            "capmaster.plugins.preprocess.plugin.run_preprocess",
+            fake_run_preprocess,
+        )
+
+        plugin = PreprocessPlugin()
+        exit_code = plugin.execute(input_path=str(pcap_path))
+
+        assert exit_code == 0
+        assert captured_output_dir == pcap_path.parent
 
