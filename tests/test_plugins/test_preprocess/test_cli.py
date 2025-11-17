@@ -38,6 +38,7 @@ class TestPreprocessPluginCLI:
         assert "--enable-oneway" in result.output
         assert "--enable-time-align" in result.output
         assert "--archive-compress" in result.output
+        assert "--silent" in result.output
 
     def test_missing_input_is_error(self, runner) -> None:
         """Running without -i/--input should be rejected by Click."""
@@ -106,6 +107,7 @@ class TestPreprocessPluginCLI:
                     "report.md",
                     "--workers",
                     "4",
+                    "--silent",
                 ],
             )
 
@@ -118,4 +120,5 @@ class TestPreprocessPluginCLI:
         # report_path is created by Click as a Path object
         assert str(called_kwargs["report_path"]).endswith("report.md")
         assert called_kwargs["workers"] == 4
+        assert called_kwargs["silent"] is True
 

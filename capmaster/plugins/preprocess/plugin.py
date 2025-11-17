@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+import logging
 import click
 
 from capmaster.core.file_scanner import PcapScanner
@@ -135,6 +136,16 @@ class PreprocessPlugin(PluginBase):
             default=None,
             help="Custom path for Markdown report",
         )
+        @click.option(
+            "--silent",
+            "silent",
+            is_flag=True,
+            default=False,
+            help=(
+                "Silent mode: suppress info and warning logs from preprocess "
+                "steps (errors are still shown)"
+            ),
+        )
         @click.pass_context
         def preprocess_command(  # noqa: PLR0913 - many CLI options by design
             ctx: click.Context,
@@ -160,6 +171,7 @@ class PreprocessPlugin(PluginBase):
             workers: int | None,
             no_report: bool,
             report_path: Path | None,
+            silent: bool,
         ) -> None:
             """Preprocess PCAP files before further analysis.
 
@@ -224,6 +236,7 @@ class PreprocessPlugin(PluginBase):
                 workers=workers,
                 no_report=no_report,
                 report_path=report_path,
+                silent=silent,
             )
             ctx.exit(exit_code)
 
@@ -251,8 +264,14 @@ class PreprocessPlugin(PluginBase):
         workers: int | None = None,
         no_report: bool = False,
         report_path: Path | None = None,
+        silent: bool = False,
     ) -> int:
         """Execute the preprocess pipeline with merged configuration."""
+        capmaster_logger = logging.getLogger("capmaster")
+        previous_level = capmaster_logger.level
+
+        if silent:
+            capmaster_logger.setLevel(logging.ERROR)
 
         try:
             # Validate flag pairs
@@ -365,9 +384,12 @@ class PreprocessPlugin(PluginBase):
                 f"File system error: {e}",
                 "Check file permissions and disk space.",
             )
-            return handle_error(error, show_traceback=logger.level <= 10)
+            show_traceback = logger.getEffectiveLevel() <= logging.DEBUG
+            return handle_error(error, show_traceback=show_traceback)
         except Exception as e:  # pragma: no cover - generic safety net
-            import logging
-
-            return handle_error(e, show_traceback=logger.level <= logging.DEBUG)
+            show_traceback = logger.getEffectiveLevel() <= logging.DEBUG
+            return handle_error(e, show_traceback=show_traceback)
+        finally:
+            if silent:
+                capmaster_logger.setLevel(previous_level)
 
