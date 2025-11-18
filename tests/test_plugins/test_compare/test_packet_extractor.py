@@ -10,6 +10,7 @@ import pytest
 
 from capmaster.plugins.compare.packet_extractor import PacketExtractor, TcpPacket
 from capmaster.core.tshark_wrapper import TsharkWrapper
+from capmaster.utils.errors import TsharkExecutionError
 
 # Create a simple result object for mocking tshark results
 TsharkResult = namedtuple('TsharkResult', ['returncode', 'stdout', 'stderr'])
@@ -189,17 +190,13 @@ class TestPacketExtractor:
         self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
     ):
         """Test that extract_packets handles tshark errors."""
-        import subprocess
         extractor.tshark = mock_tshark
-        # TsharkWrapper.execute() raises CalledProcessError for non-zero exit codes (except 2)
-        mock_tshark.execute.side_effect = subprocess.CalledProcessError(
-            returncode=1,
-            cmd=["tshark"],
-            output="",
-            stderr="tshark: error message"
+        # TsharkWrapper.execute() raises TsharkExecutionError for non-zero exit codes (except 2)
+        mock_tshark.execute.side_effect = TsharkExecutionError(
+            "tshark", 1, "tshark: error message"
         )
 
-        with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        with pytest.raises(TsharkExecutionError) as exc_info:
             extractor.extract_packets(
                 sample_pcap,
                 src_ip="192.168.1.100",
@@ -208,7 +205,7 @@ class TestPacketExtractor:
                 dst_port=80
             )
 
-        assert exc_info.value.returncode == 1
+        assert "exit code 1" in exc_info.value.message
 
     def test_extract_by_stream_id_builds_correct_filter(
         self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
@@ -409,21 +406,17 @@ class TestPacketExtractor:
         self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
     ):
         """Test extract_multiple_streams handles tshark errors."""
-        import subprocess
         extractor.tshark = mock_tshark
 
-        # TsharkWrapper.execute() raises CalledProcessError for non-zero exit codes (except 2)
-        mock_tshark.execute.side_effect = subprocess.CalledProcessError(
-            returncode=1,
-            cmd=["tshark"],
-            output="",
-            stderr="tshark: error message"
+        # TsharkWrapper.execute() raises TsharkExecutionError for non-zero exit codes (except 2)
+        mock_tshark.execute.side_effect = TsharkExecutionError(
+            "tshark", 1, "tshark: error message"
         )
 
-        with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        with pytest.raises(TsharkExecutionError) as exc_info:
             extractor.extract_multiple_streams(sample_pcap, [0, 1])
 
-        assert exc_info.value.returncode == 1
+        assert "exit code 1" in exc_info.value.message
 
     def test_extract_multiple_streams_skips_unknown_streams(
         self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock

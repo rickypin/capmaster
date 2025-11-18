@@ -6,6 +6,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from capmaster.utils.errors import TsharkExecutionError, TsharkNotFoundError
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,15 +27,12 @@ class TsharkWrapper:
             Path to tshark executable
 
         Raises:
-            RuntimeError: If tshark is not found
+            TsharkNotFoundError: If tshark is not found
         """
         tshark_path = shutil.which("tshark")
         if tshark_path is None:
-            raise RuntimeError(
-                "tshark not found in PATH. Please install Wireshark/tshark.\n"
-                "  macOS: brew install wireshark\n"
-                "  Ubuntu: sudo apt install tshark"
-            )
+            # Raise a domain-specific error so callers can handle this explicitly
+            raise TsharkNotFoundError()
         return tshark_path
 
     def _get_version(self) -> str:
@@ -44,30 +43,44 @@ class TsharkWrapper:
             Version string (e.g., "4.0.6")
 
         Raises:
-            RuntimeError: If version cannot be determined
+            TsharkExecutionError: If the version command fails or output cannot be parsed
         """
+        cmd = [self.tshark_path, "--version"]
         try:
             result = subprocess.run(
-                [self.tshark_path, "--version"],
+                cmd,
                 capture_output=True,
                 text=True,
                 check=True,
                 timeout=5,
             )
-            # Parse version from first line: "TShark (Wireshark) 4.0.6 ..."
-            first_line = result.stdout.split("\n")[0]
-            parts = first_line.split()
-            for i, part in enumerate(parts):
-                if part.lower() == "tshark" and i + 1 < len(parts):
-                    # Skip "(Wireshark)" if present
-                    version_idx = i + 2 if parts[i + 1].startswith("(") else i + 1
-                    if version_idx < len(parts):
-                        return parts[version_idx]
-            raise RuntimeError(f"Could not parse tshark version from: {first_line}")
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to get tshark version: {e}") from e
+            raise TsharkExecutionError(
+                " ".join(cmd),
+                e.returncode,
+                e.stderr or str(e),
+            ) from e
         except subprocess.TimeoutExpired as e:
-            raise RuntimeError("tshark --version command timed out") from e
+            raise TsharkExecutionError(
+                " ".join(cmd),
+                -1,
+                f"tshark --version command timed out after {getattr(e, 'timeout', 'unknown')} seconds",
+            ) from e
+
+        # Parse version from first line: "TShark (Wireshark) 4.0.6 ..."
+        first_line = result.stdout.split("\n")[0]
+        parts = first_line.split()
+        for i, part in enumerate(parts):
+            if part.lower() == "tshark" and i + 1 < len(parts):
+                # Skip "(Wireshark)" if present
+                version_idx = i + 2 if parts[i + 1].startswith("(") else i + 1
+                if version_idx < len(parts):
+                    return parts[version_idx]
+        raise TsharkExecutionError(
+            " ".join(cmd),
+            0,
+            f"Could not parse tshark version from: {first_line}",
+        )
 
     def execute(
         self,
@@ -90,7 +103,7 @@ class TsharkWrapper:
             CompletedProcess with stdout, stderr, and returncode
 
         Raises:
-            subprocess.CalledProcessError: If tshark command fails with exit code != 2
+            TsharkExecutionError: If tshark command fails with exit code not in {0, 2}
             subprocess.TimeoutExpired: If command times out
 
         Notes:
@@ -142,18 +155,18 @@ class TsharkWrapper:
             if result.stderr:
                 logger.warning(f"tshark warning: {result.stderr.strip()}")
         else:
-            # Error - log and then raise exception
-            if result.stderr:
+            # Error - log and then raise a domain-specific exception
+            stderr = result.stderr or ""
+            if stderr:
                 logger.error(
                     "tshark command failed with exit code %s: %s",
                     result.returncode,
-                    result.stderr.strip(),
+                    stderr.strip(),
                 )
-            raise subprocess.CalledProcessError(
+            raise TsharkExecutionError(
+                " ".join(cmd),
                 result.returncode,
-                cmd,
-                output=result.stdout,
-                stderr=result.stderr,
+                stderr,
             )
 
         return result

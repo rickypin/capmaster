@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from capmaster.core.tshark_wrapper import TsharkWrapper
+from capmaster.utils.errors import TsharkExecutionError, TsharkNotFoundError
 
 
 @pytest.mark.integration
@@ -19,7 +20,7 @@ class TestTsharkWrapper:
         """Test initialization fails when tshark is not found."""
         mock_which.return_value = None
 
-        with pytest.raises(RuntimeError, match="tshark not found"):
+        with pytest.raises(TsharkNotFoundError):
             TsharkWrapper()
 
     @patch("shutil.which")
@@ -56,8 +57,10 @@ class TestTsharkWrapper:
         mock_which.return_value = "/usr/bin/tshark"
         mock_run.side_effect = subprocess.TimeoutExpired("tshark", 5)
 
-        with pytest.raises(RuntimeError, match="timed out"):
+        with pytest.raises(TsharkExecutionError) as exc_info:
             TsharkWrapper()
+
+        assert "timed out" in (exc_info.value.suggestion or "")
 
     @patch("shutil.which")
     @patch("subprocess.run")
@@ -162,7 +165,7 @@ class TestTsharkWrapper:
 
         wrapper = TsharkWrapper()
 
-        with pytest.raises(subprocess.CalledProcessError):
+        with pytest.raises(TsharkExecutionError):
             wrapper.execute(["-invalid"])
 
     @patch("shutil.which")

@@ -20,6 +20,7 @@ from capmaster.plugins.base import PluginBase
 from capmaster.utils.errors import (
     NoPcapFilesError,
     OutputDirectoryError,
+    TsharkExecutionError,
     TsharkNotFoundError,
     handle_error,
 )
@@ -293,13 +294,7 @@ class AnalyzePlugin(PluginBase):
 
         try:
             # Initialize core components
-            try:
-                tshark = TsharkWrapper()
-            except (FileNotFoundError, RuntimeError) as e:
-                # Map tshark-not-found errors to a user-friendly CapMasterError
-                if "tshark not found" in str(e).lower():
-                    raise TsharkNotFoundError() from e
-                raise
+            tshark = TsharkWrapper()
 
             protocol_detector = ProtocolDetector(tshark)
             executor = AnalysisExecutor(tshark, protocol_detector)
@@ -440,7 +435,7 @@ class AnalyzePlugin(PluginBase):
             logger.info(f"Analysis complete. Total outputs: {total_outputs}")
             return 0
 
-        except (TsharkNotFoundError, NoPcapFilesError, OutputDirectoryError) as e:
+        except (TsharkNotFoundError, TsharkExecutionError, NoPcapFilesError, OutputDirectoryError) as e:
             # Expected business errors - handle gracefully
             return handle_error(e, show_traceback=False)
         except (OSError, PermissionError) as e:
