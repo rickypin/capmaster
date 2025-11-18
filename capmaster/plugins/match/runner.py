@@ -24,7 +24,7 @@ from rich.progress import (
 from capmaster.core.connection.behavioral_matcher import BehavioralMatcher
 from capmaster.core.connection.connection_extractor import extract_connections_from_pcap
 from capmaster.core.connection.f5_matcher import F5Matcher
-from capmaster.core.connection.matcher import BucketStrategy, ConnectionMatcher, MatchMode
+from capmaster.core.connection.matcher import BucketStrategy, ConnectionMatch, ConnectionMatcher, MatchMode
 from capmaster.core.connection.models import TcpConnection
 from capmaster.core.connection.tls_matcher import TlsMatcher
 from capmaster.plugins.match.output_formatter import output_match_results, save_matches_json
@@ -151,17 +151,27 @@ def run_match_pipeline(
 
 
 def match_connections_in_memory(
-    connections1: List[object],
-    connections2: List[object],
+    connections1: list[TcpConnection],
+    connections2: list[TcpConnection],
     bucket_strategy: str = "auto",
     score_threshold: float = 0.60,
     match_mode: str = "one-to-one",
-) -> list:
+) -> list[ConnectionMatch]:
     """Match connections in memory with full ServerDetector processing.
 
     This function mirrors MatchPlugin.match_connections_in_memory but is located in
     a dedicated runner module so it can be reused by other components (e.g.,
-    compare plugin) without depending on the plugin class itself.
+    compare plugin) without depending on the plugin class itself).
+
+    Args:
+        connections1: Connections from the first PCAP.
+        connections2: Connections from the second PCAP.
+        bucket_strategy: Bucketing strategy name ("auto", "server", "port", "none").
+        score_threshold: Minimum normalized score required to accept a match.
+        match_mode: Matching mode string ("one-to-one" or "one-to-many").
+
+    Returns:
+        List of matched connection pairs.
     """
 
     logger.info("Matching connections in memory...")
