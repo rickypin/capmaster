@@ -570,8 +570,8 @@ class ConnectionMatcher:
 
             # Need to swap one connection's direction
             # Prioritize keeping the connection with SYN packet (more reliable server detection)
-            has_syn1 = conn1.syn_timestamp is not None
-            has_syn2 = conn2.syn_timestamp is not None
+            has_syn1 = conn1.has_syn
+            has_syn2 = conn2.has_syn
 
             if has_syn1 and not has_syn2:
                 # Keep conn1, swap conn2
@@ -610,6 +610,7 @@ class ConnectionMatcher:
             # Keep timestamps
             syn_timestamp=conn.syn_timestamp,
             syn_options=conn.syn_options,
+            has_syn=conn.has_syn,
             # Swap ISNs
             client_isn=conn.server_isn,
             server_isn=conn.client_isn,
@@ -635,4 +636,5 @@ class ConnectionMatcher:
             # Swap TTLs
             client_ttl=conn.server_ttl,
             server_ttl=conn.client_ttl,
+            total_bytes=conn.total_bytes,
         )

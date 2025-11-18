@@ -259,6 +259,7 @@ def _improve_server_detection(
                 server_port=server_info.server_port,
                 syn_timestamp=conn.syn_timestamp,
                 syn_options=conn.syn_options,
+                has_syn=conn.has_syn,
                 client_isn=conn.server_isn,  # Swap ISNs
                 server_isn=conn.client_isn,
                 tcp_timestamp_tsval=conn.tcp_timestamp_tsval,
@@ -276,6 +277,7 @@ def _improve_server_detection(
                 packet_count=conn.packet_count,
                 client_ttl=conn.server_ttl,  # Swap TTLs
                 server_ttl=conn.client_ttl,
+                total_bytes=conn.total_bytes,
             )
             improved_connections.append(improved_conn)
             logger.debug(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import logging
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -14,21 +15,31 @@ logger = logging.getLogger(__name__)
 class TsharkWrapper:
     """Wrapper for executing tshark commands."""
 
-    def __init__(self) -> None:
-        """Initialize TsharkWrapper and verify tshark is available."""
-        self.tshark_path = self._find_tshark()
+    def __init__(self, tshark_path: str | None = None) -> None:
+        """Initialize TsharkWrapper and verify tshark is available.
+
+        Args:
+            tshark_path: Optional explicit path to the tshark executable. When
+                provided, it is used as-is; otherwise the path is resolved via
+                :meth:`_find_tshark`.
+        """
+        self.tshark_path = tshark_path or self._find_tshark()
         self.version = self._get_version()
 
     def _find_tshark(self) -> str:
-        """
-        Find tshark executable in system PATH.
+        """Resolve the tshark executable path.
 
-        Returns:
-            Path to tshark executable
+        Resolution order (high to low):
+        1. TSHARK_PATH environment variable.
+        2. Executable found on PATH via ``shutil.which("tshark")``.
 
         Raises:
-            TsharkNotFoundError: If tshark is not found
+            TsharkNotFoundError: If tshark cannot be located.
         """
+        env_path = os.environ.get("TSHARK_PATH")
+        if env_path:
+            return env_path
+
         tshark_path = shutil.which("tshark")
         if tshark_path is None:
             # Raise a domain-specific error so callers can handle this explicitly

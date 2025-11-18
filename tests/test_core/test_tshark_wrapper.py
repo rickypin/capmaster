@@ -37,6 +37,23 @@ class TestTsharkWrapper:
         assert wrapper.tshark_path == "/usr/bin/tshark"
         assert wrapper.version == "4.0.6"
 
+    @patch("subprocess.run")
+    def test_init_prefers_tshark_path_env(self, mock_run: MagicMock, monkeypatch) -> None:
+        """Environment variable TSHARK_PATH should override PATH discovery.
+
+        This mirrors the resolution order used by preprocess tools so that an
+        explicit environment override is always honoured.
+        """
+
+        monkeypatch.setenv("TSHARK_PATH", "/env/tshark")
+        mock_run.return_value = MagicMock(
+            stdout="TShark (Wireshark) 4.0.6 (Git v4.0.6)\n", returncode=0
+        )
+
+        wrapper = TsharkWrapper()
+
+        assert wrapper.tshark_path == "/env/tshark"
+
     @patch("shutil.which")
     @patch("subprocess.run")
     def test_get_version_alternative_format(
