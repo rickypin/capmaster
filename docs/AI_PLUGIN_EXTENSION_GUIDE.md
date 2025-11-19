@@ -359,6 +359,54 @@ result = tshark.execute(
      - 标准错误输出中包含来自 `_validate_dual_file_input_callback` 的预期错误信息。
 
 
+### 5.5 ServerDetector：服务端判定的单一真相源（AI 重点）
+
+> **目标**：在项目中统一“谁是服务端”的判定逻辑，避免在各插件 / 模块中各自实现一套端口 / SYN / cardinality 规则。
+
+- **必须使用 `ServerDetector` 判定服务端**
+  - 所有需要回答“这条连接 / 会话的服务端是谁？”的问题，必须通过
+    `capmaster.plugins.match.server_detector.ServerDetector` 的 `detect()` 方法获取结果。
+  - 典型场景包括（但不限于）：
+    - 连接匹配（`match` 插件）中的 server/client 角色校正；
+    - 拓扑分析（`topology` 插件，单点 / 双点）中的 server/client 角色与 hops 计算；
+    - 任意新插件或分析模块中，需要基于 IP/端口判断“哪一侧是服务端”的场景。
+
+- **禁止在局部重写 server 判定规则**
+  - 禁止在单个插件 / 模块中根据端口号、SYN 方向、cardinality 等重新实现一套
+    “本地 server 判定逻辑”。
+  - 如需增加 / 调整启发式（例如：特殊端口、额外字段、service list 语义变化），
+    应只在 `ServerDetector` 内修改，使其成为**服务端判定的单一真相源**。
+
+- **保持与抓包拓扑解耦**
+  - `ServerDetector` 只面向 TCP 连接本身（`TcpConnection` 及其 IP/端口），
+    不感知“单点 / 双点 / 抓包点 A/B / file1/file2”等拓扑概念。
+  - 如需引入“抓包点 A 在 client 侧、B 在 server 侧”等语义，应在上层插件 / 模块
+    中基于 `ServerDetector.detect()` 的结果进行推导，而不是将这些语义塞进
+    `ServerDetector` 内部。
+
+- **推荐调用模式（示意）**
+
+  ```python
+  from capmaster.plugins.match.server_detector import ServerDetector
+
+  detector = ServerDetector(service_list_path=service_list)
+  for conn in connections:
+      detector.collect_connection(conn)
+  detector.finalize_cardinality()
+
+  for conn in connections:
+      info = detector.detect(conn)
+      # 使用 info.server_ip/info.server_port/info.client_ip/info.client_port
+      # 作为后续统计、拓扑或匹配逻辑中的“语义 server/client” 角色
+  ```
+
+- **衍生信息也应基于 ServerDetector 结果**
+  - 若需要计算“server 一侧的 TTL/hops”或“client 一侧的 TTL/hops”，
+    应先依据 `ServerDetector.detect()` 得到 server/client 角色，再将原始
+    `TcpConnection.client_ttl/server_ttl` 映射到对应一侧，避免与 service list
+    或其他启发式产生冲突。
+
+
 ---
 
 ## 6. 测试要求（简化）
@@ -384,6 +432,7 @@ result = tshark.execute(
 - [ ] 在 `discover_plugins()` 的 `plugin_modules` 列表中注册你的插件模块
 - [ ] **使用 `TsharkWrapper` 而非 `subprocess.run`**
 - [ ] **并发/批处理场景：不得静默吞掉 worker 异常，必须统计失败数并在有失败时返回非 0 exit code**
+- [ ] **如需判断 server/client 角色：统一使用 `ServerDetector.detect()`，不得手写本地启发式**
 - [ ] 添加类型提示
 - [ ] 编写测试 (覆盖率 ≥ 80%)
 - [ ] 运行 `mypy` 和 `ruff`

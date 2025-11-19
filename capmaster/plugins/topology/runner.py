@@ -18,6 +18,7 @@ from capmaster.plugins.match.quality_analyzer import ConnectionPair, parse_match
 from capmaster.plugins.match.server_detector import ServerDetector
 from capmaster.plugins.match.ttl_utils import most_common_hops
 from capmaster.plugins.topology.analysis import (
+    ServiceTopologyInfo,
     SingleTopologyInfo,
     TopologyAnalyzer,
     TopologyInfo,
@@ -144,6 +145,9 @@ def _run_single_capture_pipeline(
 ) -> SingleTopologyInfo:
     """
     Execute single-capture topology analysis.
+
+    Groups connections by service (server port + protocol) and creates
+    separate topology information for each service.
     """
     logger.info(f"Analyzing topology for single capture: {file_path.name}")
 
@@ -159,29 +163,57 @@ def _run_single_capture_pipeline(
             detector.collect_connection(connection)
         detector.finalize_cardinality()
 
-        client_ips: set[str] = set()
-        server_ips: set[str] = set()
-        server_ports: set[int] = set()
-        client_ttls: list[int] = []
-        server_ttls: list[int] = []
+        # Group connections by service (server_port + protocol)
+        from collections import defaultdict
+
+        service_data: dict[tuple[int, int], dict] = defaultdict(
+            lambda: {
+                "client_ips": set(),
+                "server_ips": set(),
+                "client_ttls": [],
+                "server_ttls": [],
+                "count": 0,
+            }
+        )
+
         for connection in connections:
             info = detector.detect(connection)
-            client_ips.add(info.client_ip)
-            server_ips.add(info.server_ip)
-            server_ports.add(info.server_port)
+            # Use protocol from connection (6=TCP, 17=UDP)
+            protocol = 6  # Assume TCP for now (TcpConnection)
+            service_key = (info.server_port, protocol)
+
+            service_data[service_key]["client_ips"].add(info.client_ip)
+            service_data[service_key]["server_ips"].add(info.server_ip)
+            service_data[service_key]["count"] += 1
+
             if connection.client_ttl > 0:
-                client_ttls.append(connection.client_ttl)
+                service_data[service_key]["client_ttls"].append(connection.client_ttl)
             if connection.server_ttl > 0:
-                server_ttls.append(connection.server_ttl)
+                service_data[service_key]["server_ttls"].append(connection.server_ttl)
+
         progress.update(detector_task, advance=1)
+
+    # Build ServiceTopologyInfo for each service
+    services = []
+    for (server_port, protocol), data in service_data.items():
+        services.append(
+            ServiceTopologyInfo(
+                server_port=server_port,
+                protocol=protocol,
+                client_ips=data["client_ips"],
+                server_ips=data["server_ips"],
+                client_hops=most_common_hops(data["client_ttls"]) if data["client_ttls"] else None,
+                server_hops=most_common_hops(data["server_ttls"]) if data["server_ttls"] else None,
+                connection_count=data["count"],
+            )
+        )
+
+    # Sort services by port number
+    services.sort(key=lambda s: s.server_port)
 
     return SingleTopologyInfo(
         file_name=file_path.name,
-        client_ips=client_ips,
-        server_ips=server_ips,
-        server_ports=server_ports,
-        client_hops=most_common_hops(client_ttls) if client_ttls else None,
-        server_hops=most_common_hops(server_ttls) if server_ttls else None,
+        services=services,
     )
 
 

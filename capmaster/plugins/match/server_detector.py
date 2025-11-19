@@ -35,6 +35,11 @@ class ServerDetector:
     """
     Multi-layer server detector.
 
+    Connection-centric: operates only on ``TcpConnection`` objects and their
+    endpoints (IP/port). It is agnostic to capture topology (single/dual
+    capture, file1/file2, capture points A/B) and does not encode any
+    capture-point specific semantics.
+
     Uses multiple heuristics to determine which side is the server:
     1. SYN packet direction (most reliable)
     2. Service List (user configured)
