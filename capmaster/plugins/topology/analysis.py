@@ -217,9 +217,9 @@ def format_topology(topology: TopologyInfo) -> str:
         for idx, service in enumerate(topology.services, start=1):
             proto_str = _format_protocol(service.protocol)
             lines.append(f"=== Service {idx}: Port {service.server_port} ({proto_str}) ===")
+            lines.append("")
 
             sequence = _determine_capture_sequence(service.position)
-            lines.append("Communication path:")
             lines.append(_build_dual_communication_path_for_service(topology.file1_name, topology.file2_name, service, sequence))
             lines.append("")
 
@@ -241,14 +241,7 @@ def format_topology(topology: TopologyInfo) -> str:
 
             lines.append("")
 
-        # Summary
-        if len(topology.services) > 1:
-            total_connections = sum(svc.connection_count for svc in topology.services)
-            lines.append("Summary:")
-            lines.append(f"- Total services detected: {len(topology.services)}")
-            for idx, service in enumerate(topology.services, start=1):
-                proto_str = _format_protocol(service.protocol)
-                lines.append(f"- Service {idx} (Port {service.server_port} {proto_str}): {service.connection_count} matched connections")
+
 
     lines.append("```")
 
@@ -264,7 +257,7 @@ def format_single_topology(topology: SingleTopologyInfo) -> str:
     """
     lines: list[str] = []
     lines.append("```text")
-    lines.append(f"Capture Point: {topology.file_name}")
+    lines.append(f"Capture Point A: {topology.file_name}")
     lines.append("")
 
     if not topology.services:
@@ -278,51 +271,28 @@ def format_single_topology(topology: SingleTopologyInfo) -> str:
             client_list = _format_ip_list(service.client_ips)
             server_list = _format_server_list_single_port(service.server_ips, service.server_port)
 
-            lines.append(f"Clients observed: {client_list}")
-            lines.append(f"Servers observed: {server_list}")
+
             lines.append("")
-            lines.append("Communication path:")
             lines.append(_build_single_communication_path_for_service(topology.file_name, service, client_list, server_list))
             lines.append("")
             lines.append(_describe_single_capture_position_for_service(service))
             lines.append("")
 
-        # Summary
-        if len(topology.services) > 1:
-            total_clients = len({ip for svc in topology.services for ip in svc.client_ips})
-            total_servers = len({ip for svc in topology.services for ip in svc.server_ips})
-            total_connections = sum(svc.connection_count for svc in topology.services)
 
-            lines.append("Summary:")
-            lines.append(f"- Total services detected: {len(topology.services)}")
-            lines.append(f"- Total unique client IPs: {total_clients}")
-            lines.append(f"- Total unique server IPs: {total_servers}")
-            lines.append(f"- Total connections: {total_connections}")
 
     lines.append("```")
     return "\n".join(lines)
 
 
 def _describe_single_capture_position(topology: SingleTopologyInfo) -> str:
+    """Summarize capture point distance for single-capture topology using hops only."""
     client_hops = topology.client_hops
     server_hops = topology.server_hops
 
     if client_hops is not None and server_hops is not None:
-        if client_hops == 0 and server_hops == 0:
-            return "Capture Point A is directly adjacent to both the client and the server (no hops observed)."
-        if client_hops == 0:
-            return (
-                "Capture Point A is directly adjacent to the client, 0 hops away from the client "
-                f"and {server_hops} hops away from the server."
-            )
-        if server_hops == 0:
-            return (
-                "Capture Point A is directly adjacent to the server, "
-                f"{client_hops} hops away from the client and 0 hops away from the server."
-            )
         return (
-            "Capture Point A is between client and server, "
-            f"{client_hops} hops away from the client and {server_hops} hops away from the server."
+            f"Capture Point A, {client_hops} hops away from the client "
+            f"and {server_hops} hops away from the server."
         )
 
     if client_hops is None and server_hops is None:
@@ -335,7 +305,7 @@ def _describe_single_capture_position(topology: SingleTopologyInfo) -> str:
 def _build_single_communication_path(topology: SingleTopologyInfo, client_list: str, server_list: str) -> str:
     nodes = [
         f"Client({client_list})",
-        f"Capture Point A ({topology.file_name})",
+        f"Capture Point A",
         f"Server({server_list})",
     ]
     edges = [
@@ -418,7 +388,6 @@ def _build_capture_point_descriptions(
     )
 
     descriptions = [
-        "There are two capture points between the client and the server, with a network device between them.",
         _describe_capture_point(client_point, role="client", balanced=balanced),
         _describe_capture_point(server_point, role="server", balanced=balanced),
     ]
@@ -448,22 +417,15 @@ def _describe_capture_point(
     role: Literal["client", "server"],
     balanced: bool,
 ) -> str:
-    closer_text = "client" if role == "client" else "server"
-    location_text = (
-        "between the client and the intermediate network device"
-        if role == "client"
-        else "between the intermediate network device and the server"
-    )
+    """Summarize capture point distance using hops only.
 
+    Example outputs:
+    - "Capture Point B, 12 hops away from the client and 0 hops away from the intermediate network device."
+    - "Capture Point A, 0 hops away from the intermediate network device and 3 hops away from the server."
+    """
     measurements = _build_measurements(point, role=role, balanced=balanced)
-    adjacency_phrase = _build_adjacency_phrase(measurements)
     measurement_text = _format_measurements(measurements)
-
-    sentence = f"Capture Point {point.label} is closer to the {closer_text}, located {location_text}"
-    if adjacency_phrase:
-        sentence += f", {adjacency_phrase}"
-    sentence += f", {measurement_text}."
-    return sentence
+    return f"Capture Point {point.label}, {measurement_text}."
 
 
 def _build_measurements(
@@ -537,8 +499,8 @@ def _build_dual_communication_path(topology: TopologyInfo, sequence: CaptureSequ
 
 
 def _format_capture_label(topology: TopologyInfo, label: str) -> str:
-    file_name = topology.file1_name if label == "A" else topology.file2_name
-    return f"Capture Point {label} ({file_name})"
+    _ = topology  # kept for API compatibility, file name intentionally omitted
+    return f"Capture Point {label}"
 
 
 def _has_client_device(topology: TopologyInfo, label: str) -> bool:
@@ -606,7 +568,7 @@ def _build_single_communication_path_for_service(
     """Build communication path for a single service in single-capture scenario."""
     nodes = [
         f"Client({client_list})",
-        f"Capture Point A ({file_name})",
+        f"Capture Point A",
         f"Server({server_list})",
     ]
     edges = [
@@ -617,26 +579,14 @@ def _build_single_communication_path_for_service(
 
 
 def _describe_single_capture_position_for_service(service: ServiceTopologyInfo) -> str:
-    """Describe capture point position for a single service."""
+    """Summarize capture point distance for a single service using hops only."""
     client_hops = service.client_hops
     server_hops = service.server_hops
 
     if client_hops is not None and server_hops is not None:
-        if client_hops == 0 and server_hops == 0:
-            return "Capture Point A is directly adjacent to both the client and the server (no hops observed)."
-        if client_hops == 0:
-            return (
-                "Capture Point A is directly adjacent to the client, 0 hops away from the client "
-                f"and {server_hops} hops away from the server."
-            )
-        if server_hops == 0:
-            return (
-                "Capture Point A is directly adjacent to the server, "
-                f"{client_hops} hops away from the client and 0 hops away from the server."
-            )
         return (
-            "Capture Point A is between client and server, "
-            f"{client_hops} hops away from the client and {server_hops} hops away from the server."
+            f"Capture Point A, {client_hops} hops away from the client "
+            f"and {server_hops} hops away from the server."
         )
 
     if client_hops is None and server_hops is None:
@@ -665,8 +615,8 @@ def _build_dual_communication_path_for_service(
 
     nodes = [
         f"Client({client_ips})",
-        f"Capture Point {first_label} ({file1_name if first_label == 'A' else file2_name})",
-        f"Capture Point {second_label} ({file1_name if second_label == 'A' else file2_name})",
+        f"Capture Point {first_label}",
+        f"Capture Point {second_label}",
         f"Server({server_ips})",
     ]
     edges = [
@@ -706,7 +656,6 @@ def _build_capture_point_descriptions_for_service(
     )
 
     descriptions = [
-        "There are two capture points between the client and the server, with a network device between them.",
         _describe_capture_point(client_point, role="client", balanced=balanced),
         _describe_capture_point(server_point, role="server", balanced=balanced),
     ]
