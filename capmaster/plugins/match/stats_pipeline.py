@@ -31,6 +31,7 @@ def output_endpoint_stats(
     file1: Path,
     file2: Path,
     output_file: Path | None,
+    service_list: Path | None = None,
 ) -> list:
     """Output endpoint statistics for matched connections.
 
@@ -44,7 +45,7 @@ def output_endpoint_stats(
         List of EndpointPairStats objects
     """
     # Create detector and collector
-    detector = ServerDetector()
+    detector = ServerDetector(service_list_path=service_list)
     collector = EndpointStatsCollector(detector)
 
     # Collect statistics from matches
@@ -82,6 +83,7 @@ def output_topology(
     file1: Path,
     file2: Path,
     output_file: Path | None = None,
+    service_list: Path | None = None,
 ) -> None:
     """Output network topology analysis for matched connections.
 
@@ -92,7 +94,7 @@ def output_topology(
         output_file: Optional output file path (None for stdout)
     """
     # Analyze topology
-    analyzer = TopologyAnalyzer(matches, file1, file2)
+    analyzer = TopologyAnalyzer(matches, file1, file2, service_list=service_list)
     topology_info = analyzer.analyze()
 
     # Format and output

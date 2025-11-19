@@ -162,6 +162,11 @@ def register_match_command(plugin: Any, cli_group: click.Group) -> None:
         help="Output network topology analysis based on matched connections. "
         "Shows the relative positions of capture points and network devices.",
     )
+    @click.option(
+        "--service-list",
+        type=click.Path(exists=True, dir_okay=False, path_type=Path),
+        help="Path to a text file containing known server IPs and ports (e.g., 10.10.10.10:80 or 10.10.10.11:*)",
+    )
     @click.pass_context
     def match_command(
         ctx: click.Context,
@@ -192,6 +197,7 @@ def register_match_command(plugin: Any, cli_group: click.Group) -> None:
         service_group_mapping: Path | None,
         match_json: Path | None,
         topology: bool,
+        service_list: Path | None,
     ) -> None:
         """Match TCP connections between PCAP files.
 
@@ -311,6 +317,7 @@ def register_match_command(plugin: Any, cli_group: click.Group) -> None:
             service_group_mapping=service_group_mapping,
             match_json=match_json,
             topology=topology,
+            service_list=service_list,
         )
         ctx.exit(exit_code)
 

@@ -83,6 +83,7 @@ class MatchPlugin(PluginBase):
         service_group_mapping: Path | None = None,
         match_json: Path | None = None,
         topology: bool = False,
+        service_list: Path | None = None,
     ) -> int:
         """Match TCP connections between PCAP files.
 
@@ -117,6 +118,7 @@ class MatchPlugin(PluginBase):
             service_group_mapping=service_group_mapping,
             match_json=match_json,
             topology=topology,
+            service_list=service_list,
         )
         # Legacy implementation of execute() moved to runner.run_match_pipeline.
 

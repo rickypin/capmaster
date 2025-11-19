@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal, Tuple
 
 from capmaster.core.connection.matcher import ConnectionMatch
 from capmaster.plugins.match.endpoint_stats import EndpointStatsCollector
@@ -12,7 +14,7 @@ from capmaster.plugins.match.server_detector import ServerDetector
 class TopologyAnalyzer:
     """Analyze network topology from matched connections."""
 
-    def __init__(self, matches: list[ConnectionMatch], file1: Path, file2: Path):
+    def __init__(self, matches: list[ConnectionMatch], file1: Path, file2: Path, service_list: Path | None = None):
         """
         Initialize topology analyzer.
 
@@ -20,10 +22,12 @@ class TopologyAnalyzer:
             matches: List of matched connection pairs
             file1: Path to first PCAP file
             file2: Path to second PCAP file
+            service_list: Path to service list file (optional)
         """
         self.matches = matches
         self.file1 = file1
         self.file2 = file2
+        self.service_list = service_list
 
     def analyze(self) -> TopologyInfo:
         """
@@ -33,7 +37,7 @@ class TopologyAnalyzer:
             TopologyInfo object containing topology analysis results
         """
         # Create detector and collector for endpoint statistics
-        detector = ServerDetector()
+        detector = ServerDetector(service_list_path=self.service_list)
         collector = EndpointStatsCollector(detector)
 
         # Add all matches
@@ -164,24 +168,16 @@ def format_topology(topology: TopologyInfo) -> str:
     """
     lines = []
 
-    # Markdown title
-    lines.append("## Network Topology")
-    lines.append("")
-
     # Content in code block
     lines.append("```text")
     lines.append(f"Capture Point A: {topology.file1_name}")
     lines.append(f"Capture Point B: {topology.file2_name}")
     lines.append("")
 
-    # Determine topology based on position
-    if topology.position == "A_CLOSER_TO_CLIENT":
-        # File B is closer to client, File A is closer to server
-        # Topology: Client -> B -> A -> Server
+    sequence = _determine_capture_sequence(topology.position)
+    if sequence == ("B", "A"):
         lines.append(_format_topology_b_to_a(topology))
-    elif topology.position == "B_CLOSER_TO_CLIENT":
-        # File A is closer to client, File B is closer to server
-        # Topology: Client -> A -> B -> Server
+    elif sequence == ("A", "B"):
         lines.append(_format_topology_a_to_b(topology))
     else:
         # Same position or cannot determine
@@ -189,6 +185,11 @@ def format_topology(topology: TopologyInfo) -> str:
         lines.append("")
         lines.append(f"File A: Clients {_format_ip_list(topology.client_ips_a)} -> Servers {_format_server_list(topology.server_ips_a, topology.server_ports_a)}")
         lines.append(f"File B: Clients {_format_ip_list(topology.client_ips_b)} -> Servers {_format_server_list(topology.server_ips_b, topology.server_ports_b)}")
+
+    description_lines = _build_capture_point_descriptions(topology, sequence)
+    if description_lines:
+        lines.append("")
+        lines.extend(description_lines)
 
     lines.append("```")
 
@@ -207,7 +208,7 @@ def _format_topology_b_to_a(topology: TopologyInfo) -> str:
 
     return (
         f"Client({client_list}) -> Capture Point B -> "
-        f"({vip_server_list}) Network Device({proxy_client_list}) -> "
+        f"({vip_server_list}) Network Device({proxy_client_list}) -> \n"
         f"Capture Point A -> Server ({real_server_list})"
     )
 
@@ -224,7 +225,7 @@ def _format_topology_a_to_b(topology: TopologyInfo) -> str:
 
     return (
         f"Client({client_list}) -> Capture Point A -> "
-        f"({vip_server_list}) Network Device({proxy_client_list}) -> "
+        f"({vip_server_list}) Network Device({proxy_client_list}) -> \n"
         f"Capture Point B -> Server ({real_server_list})"
     )
 
@@ -286,3 +287,143 @@ def _format_server_list(server_ips: set[str], server_ports: set[int]) -> str:
         ports_str += f", ... ({len(sorted_ports)} ports)"
     return f"{ip_str}:{ports_str}"
 
+
+@dataclass(frozen=True)
+class _CapturePointMetrics:
+    """Helper container for capture point hop information."""
+
+    label: str
+    client_hops: int
+    server_hops: int
+
+
+CaptureSequence = Tuple[str, str]
+
+
+def _determine_capture_sequence(position: str) -> CaptureSequence | None:
+    """
+    Determine the capture point sequence (client-facing first, server-facing second).
+    """
+    if position == "A_CLOSER_TO_CLIENT":
+        # Historical behavior: when A is closer to client, topology text shows B -> A.
+        return ("B", "A")
+    if position == "B_CLOSER_TO_CLIENT":
+        return ("A", "B")
+    return None
+
+
+def _build_capture_point_descriptions(
+    topology: TopologyInfo,
+    sequence: CaptureSequence | None,
+) -> list[str]:
+    """Build human-readable capture point descriptions based on TTL hops."""
+    if sequence is None:
+        return _build_unknown_descriptions(topology)
+
+    client_label, server_label = sequence
+    client_point = _get_capture_point_metrics(topology, client_label)
+    server_point = _get_capture_point_metrics(topology, server_label)
+
+    balanced = abs(topology.client_hops_a - topology.client_hops_b) == abs(
+        topology.server_hops_a - topology.server_hops_b
+    )
+
+    descriptions = [
+        "There are two capture points between the client and the server, with a network device between them.",
+        _describe_capture_point(client_point, role="client", balanced=balanced),
+        _describe_capture_point(server_point, role="server", balanced=balanced),
+    ]
+    return descriptions
+
+
+def _get_capture_point_metrics(
+    topology: TopologyInfo,
+    label: str,
+) -> _CapturePointMetrics:
+    """Return hop metrics for the requested capture point label."""
+    if label == "A":
+        return _CapturePointMetrics(
+            "A",
+            topology.client_hops_a,
+            topology.server_hops_a,
+        )
+    return _CapturePointMetrics(
+        "B",
+        topology.client_hops_b,
+        topology.server_hops_b,
+    )
+
+
+def _describe_capture_point(
+    point: _CapturePointMetrics,
+    *,
+    role: Literal["client", "server"],
+    balanced: bool,
+) -> str:
+    """Create one sentence describing a capture point."""
+    closer_text = "client" if role == "client" else "server"
+    location_text = (
+        "between the client and the intermediate network device"
+        if role == "client"
+        else "between the intermediate network device and the server"
+    )
+
+    measurements = _build_measurements(point, role=role, balanced=balanced)
+    adjacency_phrase = _build_adjacency_phrase(measurements)
+    measurement_text = _format_measurements(measurements)
+
+    sentence = f"Capture Point {point.label} is closer to the {closer_text}, located {location_text}"
+    if adjacency_phrase:
+        sentence += f", {adjacency_phrase}"
+    sentence += f", {measurement_text}."
+    return sentence
+
+
+def _build_measurements(
+    point: _CapturePointMetrics,
+    *,
+    role: Literal["client", "server"],
+    balanced: bool,
+) -> list[tuple[str, int]]:
+    """Build hop measurement labels for a capture point."""
+    if role == "client":
+        second_label = "server" if balanced else "intermediate network device"
+        return [("client", point.client_hops), (second_label, point.server_hops)]
+
+    first_label = "client" if balanced else "intermediate network device"
+    return [(first_label, point.client_hops), ("server", point.server_hops)]
+
+
+def _format_measurements(measurements: list[tuple[str, int]]) -> str:
+    """Format hop measurements with consistent wording."""
+    parts = [f"{value} hops away from the {label}" for label, value in measurements]
+    if not parts:
+        return "no TTL data available"
+    if len(parts) == 1:
+        return parts[0]
+    return " and ".join(parts)
+
+
+def _build_adjacency_phrase(
+    measurements: list[tuple[str, int]],
+) -> str | None:
+    """Return adjacency phrase when hops indicate zero distance."""
+    for label, value in measurements:
+        if value == 0:
+            return f"directly adjacent to the {label}"
+    return None
+
+
+def _build_unknown_descriptions(topology: TopologyInfo) -> list[str]:
+    """Fallback description when TTL data cannot determine ordering."""
+    return [
+        "TTL data is insufficient to determine capture point ordering.",
+        (
+            f"Capture Point A observed {topology.client_hops_a} client hops "
+            f"and {topology.server_hops_a} server hops."
+        ),
+        (
+            f"Capture Point B observed {topology.client_hops_b} client hops "
+            f"and {topology.server_hops_b} server hops."
+        ),
+    ]

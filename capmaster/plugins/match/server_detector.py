@@ -37,10 +37,11 @@ class ServerDetector:
 
     Uses multiple heuristics to determine which side is the server:
     1. SYN packet direction (most reliable)
-    2. Port number heuristics (well-known ports)
-    3. Cardinality-based detection (one IP:Port serves multiple clients)
-    4. Traffic pattern analysis (packet/byte statistics)
-    5. Port number comparison (fallback)
+    2. Service List (user configured)
+    3. Port number heuristics (well-known ports)
+    4. Cardinality-based detection (one IP:Port serves multiple clients)
+    5. Traffic pattern analysis (packet/byte statistics)
+    6. Port number comparison (fallback)
     """
 
     # Well-known ports (IANA registered 0-1023 + common services)
@@ -80,8 +81,13 @@ class ServerDetector:
         50000,  # DB2
     }
 
-    def __init__(self) -> None:
-        """Initialize the detector with cardinality tracking."""
+    def __init__(self, service_list_path: Path | None = None) -> None:
+        """
+        Initialize the detector with cardinality tracking and optional service list.
+
+        Args:
+            service_list_path: Path to service list file (optional)
+        """
         # Track unique client IPs for each IP:Port combination
         # Key: (ip, port), Value: set of client IPs
         self._endpoint_clients: dict[tuple[str, int], set[str]] = defaultdict(set)
@@ -105,6 +111,41 @@ class ServerDetector:
 
         # Flag to indicate if cardinality analysis is available
         self._cardinality_ready = False
+
+        # Service list data
+        self._service_list_ips: set[str] = set()  # For IP:* entries
+        self._service_list_endpoints: set[tuple[str, int]] = set()  # For IP:Port entries
+        
+        if service_list_path:
+            self._load_service_list(service_list_path)
+
+    def _load_service_list(self, path: Path) -> None:
+        """Load service list from file."""
+        try:
+            content = path.read_text()
+            for line in content.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                
+                if ":" not in line:
+                    continue
+                    
+                ip, port_str = line.split(":", 1)
+                ip = ip.strip()
+                port_str = port_str.strip()
+                
+                if port_str == "*":
+                    self._service_list_ips.add(ip)
+                else:
+                    try:
+                        port = int(port_str)
+                        self._service_list_endpoints.add((ip, port))
+                    except ValueError:
+                        pass
+        except Exception:
+            # Silently ignore errors during loading to avoid breaking the pipeline
+            pass
 
     def collect_connection(self, connection: TcpConnection) -> None:
         """
@@ -165,11 +206,17 @@ class ServerDetector:
         Returns:
             ServerInfo with detected server/client and confidence level
         """
-        # Priority 1: SYN packet direction (most reliable)
+        # Priority 1: Service List (user configured)
+        # This overrides everything else as it's explicit user intent
+        info = self._detect_by_service_list(connection)
+        if info.confidence == "HIGH":
+            return info
+
+        # Priority 2: SYN packet direction (most reliable automatic method)
         if connection.syn_options:
             return self._detect_by_syn(connection)
 
-        # Priority 2: Port number heuristics
+        # Priority 3: Port number heuristics
         info = self._detect_by_port(connection)
         if info.confidence in ["HIGH", "MEDIUM"]:
             return info
@@ -367,6 +414,57 @@ class ServerDetector:
             client_port=connection.client_port,
             confidence="HIGH",
             method="SYN_PACKET",
+        )
+
+    def _detect_by_service_list(self, connection: TcpConnection) -> ServerInfo:
+        """
+        Detect server by service list.
+
+        Args:
+            connection: TCP connection to analyze
+
+        Returns:
+            ServerInfo with HIGH confidence if matched, UNKNOWN otherwise
+        """
+        # Check server side
+        server_matched = (
+            (connection.server_ip, connection.server_port) in self._service_list_endpoints
+            or connection.server_ip in self._service_list_ips
+        )
+        
+        # Check client side
+        client_matched = (
+            (connection.client_ip, connection.client_port) in self._service_list_endpoints
+            or connection.client_ip in self._service_list_ips
+        )
+        
+        if server_matched and not client_matched:
+            return ServerInfo(
+                server_ip=connection.server_ip,
+                server_port=connection.server_port,
+                client_ip=connection.client_ip,
+                client_port=connection.client_port,
+                confidence="HIGH",
+                method="SERVICE_LIST",
+            )
+            
+        if client_matched and not server_matched:
+            return ServerInfo(
+                server_ip=connection.client_ip,
+                server_port=connection.client_port,
+                client_ip=connection.server_ip,
+                client_port=connection.server_port,
+                confidence="HIGH",
+                method="SERVICE_LIST_SWAPPED",
+            )
+            
+        return ServerInfo(
+            server_ip=connection.server_ip,
+            server_port=connection.server_port,
+            client_ip=connection.client_ip,
+            client_port=connection.client_port,
+            confidence="UNKNOWN",
+            method="SERVICE_LIST_UNKNOWN",
         )
 
     def _detect_by_port(self, connection: TcpConnection) -> ServerInfo:

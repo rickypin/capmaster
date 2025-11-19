@@ -75,6 +75,7 @@ def run_match_pipeline(
     service_group_mapping: Path | None = None,
     match_json: Path | None = None,
     topology: bool = False,
+    service_list: Path | None = None,
 ) -> int:
     """Run the main match pipeline.
 
@@ -126,6 +127,7 @@ def run_match_pipeline(
             service_group_mapping=service_group_mapping,
             match_json=match_json,
             topology=topology,
+            service_list=service_list,
         )
 
     except InsufficientFilesError as e:
@@ -181,7 +183,7 @@ def match_connections_in_memory(
     logger.info("Performing cardinality analysis for server detection...")
 
     # Create and populate detector using helper function
-    detector = _create_and_populate_detector(connections1, connections2)
+    detector = _create_and_populate_detector(connections1, connections2, service_list=None)
 
     # Re-detect server/client roles with improved detection
     connections1 = _improve_server_detection(connections1, detector)
@@ -207,10 +209,11 @@ def match_connections_in_memory(
 def _create_and_populate_detector(
     connections1: List[TcpConnection],
     connections2: List[TcpConnection],
+    service_list: Path | None = None,
 ) -> ServerDetector:
     """Create a ServerDetector and populate it with connections from both files."""
 
-    detector = ServerDetector()
+    detector = ServerDetector(service_list_path=service_list)
 
     # Collect all connections for cardinality analysis
     for conn in connections1:
@@ -323,6 +326,7 @@ def _run_match_pipeline_core(
     service_group_mapping: Path | None,
     match_json: Path | None,
     topology: bool,
+    service_list: Path | None,
 ) -> int:
     """Core implementation of the match pipeline.
 
@@ -384,6 +388,7 @@ def _run_match_pipeline_core(
             behavioral_weight_duration=behavioral_weight_duration,
             behavioral_weight_iat=behavioral_weight_iat,
             behavioral_weight_bytes=behavioral_weight_bytes,
+            service_list=service_list,
         )
 
         stats = matcher.get_match_stats(connections1, connections2, matches)
@@ -405,6 +410,7 @@ def _run_match_pipeline_core(
             endpoint_stats_json=endpoint_stats_json,
             endpoint_pair_mode=endpoint_pair_mode,
             service_group_mapping=service_group_mapping,
+            service_list=service_list,
         )
 
     logger.info("Matching complete")
@@ -637,6 +643,7 @@ def _match_connections_with_strategy(
     behavioral_weight_duration: float,
     behavioral_weight_iat: float,
     behavioral_weight_bytes: float,
+    service_list: Path | None = None,
 ) -> tuple[ConnectionMatcher | BehavioralMatcher, list]:
     """Perform matching using F5, TLS, behavioral or feature-based strategy."""
 
@@ -695,7 +702,7 @@ def _match_connections_with_strategy(
         logger.info(
             "Performing cardinality analysis for server detection (behavioral mode)..."
         )
-        detector = _create_and_populate_detector(connections1, connections2)
+        detector = _create_and_populate_detector(connections1, connections2, service_list=service_list)
         connections1 = _improve_server_detection(connections1, detector)
         connections2 = _improve_server_detection(connections2, detector)
         progress.update(detector_task, advance=1)
@@ -725,7 +732,7 @@ def _match_connections_with_strategy(
         )
         logger.info("Performing cardinality analysis for server detection...")
 
-        detector = _create_and_populate_detector(connections1, connections2)
+        detector = _create_and_populate_detector(connections1, connections2, service_list=service_list)
         connections1 = _improve_server_detection(connections1, detector)
         connections2 = _improve_server_detection(connections2, detector)
         logger.info("Server detection improved using cardinality analysis")
@@ -765,6 +772,7 @@ def _handle_outputs(
     endpoint_stats_json: Path | None,
     endpoint_pair_mode: bool,
     service_group_mapping: Path | None,
+    service_list: Path | None,
 ) -> None:
     """Handle all output steps after matching.
 
@@ -775,7 +783,7 @@ def _handle_outputs(
     # Output topology if requested (takes precedence over regular results)
     if topology:
         topology_task = progress.add_task("[green]Analyzing topology...", total=1)
-        output_topology(matches, match_file1, match_file2, output_file)
+        output_topology(matches, match_file1, match_file2, output_file, service_list=service_list)
         progress.update(topology_task, advance=1)
     else:
         # Output regular match results
@@ -807,6 +815,7 @@ def _handle_outputs(
         match_file1,
         match_file2,
         endpoint_stats_output,
+        service_list=service_list,
     )
     progress.update(endpoint_task, advance=1)
 
