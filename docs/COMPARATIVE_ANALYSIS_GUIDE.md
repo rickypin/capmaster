@@ -103,6 +103,27 @@ capmaster comparative-analysis \
 - `--topology`: 拓扑文件路径，包含服务信息（`--service` 分析时必需）
 - `-o, --output`: 输出文件路径（可选，默认输出到标准输出）
 
+## 生成拓扑文件
+
+`--service` 模式需要一个拓扑文件，可通过以下流程生成：
+
+```bash
+# Step 1: 匹配连接，产出 matched_connections.txt
+capmaster match -i /path/to/pcaps/ -o matched_connections.txt
+
+# Step 2: 读取匹配结果并生成 topology.txt
+capmaster topology \
+    -i /path/to/pcaps/ \
+    --matched-connections matched_connections.txt \
+    -o topology.txt
+```
+
+对于只有单个抓包点的排障场景，可直接执行：
+
+```bash
+capmaster topology --single-file single_capture.pcap -o single_topology.txt
+```
+
 ## 拓扑文件格式
 
 拓扑文件应包含服务的 IP 地址和端口信息。程序会自动提取所有符合 `IP:Port` 格式的服务。
@@ -248,4 +269,3 @@ Rate (%) = (Event Count / Total Packets) × 100
    - 网络质量非常好（无丢包、重传）
    - 服务定义不正确
    - PCAP 文件不包含相关流量
-

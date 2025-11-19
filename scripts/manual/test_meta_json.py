@@ -64,7 +64,18 @@ def main():
         },
         {
             "name": "Match topology command",
-            "cmd": ["python", "-m", "capmaster", "match", "-i", str(test_dir), "--topology", "-o", "tmp/test_topology.txt"],
+            "cmd": [
+                "python",
+                "-m",
+                "capmaster",
+                "topology",
+                "-i",
+                str(test_dir),
+                "--matched-connections",
+                "tmp/test_matched_connections.txt",
+                "-o",
+                "tmp/test_topology.txt",
+            ],
             "output": tmp_dir / "test_topology.txt",
             "expected_id": "topology",
             "expected_source": "basic",
@@ -158,4 +169,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-

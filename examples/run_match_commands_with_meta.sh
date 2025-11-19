@@ -25,7 +25,7 @@ echo ""
 
 # Command 2: Topology analysis
 echo "2. Running topology analysis..."
-capmaster match -i "$INPUT_DIR" --topology -o "$OUTPUT_DIR/topology.txt"
+capmaster topology -i "$INPUT_DIR" --matched-connections "$OUTPUT_DIR/matched_connections.txt" -o "$OUTPUT_DIR/topology.txt"
 echo "   ✓ Generated: $OUTPUT_DIR/topology.txt"
 echo "   ✓ Generated: $OUTPUT_DIR/topology.meta.json"
 echo ""
@@ -61,4 +61,3 @@ for meta_file in "$OUTPUT_DIR"/*.meta.json; do
         echo ""
     fi
 done
-

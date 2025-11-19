@@ -37,7 +37,6 @@ from capmaster.plugins.match.strategies import (
 from capmaster.plugins.match.stats_pipeline import (
     aggregate_and_output_service_stats,
     output_endpoint_stats,
-    output_topology,
     write_to_database,
     write_to_json,
 )
@@ -74,7 +73,6 @@ def run_match_pipeline(
     endpoint_pair_mode: bool = False,
     service_group_mapping: Path | None = None,
     match_json: Path | None = None,
-    topology: bool = False,
     service_list: Path | None = None,
 ) -> int:
     """Run the main match pipeline.
@@ -126,7 +124,6 @@ def run_match_pipeline(
             endpoint_pair_mode=endpoint_pair_mode,
             service_group_mapping=service_group_mapping,
             match_json=match_json,
-            topology=topology,
             service_list=service_list,
         )
 
@@ -325,7 +322,6 @@ def _run_match_pipeline_core(
     endpoint_pair_mode: bool,
     service_group_mapping: Path | None,
     match_json: Path | None,
-    topology: bool,
     service_list: Path | None,
 ) -> int:
     """Core implementation of the match pipeline.
@@ -402,7 +398,6 @@ def _run_match_pipeline_core(
             pcap_id_mapping,
             output_file=output_file,
             match_json=match_json,
-            topology=topology,
             endpoint_stats=endpoint_stats,
             endpoint_stats_output=endpoint_stats_output,
             db_connection=db_connection,
@@ -764,7 +759,6 @@ def _handle_outputs(
     pcap_id_mapping: dict[str, int] | None,
     output_file: Path | None,
     match_json: Path | None,
-    topology: bool,
     endpoint_stats: bool,
     endpoint_stats_output: Path | None,
     db_connection: str | None,
@@ -776,20 +770,14 @@ def _handle_outputs(
 ) -> None:
     """Handle all output steps after matching.
 
-    This includes topology, match results, JSON outputs, endpoint statistics,
+    This includes match results, JSON outputs, endpoint statistics,
     service aggregation, and database/JSON persistence.
     """
 
-    # Output topology if requested (takes precedence over regular results)
-    if topology:
-        topology_task = progress.add_task("[green]Analyzing topology...", total=1)
-        output_topology(matches, match_file1, match_file2, output_file, service_list=service_list)
-        progress.update(topology_task, advance=1)
-    else:
-        # Output regular match results
-        output_task = progress.add_task("[green]Writing results...", total=1)
-        output_match_results(matches, stats, output_file)
-        progress.update(output_task, advance=1)
+    # Output match results
+    output_task = progress.add_task("[green]Writing results...", total=1)
+    output_match_results(matches, stats, output_file)
+    progress.update(output_task, advance=1)
 
     # Save matches to JSON if requested
     if match_json:
@@ -859,5 +847,3 @@ def _handle_outputs(
             service_group_mapping_file=service_group_mapping,
         )
         progress.update(json_task, advance=1)
-
-

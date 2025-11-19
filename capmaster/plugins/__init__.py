@@ -49,6 +49,7 @@ def discover_plugins() -> None:
         "capmaster.plugins.clean",
         "capmaster.plugins.compare",
         "capmaster.plugins.preprocess",
+        "capmaster.plugins.topology",
     ]
 
     for module_name in plugin_modules:

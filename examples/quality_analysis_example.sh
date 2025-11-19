@@ -42,14 +42,18 @@ echo ""
 echo "Example 5: Complete workflow with match plugin"
 echo "==============================================="
 
-# Step 1: Match connections and generate topology
+# Step 1: Match connections between capture points
 capmaster match \
     -i /path/to/pcaps/ \
-    --topology \
-    -o matched_connections.txt \
-    > topology.txt
+    -o matched_connections.txt
 
-# Step 2: Analyze quality metrics
+# Step 2: Generate topology report from the matched connections
+capmaster topology \
+    -i /path/to/pcaps/ \
+    --matched-connections matched_connections.txt \
+    -o topology.txt
+
+# Step 3: Analyze quality metrics
 capmaster analyze-quality \
     -i /path/to/pcaps/ \
     --topology topology.txt \
@@ -60,4 +64,3 @@ echo "Results saved to:"
 echo "  - Matched connections: matched_connections.txt"
 echo "  - Topology: topology.txt"
 echo "  - Quality report: quality_report.txt"
-

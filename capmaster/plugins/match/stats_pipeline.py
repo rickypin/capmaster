@@ -20,8 +20,6 @@ from capmaster.plugins.match.endpoint_stats import (
     format_service_stats,
 )
 from capmaster.plugins.match.server_detector import ServerDetector
-from capmaster.plugins.match.topology import TopologyAnalyzer, format_topology
-from capmaster.utils.meta_writer import write_meta_json
 
 logger = logging.getLogger(__name__)
 
@@ -76,44 +74,6 @@ def output_endpoint_stats(
 
     # Return stats for database writing
     return stats
-
-
-def output_topology(
-    matches: List[object],
-    file1: Path,
-    file2: Path,
-    output_file: Path | None = None,
-    service_list: Path | None = None,
-) -> None:
-    """Output network topology analysis for matched connections.
-
-    Args:
-        matches: List of ConnectionMatch objects
-        file1: Path to first PCAP file
-        file2: Path to second PCAP file
-        output_file: Optional output file path (None for stdout)
-    """
-    # Analyze topology
-    analyzer = TopologyAnalyzer(matches, file1, file2, service_list=service_list)
-    topology_info = analyzer.analyze()
-
-    # Format and output
-    output_text = format_topology(topology_info)
-
-    if output_file:
-        # Ensure parent directory exists
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        output_file.write_text(output_text)
-        logger.info(f"Topology analysis written to: {output_file}")
-
-        # Write meta.json file
-        write_meta_json(
-            output_file=output_file,
-            command_id="topology",
-            source="basic",
-        )
-    else:
-        print(output_text)
 
 
 def aggregate_and_output_service_stats(
@@ -338,4 +298,3 @@ def write_to_json(
     except Exception as e:
         logger.error(f"Failed to write to JSON file: {e}")
         raise
-

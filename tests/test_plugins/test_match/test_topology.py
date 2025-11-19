@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from capmaster.plugins.match.topology import TopologyInfo, format_topology
+from capmaster.plugins.topology.analysis import TopologyInfo, format_topology
 
 
 def _make_topology(**overrides) -> TopologyInfo:
