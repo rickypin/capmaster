@@ -57,17 +57,13 @@ def test_format_topology_balanced_ba_description():
     output = format_topology(topology)
 
     assert (
-        "There are two capture points between the client and the server, with a network device between them."
-        in output
-    )
+        "Capture Point B: Clients 10.0.0.2 -> Servers 20.0.0.2:80, "
+        "17 hops away from the client and 6 hops away from the server."
+    ) in output
     assert (
-        "Capture Point B is closer to the client, located between the client and the intermediate network device, 17 hops away from the client and 6 hops away from the server."
-        in output
-    )
-    assert (
-        "Capture Point A is closer to the server, located between the intermediate network device and the server, directly adjacent to the server, 23 hops away from the client and 0 hops away from the server."
-        in output
-    )
+        "Capture Point A: Clients 10.0.0.1 -> Servers 20.0.0.1:80, "
+        "23 hops away from the client and 0 hops away from the server."
+    ) in output
 
 
 @pytest.mark.unit
@@ -85,13 +81,13 @@ def test_format_topology_balanced_ab_description():
     output = format_topology(topology)
 
     assert (
-        "Capture Point A is closer to the client, located between the client and the intermediate network device, 17 hops away from the client and 6 hops away from the server."
-        in output
-    )
+        "Capture Point A: Clients 10.0.0.1 -> Servers 20.0.0.1:80, "
+        "17 hops away from the client and 6 hops away from the server."
+    ) in output
     assert (
-        "Capture Point B is closer to the server, located between the intermediate network device and the server, 20 hops away from the client and 3 hops away from the server."
-        in output
-    )
+        "Capture Point B: Clients 10.0.0.2 -> Servers 20.0.0.2:80, "
+        "20 hops away from the client and 3 hops away from the server."
+    ) in output
 
 
 @pytest.mark.unit
@@ -108,12 +104,17 @@ def test_format_topology_unbalanced_description():
 
     output = format_topology(topology)
 
+    # Capture point B is adjacent to the intermediate device on the client side.
     assert (
-        "Capture Point B is closer to the client, located between the client and the intermediate network device, directly adjacent to the intermediate network device, 12 hops away from the client and 0 hops away from the intermediate network device."
+        "Capture Point B: Clients 10.0.0.2 -> Servers 20.0.0.2:80, "
+        "12 hops away from the client and 0 hops away from the intermediate network device."
         in output
     )
+
+    # Capture point A is adjacent to the intermediate device on the server side.
     assert (
-        "Capture Point A is closer to the server, located between the intermediate network device and the server, directly adjacent to the intermediate network device, 0 hops away from the intermediate network device and 3 hops away from the server."
+        "Capture Point A: Clients 10.0.0.1 -> Servers 20.0.0.1:80, "
+        "0 hops away from the intermediate network device and 3 hops away from the server."
         in output
     )
 
@@ -121,14 +122,105 @@ def test_format_topology_unbalanced_description():
 @pytest.mark.unit
 def test_format_topology_unknown_position():
     """Fallback description is used when ordering cannot be determined."""
-    service = _make_service(position="SAME_POSITION")
+    # When both capture points observe identical hop counts, TTL data alone
+    # cannot determine an ordering, so we fall back to the generic topology
+    # description.
+    service = _make_service(
+        client_hops_a=0,
+        server_hops_a=0,
+        client_hops_b=0,
+        server_hops_b=0,
+    )
     topology = _make_topology(services=[service])
 
     output = format_topology(topology)
 
     assert "Topology: Cannot determine (same position or insufficient TTL data)" in output
-    assert "File A: Clients" in output
-    assert "File B: Clients" in output
+    assert "Capture Point A: Clients" in output
+    assert "Capture Point B: Clients" in output
+
+
+
+@pytest.mark.unit
+def test_format_topology_orders_by_client_hops_and_marks_devices():
+    """Capture point closest to the client should come first in the path."""
+    service = _make_service(
+        # Capture Point A is adjacent to the client, far from the server.
+        client_hops_a=0,
+        server_hops_a=23,
+        # Capture Point B is further from the client and closer to the server.
+        client_hops_b=6,
+        server_hops_b=17,
+        position="A_CLOSER_TO_CLIENT",
+    )
+    topology = _make_topology(services=[service])
+
+    output = format_topology(topology)
+
+    # Communication path should be Client -> A ->[ND]-> B ->[ND]-> Server.
+    assert (
+        "Client -> Capture Point A ->[Network Device]-> Capture Point B ->[Network Device]-> Server"
+        in output
+    )
+
+    # There should be no Network Device marker between the client and Capture Point A
+    # because client_hops_a == 0.
+    assert "Client ->[Network Device]-> Capture Point A" not in output
+
+
+
+
+@pytest.mark.unit
+def test_format_topology_middle_terminating_device_sequence():
+    """Opposite zero hops with asymmetric deltas should follow middle-device rule."""
+    service = _make_service(
+        # Capture Point A: TTL appears to start from a middle device toward the client.
+        client_hops_a=0,
+        server_hops_a=5,
+        # Capture Point B: TTL appears to start from the middle device toward the server.
+        client_hops_b=7,
+        server_hops_b=0,
+    )
+    topology = _make_topology(services=[service])
+
+    output = format_topology(topology)
+
+    # According to the middle-device rule, the capture point with zero hops to
+    # the server (B) should be on the left, and the one with zero hops to the
+    # client (A) should be on the right.
+    assert (
+        "Client ->[Network Device]-> Capture Point B ->[Network Device]-> Capture Point A ->[Network Device]-> Server"
+        in output
+    )
+
+
+@pytest.mark.unit
+def test_format_topology_reports_per_file_server_ports_when_different():
+    """Per-file summaries should show server IP:port as seen in each capture."""
+    service = _make_service(
+        server_port=8443,
+        client_ips_a={"10.93.137.244"},
+        client_ips_b={"104.23.175.191"},
+        server_ips_a={"10.93.75.130"},
+        server_ips_b={"10.93.136.244"},
+        # A sees backend service on 8443, B sees VIP on 443
+        server_ports_a={8443},
+        server_ports_b={443},
+        position="B_CLOSER_TO_CLIENT",
+    )
+    topology = _make_topology(services=[service])
+
+    output = format_topology(topology)
+
+    assert (
+        "Capture Point A: Clients 10.93.137.244 -> Servers 10.93.75.130:8443, "
+        "10 hops away from the client and 2 hops away from the server."
+    ) in output
+    assert (
+        "Capture Point B: Clients 104.23.175.191 -> Servers 10.93.136.244:443, "
+        "8 hops away from the client and 4 hops away from the server."
+    ) in output
+    assert "10.93.136.244:8443" not in output
 
 
 @pytest.mark.unit
@@ -159,9 +251,3 @@ def test_format_topology_multiple_services():
     # Check that both services are displayed
     assert "=== Service 1: Port 80 (TCP) ===" in output
     assert "=== Service 2: Port 443 (TCP) ===" in output
-
-    # Check that summary is displayed
-    assert "Summary:" in output
-    assert "Total services detected: 2" in output
-    assert "Service 1 (Port 80 TCP): 100 matched connections" in output
-    assert "Service 2 (Port 443 TCP): 50 matched connections" in output

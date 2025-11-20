@@ -406,6 +406,34 @@ result = tshark.execute(
     `TcpConnection.client_ttl/server_ttl` 映射到对应一侧，避免与 service list
     或其他启发式产生冲突。
 
+### 5.6 TTL hops 模块：基于 TTL 的跳数计算单一真相源（AI 重点）
+
+> 与 5.5 中的 `ServerDetector` 一样，`ttl_utils` 属于“单一真相源类”核心模块。
+> 当前该类模块包括：
+> - `ServerDetector`：统一 server/client 角色判定
+> - `ttl_utils`：统一 TTL → hops 及“是否存在中间网络设备”的判定
+
+- **必须使用 `ttl_utils` 计算 hops 与中间设备**
+  - 所有需要根据 IP TTL 推导“从抓包点到 client/server 的 hops 数”或“是否存在中间网络设备”的逻辑，必须通过
+    `capmaster.plugins.match.ttl_utils` 中的公共 API（如 `calculate_hops`, `most_common_hops`）实现。
+  - 典型场景包括（但不限于）：
+    - 端点统计（`EndpointStatsCollector`）中计算 `client_hops_*` / `server_hops_*`；
+    - 单/双采集拓扑（`topology` 插件）中基于 hops 决定路径顺序、标记 `[Network Device]`；
+    - 任何新插件或分析模块中，需要基于 TTL 表达“距离”或“是否经过中间设备”的场景。
+
+- **禁止在局部重写 TTL→hops 公式**
+  - 禁止在单个插件 / 模块中直接假设初始 TTL（如 64/128/255）并手写 `hops = 初始_TTL - ttl` 之类逻辑。
+  - 禁止绕开 `ttl_utils` 自行对 TTL 列表做 hops 聚合（如本地实现众数统计）。
+  - 如需调整初始 TTL 假设或 hops 计算规则，只能在 `ttl_utils.TtlDelta` / `calculate_hops` / `most_common_hops` 内修改，使其成为**TTL→hops 的单一真相源**。
+
+- **推荐调用模式（示意）**
+
+  ```python
+  from capmaster.plugins.match.ttl_utils import most_common_hops
+
+  client_hops = most_common_hops(client_ttls)
+  server_hops = most_common_hops(server_ttls)
+  ```
 
 ---
 
@@ -433,6 +461,7 @@ result = tshark.execute(
 - [ ] **使用 `TsharkWrapper` 而非 `subprocess.run`**
 - [ ] **并发/批处理场景：不得静默吞掉 worker 异常，必须统计失败数并在有失败时返回非 0 exit code**
 - [ ] **如需判断 server/client 角色：统一使用 `ServerDetector.detect()`，不得手写本地启发式**
+- [ ] **如需基于 TTL 推导 hops/中间网络设备：统一使用 `capmaster.plugins.match.ttl_utils`（如 `calculate_hops` / `most_common_hops`），不得手写初始 TTL 判断或 hops 公式**
 - [ ] 添加类型提示
 - [ ] 编写测试 (覆盖率 ≥ 80%)
 - [ ] 运行 `mypy` 和 `ruff`

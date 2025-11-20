@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Tuple
 
@@ -64,6 +64,9 @@ class TopologyAnalyzer:
                 client_hops_a, server_hops_a, client_hops_b, server_hops_b
             )
 
+            server_ports_a = {pair.tuple_a.server_port for pair in service_stats.endpoint_pairs}
+            server_ports_b = {pair.tuple_b.server_port for pair in service_stats.endpoint_pairs}
+
             services.append(
                 ServiceTopologyInfoDual(
                     server_port=service_stats.service_key.server_port,
@@ -78,6 +81,8 @@ class TopologyAnalyzer:
                     server_hops_b=server_hops_b,
                     position=position,
                     connection_count=service_stats.total_connections,
+                    server_ports_a=server_ports_a,
+                    server_ports_b=server_ports_b,
                 )
             )
 
@@ -142,6 +147,12 @@ class ServiceTopologyInfoDual:
 
     connection_count: int = 0
     """Number of matched connections for this service"""
+
+    server_ports_a: set[int] = field(default_factory=set)
+    """Set of server ports observed in file A for this service"""
+
+    server_ports_b: set[int] = field(default_factory=set)
+    """Set of server ports observed in file B for this service"""
 
 
 @dataclass
@@ -219,26 +230,28 @@ def format_topology(topology: TopologyInfo) -> str:
             lines.append(f"=== Service {idx}: Port {service.server_port} ({proto_str}) ===")
             lines.append("")
 
-            sequence = _determine_capture_sequence(service.position)
-            lines.append(_build_dual_communication_path_for_service(topology.file1_name, topology.file2_name, service, sequence))
+            sequence = _determine_capture_sequence_from_hops(
+                service.client_hops_a,
+                service.server_hops_a,
+                service.client_hops_b,
+                service.server_hops_b,
+            )
+            lines.append(
+                _build_dual_communication_path_for_service(
+                    topology.file1_name,
+                    topology.file2_name,
+                    service,
+                    sequence,
+                )
+            )
             lines.append("")
 
-            if sequence is None:
-                lines.append("Topology: Cannot determine (same position or insufficient TTL data)")
-                lines.append("")
-                lines.append(
-                    f"File A: Clients {_format_ip_list(service.client_ips_a)} -> "
-                    f"Servers {_format_server_list_single_port(service.server_ips_a, service.server_port)}"
-                )
-                lines.append(
-                    f"File B: Clients {_format_ip_list(service.client_ips_b)} -> "
-                    f"Servers {_format_server_list_single_port(service.server_ips_b, service.server_port)}"
-                )
-            else:
-                description_lines = _build_capture_point_descriptions_for_service(service, sequence)
-                if description_lines:
-                    lines.extend(description_lines)
-
+            description_lines = _build_capture_point_descriptions_for_service(
+                service,
+                sequence,
+            )
+            if description_lines:
+                lines.extend(description_lines)
             lines.append("")
 
 
@@ -273,9 +286,22 @@ def format_single_topology(topology: SingleTopologyInfo) -> str:
 
 
             lines.append("")
-            lines.append(_build_single_communication_path_for_service(topology.file_name, service, client_list, server_list))
+            lines.append(
+                _build_single_communication_path_for_service(
+                    topology.file_name,
+                    service,
+                    client_list,
+                    server_list,
+                )
+            )
             lines.append("")
-            lines.append(_describe_single_capture_position_for_service(service))
+            lines.append(
+                _describe_single_capture_position_for_service(
+                    service,
+                    client_list,
+                    server_list,
+                )
+            )
             lines.append("")
 
 
@@ -361,6 +387,55 @@ class _CapturePointMetrics:
 
 
 CaptureSequence = Tuple[str, str]
+
+
+def _determine_capture_sequence_from_hops(
+    client_hops_a: int,
+    server_hops_a: int,
+    client_hops_b: int,
+    server_hops_b: int,
+) -> CaptureSequence | None:
+    """Determine capture-point ordering from TTL-derived hop counts.
+
+    Returns a (client_side_label, server_side_label) pair or None if the
+    ordering cannot be determined from the hop values (for example when both
+    capture points observe identical hops to client and server).
+    """
+    # Special case: asymmetric hops with opposite zero values indicate that a
+    # middle network device terminates and re-initiates TCP connections.
+    # In this scenario, the capture point with zero hops to the *server* is
+    # placed on the left, and the capture point with zero hops to the *client*
+    # is placed on the right.
+    client_delta = client_hops_a - client_hops_b
+    server_delta = server_hops_a - server_hops_b
+    if client_delta != server_delta:
+        if client_hops_a == 0 and server_hops_b == 0:
+            return ("B", "A")
+        if client_hops_b == 0 and server_hops_a == 0:
+            return ("A", "B")
+
+    # If both capture points see exactly the same hops, we cannot reliably
+    # decide which one is closer to the client.
+    if client_hops_a == client_hops_b and server_hops_a == server_hops_b:
+        return None
+
+    # Primary signal: fewer client hops means closer to the client.
+    if client_hops_a < client_hops_b:
+        return ("A", "B")
+    if client_hops_b < client_hops_a:
+        return ("B", "A")
+
+    # If client hops are equal, fall back to server hops: more server hops
+    # means further from the server and therefore closer to the client.
+    if server_hops_a > server_hops_b:
+        return ("A", "B")
+    if server_hops_b > server_hops_a:
+        return ("B", "A")
+
+    # All hops equal (including the case where TTL data is unavailable and
+    # encoded as zeros) – treat as unknown ordering.
+    return None
+
 
 
 def _determine_capture_sequence(position: str) -> CaptureSequence | None:
@@ -565,11 +640,16 @@ def _build_single_communication_path_for_service(
     client_list: str,
     server_list: str,
 ) -> str:
-    """Build communication path for a single service in single-capture scenario."""
+    """Build communication path for a single service in single-capture scenario.
+
+    The path intentionally uses generic "Client"/"Server" nodes so that IP:port
+    details are shown in the capture point line, consistent with dual-capture
+    output.
+    """
     nodes = [
-        f"Client({client_list})",
-        f"Capture Point A",
-        f"Server({server_list})",
+        "Client",
+        "Capture Point A",
+        "Server",
     ]
     edges = [
         service.client_hops is not None and service.client_hops > 0,
@@ -578,22 +658,35 @@ def _build_single_communication_path_for_service(
     return _join_path_segments(nodes, edges)
 
 
-def _describe_single_capture_position_for_service(service: ServiceTopologyInfo) -> str:
+def _describe_single_capture_position_for_service(
+    service: ServiceTopologyInfo,
+    client_list: str,
+    server_list: str,
+) -> str:
     """Summarize capture point distance for a single service using hops only."""
     client_hops = service.client_hops
     server_hops = service.server_hops
 
     if client_hops is not None and server_hops is not None:
         return (
-            f"Capture Point A, {client_hops} hops away from the client "
-            f"and {server_hops} hops away from the server."
+            f"Capture Point A: Clients {client_list} -> Servers {server_list}, "
+            f"{client_hops} hops away from the client and {server_hops} hops away from the server."
         )
 
     if client_hops is None and server_hops is None:
-        return "TTL data was unavailable to describe Capture Point A's distance to the client or the server."
+        return (
+            "Capture Point A: TTL data was unavailable to describe its distance "
+            "to the client or the server."
+        )
     if client_hops is None:
-        return f"Capture Point A recorded {server_hops} hops away from the server; client TTL data was unavailable."
-    return f"Capture Point A recorded {client_hops} hops away from the client; server TTL data was unavailable."
+        return (
+            f"Capture Point A: Clients {client_list} -> Servers {server_list}, "
+            f"{server_hops} hops away from the server; client TTL data was unavailable."
+        )
+    return (
+        f"Capture Point A: Clients {client_list} -> Servers {server_list}, "
+        f"{client_hops} hops away from the client; server TTL data was unavailable."
+    )
 
 
 def _build_dual_communication_path_for_service(
@@ -602,22 +695,20 @@ def _build_dual_communication_path_for_service(
     service: ServiceTopologyInfoDual,
     sequence: tuple[str, str] | None,
 ) -> str:
-    """Build communication path for a single service in dual-capture scenario."""
+    """Build communication path for a single service in dual-capture scenario.
+
+    The path intentionally uses generic "Client"/"Server" nodes so that
+    per-capture client/server IP:port details can be shown in the capture
+    point lines instead, matching the CLI output style.
+    """
     order = sequence or ("A", "B")
     first_label, second_label = order
 
-    client_ips = _format_ip_list(service.client_ips_a if first_label == "A" else service.client_ips_b)
-    server_label = "A" if second_label == "A" else "B"
-    server_ips = _format_server_list_single_port(
-        service.server_ips_a if server_label == "A" else service.server_ips_b,
-        service.server_port,
-    )
-
     nodes = [
-        f"Client({client_ips})",
+        "Client",
         f"Capture Point {first_label}",
         f"Capture Point {second_label}",
-        f"Server({server_ips})",
+        "Server",
     ]
     edges = [
         _has_client_device_for_service(service, first_label),
@@ -643,23 +734,57 @@ def _build_capture_point_descriptions_for_service(
     service: ServiceTopologyInfoDual,
     sequence: tuple[str, str] | None,
 ) -> list[str]:
-    """Build capture point descriptions for a single service."""
+    """Build capture point descriptions for a single service.
+
+    The output is normalized as:
+
+        Capture Point A: Clients ... -> Servers ..., <TTL description>.
+
+    so that dual-capture and single-capture modes share the same style.
+    """
     if sequence is None:
         return _build_unknown_descriptions_for_service(service)
 
     client_label, server_label = sequence
-    client_point = _get_capture_point_metrics_for_service(service, client_label)
-    server_point = _get_capture_point_metrics_for_service(service, server_label)
 
     balanced = abs(service.client_hops_a - service.client_hops_b) == abs(
         service.server_hops_a - service.server_hops_b
     )
 
-    descriptions = [
-        _describe_capture_point(client_point, role="client", balanced=balanced),
-        _describe_capture_point(server_point, role="server", balanced=balanced),
-    ]
-    return descriptions
+    client_desc = _describe_capture_point_for_service(
+        service, label=client_label, role="client", balanced=balanced
+    )
+    server_desc = _describe_capture_point_for_service(
+        service, label=server_label, role="server", balanced=balanced
+    )
+    return [client_desc, server_desc]
+
+
+def _describe_capture_point_for_service(
+    service: ServiceTopologyInfoDual,
+    *,
+    label: str,
+    role: str,
+    balanced: bool,
+) -> str:
+    """Describe a capture point for a specific service including IP/port info."""
+    metrics = _get_capture_point_metrics_for_service(service, label)
+    measurements = _build_measurements(metrics, role=role, balanced=balanced)
+    measurement_text = _format_measurements(measurements)
+
+    if label == "A":
+        clients = _format_ip_list(service.client_ips_a)
+        ports = service.server_ports_a or {service.server_port}
+        servers = _format_server_list(service.server_ips_a, ports)
+    else:
+        clients = _format_ip_list(service.client_ips_b)
+        ports = service.server_ports_b or {service.server_port}
+        servers = _format_server_list(service.server_ips_b, ports)
+
+    return (
+        f"Capture Point {label}: Clients {clients} -> Servers {servers}, "
+        f"{measurement_text}."
+    )
 
 
 def _get_capture_point_metrics_for_service(
@@ -681,15 +806,34 @@ def _get_capture_point_metrics_for_service(
 
 
 def _build_unknown_descriptions_for_service(service: ServiceTopologyInfoDual) -> list[str]:
-    """Build descriptions when position cannot be determined for a service."""
-    return [
-        "TTL data is insufficient to determine capture point ordering.",
-        (
-            f"Capture Point A observed {service.client_hops_a} client hops "
-            f"and {service.server_hops_a} server hops."
-        ),
-        (
-            f"Capture Point B observed {service.client_hops_b} client hops "
-            f"and {service.server_hops_b} server hops."
-        ),
+    """Build fallback descriptions when position cannot be determined for a service."""
+    # Keep the high-level explanation line for users.
+    lines = [
+        "Topology: Cannot determine (same position or insufficient TTL data)",
     ]
+
+    # Provide per-capture client/server view with observed hops to
+    # match the new Capture Point style.
+    clients_a = _format_ip_list(service.client_ips_a)
+    ports_a = service.server_ports_a or {service.server_port}
+    servers_a = _format_server_list(service.server_ips_a, ports_a)
+
+    clients_b = _format_ip_list(service.client_ips_b)
+    ports_b = service.server_ports_b or {service.server_port}
+    servers_b = _format_server_list(service.server_ips_b, ports_b)
+
+    lines.append(
+        (
+            f"Capture Point A: Clients {clients_a} -> Servers {servers_a}, "
+            f"observed {service.client_hops_a} client hops and "
+            f"{service.server_hops_a} server hops."
+        )
+    )
+    lines.append(
+        (
+            f"Capture Point B: Clients {clients_b} -> Servers {servers_b}, "
+            f"observed {service.client_hops_b} client hops and "
+            f"{service.server_hops_b} server hops."
+        )
+    )
+    return lines
