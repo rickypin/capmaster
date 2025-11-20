@@ -37,12 +37,11 @@ def run_topology_analysis(
     file1: Path | None = None,
     file2: Path | None = None,
     matched_connections_file: Path | None = None,
+    empty_match_behavior: str = "error",
     output_file: Path | None = None,
     service_list: Path | None = None,
 ) -> int:
-    """
-    Run topology analysis for single-point or dual-point captures.
-    """
+    """Run topology analysis for single-point or dual-point captures."""
     try:
         files = _resolve_input_files(
             single_file=single_file,
@@ -65,13 +64,13 @@ def run_topology_analysis(
                     "Matched connections file is required for dual-file topology analysis.",
                     "Generate it with: capmaster match ... -o matched_connections.txt",
                 )
-            result = _run_dual_capture_pipeline(
+            output_text = _run_dual_capture_pipeline(
                 file_a=files[0],
                 file_b=files[1],
                 matched_file=matched_connections_file,
                 service_list=service_list,
+                empty_match_behavior=empty_match_behavior,
             )
-            output_text = format_topology(result)
 
         _output_results(output_text, output_file)
         return 0
@@ -230,18 +229,31 @@ def _run_dual_capture_pipeline(
     file_b: Path,
     matched_file: Path,
     service_list: Path | None,
-) -> TopologyInfo:
-    """
-    Execute dual-capture topology analysis using a matched connections file.
+    empty_match_behavior: str = "error",
+) -> str:
+    """Execute dual-capture topology analysis using a matched connections file.
+
+    When ``empty_match_behavior`` is set to ``"fallback-single"`` and no valid
+    cross-capture matches can be reconstructed from the matched connections
+    file, this function falls back to running single-capture topology analysis
+    for each file and combines the results into a single text report.
     """
     logger.info("Analyzing topology for dual capture points")
     logger.info(f"Capture Point A: {file_a}")
     logger.info(f"Capture Point B: {file_b}")
 
+    behavior = empty_match_behavior.lower()
+
     with _progress() as progress:
         parse_task = progress.add_task("[cyan]Parsing matched connections...", total=1)
         connection_pairs = parse_matched_connections(matched_file)
         if not connection_pairs:
+            if behavior == "fallback-single":
+                logger.warning(
+                    "No valid connection pairs found in matched connections file. "
+                    "Falling back to per-capture single-point topology analysis.",
+                )
+                return _run_dual_single_fallback(file_a, file_b, service_list)
             raise CapMasterError(
                 "No valid connection pairs found in matched connections file.",
                 "Verify the file was generated with 'capmaster match -o ...'.",
@@ -260,15 +272,51 @@ def _run_dual_capture_pipeline(
         match_task = progress.add_task("[yellow]Rebuilding matches...", total=1)
         matches = _build_matches_from_pairs(connection_pairs, connections_a, connections_b)
         if not matches:
+            if behavior == "fallback-single":
+                logger.warning(
+                    "Could not rebuild any connection matches from the provided file. "
+                    "Falling back to per-capture single-point topology analysis.",
+                )
+                return _run_dual_single_fallback(file_a, file_b, service_list)
             raise CapMasterError(
                 "Could not rebuild any connection matches from the provided file.",
                 "Ensure the matched_connections file matches the selected PCAP files.",
             )
-        logger.info(f"Reconstructed {len(matches)} connection matches for topology analysis")
+        logger.info(
+            f"Reconstructed {len(matches)} connection matches for topology analysis",
+        )
         progress.update(match_task, advance=1)
 
     analyzer = TopologyAnalyzer(matches, file_a, file_b, service_list=service_list)
-    return analyzer.analyze()
+    topology = analyzer.analyze()
+    return format_topology(topology)
+
+
+def _run_dual_single_fallback(file_a: Path, file_b: Path, service_list: Path | None) -> str:
+    """Run single-capture topology for each file and combine outputs.
+
+    This is used when dual-capture analysis cannot proceed due to the absence
+    of any valid cross-capture matches and ``empty_match_behavior`` is set to
+    ``"fallback-single"``.
+    """
+    single_a = _run_single_capture_pipeline(file_a, service_list=service_list)
+    single_b = _run_single_capture_pipeline(file_b, service_list=service_list)
+
+    lines = []
+    lines.append(
+        "No matched connections detected between capture points. "
+        "Falling back to per-capture topology analysis.",
+    )
+    lines.append("")
+
+    lines.append(f"=== Single-capture topology for Capture Point A ({file_a.name}) ===")
+    lines.append(format_single_topology(single_a))
+    lines.append("")
+
+    lines.append(f"=== Single-capture topology for Capture Point B ({file_b.name}) ===")
+    lines.append(format_single_topology(single_b))
+
+    return "\n".join(lines)
 
 
 def _build_matches_from_pairs(

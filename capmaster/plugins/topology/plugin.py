@@ -56,6 +56,17 @@ class TopologyPlugin(PluginBase):
             "Required for dual-point analysis.",
         )
         @click.option(
+            "--empty-match-behavior",
+            type=click.Choice(["error", "fallback-single"], case_sensitive=False),
+            default="error",
+            show_default=True,
+            help=(
+                "Behavior when no valid matched connections are found in dual-capture "
+                "analysis: 'error' to fail (default), 'fallback-single' to run per-"
+                "capture single-point topology analysis instead."
+            ),
+        )
+        @click.option(
             "-o",
             "--output",
             "output_file",
@@ -75,11 +86,11 @@ class TopologyPlugin(PluginBase):
             file1: Path | None,
             file2: Path | None,
             matched_connections: Path | None,
+            empty_match_behavior: str,
             output_file: Path | None,
             service_list: Path | None,
         ) -> None:
-            """
-            Render network topology for one or two capture points.
+            """Render network topology for one or two capture points.
 
             Examples:
               # Single capture
@@ -98,6 +109,7 @@ class TopologyPlugin(PluginBase):
                 file1=file1,
                 file2=file2,
                 matched_connections=matched_connections,
+                empty_match_behavior=empty_match_behavior,
                 output_file=output_file,
                 service_list=service_list,
             )
@@ -110,6 +122,7 @@ class TopologyPlugin(PluginBase):
         file1: Path | None = None,
         file2: Path | None = None,
         matched_connections: Path | None = None,
+        empty_match_behavior: str = "error",
         output_file: Path | None = None,
         service_list: Path | None = None,
     ) -> int:
@@ -120,6 +133,7 @@ class TopologyPlugin(PluginBase):
             file1=file1,
             file2=file2,
             matched_connections_file=matched_connections,
+            empty_match_behavior=empty_match_behavior,
             output_file=output_file,
             service_list=service_list,
         )
