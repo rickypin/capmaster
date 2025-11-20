@@ -98,6 +98,13 @@ def _resolve_input_files(
             )
         return [single_file]
 
+    if input_path is not None and (file1 or file2):
+        raise CapMasterError(
+            "Cannot combine -i/--input with --file1/--file2.",
+            "Provide exactly one input method.",
+        )
+
+
     if file1 or file2:
         if not (file1 and file2):
             raise CapMasterError(

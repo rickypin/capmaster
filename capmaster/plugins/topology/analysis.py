@@ -310,35 +310,6 @@ def format_single_topology(topology: SingleTopologyInfo) -> str:
     return "\n".join(lines)
 
 
-def _describe_single_capture_position(topology: SingleTopologyInfo) -> str:
-    """Summarize capture point distance for single-capture topology using hops only."""
-    client_hops = topology.client_hops
-    server_hops = topology.server_hops
-
-    if client_hops is not None and server_hops is not None:
-        return (
-            f"Capture Point A, {client_hops} hops away from the client "
-            f"and {server_hops} hops away from the server."
-        )
-
-    if client_hops is None and server_hops is None:
-        return "TTL data was unavailable to describe Capture Point A's distance to the client or the server."
-    if client_hops is None:
-        return f"Capture Point A recorded {server_hops} hops away from the server; client TTL data was unavailable."
-    return f"Capture Point A recorded {client_hops} hops away from the client; server TTL data was unavailable."
-
-
-def _build_single_communication_path(topology: SingleTopologyInfo, client_list: str, server_list: str) -> str:
-    nodes = [
-        f"Client({client_list})",
-        f"Capture Point A",
-        f"Server({server_list})",
-    ]
-    edges = [
-        topology.client_hops is not None and topology.client_hops > 0,
-        topology.server_hops is not None and topology.server_hops > 0,
-    ]
-    return _join_path_segments(nodes, edges)
 
 
 def _format_ip_list(ips: set[str], max_display: int = 3) -> str:
@@ -447,60 +418,6 @@ def _determine_capture_sequence(position: str) -> CaptureSequence | None:
     return None
 
 
-def _build_capture_point_descriptions(
-    topology: TopologyInfo,
-    sequence: CaptureSequence | None,
-) -> list[str]:
-    if sequence is None:
-        return _build_unknown_descriptions(topology)
-
-    client_label, server_label = sequence
-    client_point = _get_capture_point_metrics(topology, client_label)
-    server_point = _get_capture_point_metrics(topology, server_label)
-
-    balanced = abs(topology.client_hops_a - topology.client_hops_b) == abs(
-        topology.server_hops_a - topology.server_hops_b
-    )
-
-    descriptions = [
-        _describe_capture_point(client_point, role="client", balanced=balanced),
-        _describe_capture_point(server_point, role="server", balanced=balanced),
-    ]
-    return descriptions
-
-
-def _get_capture_point_metrics(
-    topology: TopologyInfo,
-    label: str,
-) -> _CapturePointMetrics:
-    if label == "A":
-        return _CapturePointMetrics(
-            "A",
-            topology.client_hops_a,
-            topology.server_hops_a,
-        )
-    return _CapturePointMetrics(
-        "B",
-        topology.client_hops_b,
-        topology.server_hops_b,
-    )
-
-
-def _describe_capture_point(
-    point: _CapturePointMetrics,
-    *,
-    role: Literal["client", "server"],
-    balanced: bool,
-) -> str:
-    """Summarize capture point distance using hops only.
-
-    Example outputs:
-    - "Capture Point B, 12 hops away from the client and 0 hops away from the intermediate network device."
-    - "Capture Point A, 0 hops away from the intermediate network device and 3 hops away from the server."
-    """
-    measurements = _build_measurements(point, role=role, balanced=balanced)
-    measurement_text = _format_measurements(measurements)
-    return f"Capture Point {point.label}, {measurement_text}."
 
 
 def _build_measurements(
@@ -535,57 +452,6 @@ def _build_adjacency_phrase(
     return None
 
 
-def _build_unknown_descriptions(topology: TopologyInfo) -> list[str]:
-    return [
-        "TTL data is insufficient to determine capture point ordering.",
-        (
-            f"Capture Point A observed {topology.client_hops_a} client hops "
-            f"and {topology.server_hops_a} server hops."
-        ),
-        (
-            f"Capture Point B observed {topology.client_hops_b} client hops "
-            f"and {topology.server_hops_b} server hops."
-        ),
-    ]
-
-
-def _build_dual_communication_path(topology: TopologyInfo, sequence: CaptureSequence | None) -> str:
-    order = sequence or ("A", "B")
-    first_label, second_label = order
-
-    client_ips = _format_ip_list(topology.client_ips_a if first_label == "A" else topology.client_ips_b)
-    server_label = "A" if second_label == "A" else "B"
-    server_ips = _format_server_list(
-        topology.server_ips_a if server_label == "A" else topology.server_ips_b,
-        topology.server_ports_a if server_label == "A" else topology.server_ports_b,
-    )
-    nodes = [
-        f"Client({client_ips})",
-        _format_capture_label(topology, first_label),
-        _format_capture_label(topology, second_label),
-        f"Server({server_ips})",
-    ]
-    edges = [
-        _has_client_device(topology, first_label),
-        True,
-        _has_server_device(topology, second_label),
-    ]
-    return _join_path_segments(nodes, edges)
-
-
-def _format_capture_label(topology: TopologyInfo, label: str) -> str:
-    _ = topology  # kept for API compatibility, file name intentionally omitted
-    return f"Capture Point {label}"
-
-
-def _has_client_device(topology: TopologyInfo, label: str) -> bool:
-    hops = topology.client_hops_a if label == "A" else topology.client_hops_b
-    return bool(hops and hops > 0)
-
-
-def _has_server_device(topology: TopologyInfo, label: str) -> bool:
-    hops = topology.server_hops_a if label == "A" else topology.server_hops_b
-    return bool(hops and hops > 0)
 
 
 def _join_path_segments(nodes: list[str], edges_have_device: list[bool]) -> str:
