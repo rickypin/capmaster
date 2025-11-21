@@ -37,6 +37,7 @@ class MatchSerializer:
             "server_port": conn.server_port,
             "syn_timestamp": conn.syn_timestamp,
             "syn_options": conn.syn_options,
+            "has_syn": conn.has_syn,
             "client_isn": conn.client_isn,
             "server_isn": conn.server_isn,
             "tcp_timestamp_tsval": conn.tcp_timestamp_tsval,
@@ -77,6 +78,7 @@ class MatchSerializer:
             server_port=data["server_port"],
             syn_timestamp=data["syn_timestamp"],
             syn_options=data["syn_options"],
+            has_syn=data.get("has_syn", False),
             client_isn=data["client_isn"],
             server_isn=data["server_isn"],
             tcp_timestamp_tsval=data["tcp_timestamp_tsval"],
@@ -94,7 +96,7 @@ class MatchSerializer:
             packet_count=data["packet_count"],
             client_ttl=data["client_ttl"],
             server_ttl=data["server_ttl"],
-            total_bytes=data["total_bytes"],
+            total_bytes=data.get("total_bytes", 0),
         )
 
     @staticmethod

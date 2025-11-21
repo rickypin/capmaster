@@ -16,7 +16,7 @@ class PluginBase(ABC):
         Plugin name (used as CLI subcommand name).
 
         Returns:
-            Plugin name (e.g., "analyze", "match", "filter")
+            Plugin name (e.g., "analyze", "match", "preprocess")
         """
         pass
 

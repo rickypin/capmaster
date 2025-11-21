@@ -30,7 +30,7 @@ class ProtocolDetector:
             Set of protocol names (lowercase) found in the file
 
         Raises:
-            subprocess.CalledProcessError: If tshark command fails
+            TsharkExecutionError: If tshark command fails
         """
         # Execute tshark with protocol hierarchy statistics
         result = self.tshark.execute(

@@ -5,6 +5,15 @@ All notable changes to CapMaster will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- 新增 `topology` 插件，支持单点与双点拓扑分析，可通过 `--single-file` 直接分析单个 PCAP，或结合 `--matched-connections` 重建两点拓扑。
+
+### Changed
+- `match` 命令移除 `--topology` 选项，拓扑输出统一由 `capmaster topology` 负责，同时复用 `match` 的匹配结果。
+- 文档、示例脚本与 meta 测试脚本更新，指导用户通过新插件生成 `topology.txt`。
+
 ## [1.0.0] - 2024-11-02
 
 ### Added
@@ -292,4 +301,3 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 ---
 
 **Note**: This project replaces three legacy shell scripts (analyze_pcap.sh, match_tcp_conns.sh, remove_one_way_tcp.sh) with a modern, maintainable Python CLI tool.
-

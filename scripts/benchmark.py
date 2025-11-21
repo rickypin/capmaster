@@ -2,10 +2,9 @@
 """
 Performance Benchmark Script for CapMaster
 
-This script runs performance benchmarks for all three main commands:
+This script runs performance benchmarks for the main commands:
 - analyze
 - match
-- filter
 
 It compares the performance against the original shell scripts and generates
 a comprehensive performance report.
@@ -28,7 +27,6 @@ class PerformanceBenchmark:
         self.results: Dict[str, List[Dict]] = {
             "analyze": [],
             "match": [],
-            "filter": [],
         }
 
     def run_command(self, cmd: List[str], timeout: int = 300) -> Tuple[float, int]:
@@ -153,63 +151,6 @@ class PerformanceBenchmark:
 
             print()
 
-    def benchmark_filter(self) -> None:
-        """Benchmark the filter command."""
-        print("\n=== Benchmarking Filter Command ===\n")
-
-        test_cases = [
-            ("V-001/VOIP.pcap", "Small PCAP (VOIP)"),
-            ("TC-001-1-20160407/TC-001-1-20160407-O.pcap", "Medium PCAP"),
-        ]
-
-        for pcap_path, description in test_cases:
-            full_path = self.cases_dir / pcap_path
-            if not full_path.exists():
-                print(f"⚠️  Skipping {description}: File not found")
-                continue
-
-            print(f"Testing: {description}")
-            print(f"  File: {pcap_path}")
-
-            # Get file size
-            file_size_mb = full_path.stat().st_size / (1024 * 1024)
-            print(f"  Size: {file_size_mb:.2f} MB")
-
-            # Run CapMaster filter
-            output_file = self.workspace_root / "temp_filtered.pcap"
-            cmd = [
-                "python",
-                "-m",
-                "capmaster",
-                "filter",
-                "-i",
-                str(full_path),
-                "-o",
-                str(output_file),
-            ]
-            exec_time, return_code = self.run_command(cmd)
-
-            # Clean up output file
-            if output_file.exists():
-                output_file.unlink()
-
-            if return_code == 0:
-                print(f"  ✅ CapMaster: {exec_time:.2f}s")
-            else:
-                print(f"  ❌ CapMaster: Failed (code {return_code})")
-
-            # Store results
-            self.results["filter"].append(
-                {
-                    "description": description,
-                    "file": pcap_path,
-                    "size_mb": file_size_mb,
-                    "capmaster_time": exec_time,
-                    "capmaster_status": "success" if return_code == 0 else "failed",
-                }
-            )
-
-            print()
 
     def generate_report(self) -> None:
         """Generate a comprehensive performance report."""
@@ -235,14 +176,6 @@ class PerformanceBenchmark:
                 print(f"  Execution Time: {result['capmaster_time']:.2f}s")
                 print(f"  Status: {result['capmaster_status']}")
 
-        # Filter results
-        if self.results["filter"]:
-            print("\n--- Filter Command ---")
-            for result in self.results["filter"]:
-                print(f"\n{result['description']}:")
-                print(f"  File Size: {result['size_mb']:.2f} MB")
-                print(f"  Execution Time: {result['capmaster_time']:.2f}s")
-                print(f"  Status: {result['capmaster_status']}")
 
         # Summary
         print("\n" + "=" * 80)
@@ -274,7 +207,6 @@ class PerformanceBenchmark:
 
         self.benchmark_analyze()
         self.benchmark_match()
-        self.benchmark_filter()
         self.generate_report()
 
 

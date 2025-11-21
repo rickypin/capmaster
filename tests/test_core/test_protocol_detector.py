@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from capmaster.core.protocol_detector import ProtocolDetector
+from capmaster.utils.errors import TsharkExecutionError
 
 
 @pytest.mark.integration
@@ -129,11 +130,13 @@ eth                                      frames:100 bytes:50000
         pcap_file.touch()
 
         mock_tshark = MagicMock()
-        mock_tshark.execute.side_effect = subprocess.CalledProcessError(1, "tshark")
+        mock_tshark.execute.side_effect = TsharkExecutionError(
+            "tshark -q -z io,phs", 1, "tshark: error message"
+        )
 
         detector = ProtocolDetector(mock_tshark)
 
-        with pytest.raises(subprocess.CalledProcessError):
+        with pytest.raises(TsharkExecutionError):
             detector.detect(pcap_file)
 
     def test_detect_with_icmp(self, tmp_path: Path) -> None:

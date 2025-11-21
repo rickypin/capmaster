@@ -38,7 +38,7 @@ class YourPlugin(PluginBase):
     @property
     def name(self) -> str:
         return "command_name"  # CLI 子命令名
-    
+
     def setup_cli(self, cli_group: click.Group) -> None:
         @cli_group.command(name=self.name)
         @click.option("-i", "--input", required=True)
@@ -46,7 +46,7 @@ class YourPlugin(PluginBase):
         def command(ctx, input):
             exit_code = self.execute(input=input)
             ctx.exit(exit_code)
-    
+
     def execute(self, **kwargs) -> int:
         # 实现业务逻辑
         return 0  # 0=成功, 非0=失败
@@ -60,9 +60,9 @@ class YourPlugin(PluginBase):
 plugin_modules = [
     "capmaster.plugins.analyze",
     "capmaster.plugins.match",
-    "capmaster.plugins.filter",
     "capmaster.plugins.clean",
     "capmaster.plugins.compare",
+    "capmaster.plugins.preprocess",
     "capmaster.plugins.your_plugin",  # 新增插件
 ]
 ```
@@ -70,7 +70,7 @@ plugin_modules = [
 ### 1.4 参考现有插件
 
 - **简单**: `clean/plugin.py` - 单一功能
-- **中等**: `filter/plugin.py` - 包含检测器
+- **中等**: `compare/plugin.py` - 双文件比较逻辑
 - **复杂**: `analyze/plugin.py` - 包含子模块系统
 
 ---
@@ -98,19 +98,19 @@ class YourModule(AnalysisModule):
     @property
     def name(self) -> str:
         return "module_name"
-    
+
     @property
     def output_suffix(self) -> str:
         return "output-file.txt"
-    
+
     @property
     def required_protocols(self) -> set[str]:
         return {"protocol"}  # 或 set() 表示总是执行
-    
+
     def build_tshark_args(self, input_file: Path) -> list[str]:
         # 返回 tshark 命令参数
         return ["-q", "-z", "command"]
-    
+
     def post_process(self, tshark_output: str) -> str:
         # 可选: 后处理 tshark 输出
         return tshark_output
@@ -141,7 +141,7 @@ def build_tshark_args(self, input_file: Path) -> list[str]:
 **类型 2: 字段提取** (带后处理)
 ```python
 def build_tshark_args(self, input_file: Path) -> list[str]:
-    return ["-Y", "filter", "-T", "fields", "-e", "field1", "-e", "field2"]
+    return ["-Y", "tcp.port == 80", "-T", "fields", "-e", "field1", "-e", "field2"]
 ```
 参考: `dns_stats.py` 等 *_stats 模块
 
@@ -161,6 +161,59 @@ def post_process(self, tshark_output: str) -> str:
 - 后处理时，可以自由使用标准库（如 `collections`, `re` 等），不再在本文中展开。
 
 ---
+
+## 4. 并发与批处理中的错误处理（AI 重点）
+
+本节专门约束 AI Agent 在实现 / 修改支持「多文件处理」或「并发处理」的插件（例如 `analyze`, `preprocess`）时的行为，避免出现“跑完但没算对”的静默失败。
+
+### 4.1 必须遵守的原则
+
+- **不要在 worker 中吞掉所有异常然后返回“看起来像成功”的结果**
+  - 例如：在 `ProcessPoolExecutor` 的子进程 worker 里 `except Exception: ... return (pcap_file, 0)` 是禁止的。
+- worker 级别的异常必须：
+  - 要么直接抛出，让主进程在 `future.result()` 处感知到；
+  - 要么显式封装成“失败”的返回值，并且主进程必须据此统计失败数量。
+- 顶层 `execute()` 在并发 / 批处理场景中必须：
+  - 统计 **成功文件数** 与 **失败文件数**；
+  - 对任意失败文件返回 **非 0 exit code**（推荐 `1`）；
+  - 在日志中清晰区分：
+    - 「0 个输出，因为没有匹配结果」vs
+    - 「0 个输出，因为所有文件都处理失败」。
+
+### 4.2 推荐实现模式（示意）
+
+```python
+# worker: 不吞异常
+def _process_single_file(pcap_file: Path, ...) -> tuple[Path, int]:
+    ...
+    return (pcap_file, num_outputs)
+
+# execute: 并发聚合时统计失败
+failed_files = 0
+total_outputs = 0
+
+with ProcessPoolExecutor(max_workers=workers) as executor:
+    ...
+    for future in as_completed(futures):
+        pcap_file = futures[future]
+        try:
+            _, num_outputs = future.result()
+            total_outputs += num_outputs
+        except Exception as e:
+            failed_files += 1
+            logger.error(f"Failed to process {pcap_file.name}: {e}")
+
+if failed_files > 0:
+    logger.error(
+        f"Completed with errors: {failed_files} of {len(pcap_files)} file(s) failed"
+    )
+    return 1
+
+return 0
+```
+
+> 提示：新增或修改并发逻辑时，AI Agent 应同时补充至少 1 条测试，用来断言「有 worker 失败时 `execute()` 返回非 0」。
+
 
 ## 5. 核心组件使用
 
@@ -262,6 +315,126 @@ result = tshark.execute(
 )
 ```
 
+### 5.4 CLI 双文件输入约束（AI 重点）
+
+> 适用于需要“两个 PCAP 输入”的顶层命令，例如 `match`、`compare` 以及相关子命令（如 `match comparative-analysis`）。
+
+1. **必须使用统一装饰器 `dual_file_input_options`**
+   - 所有“双文件输入”命令必须使用 `capmaster.utils.cli_options.dual_file_input_options` 来声明：
+     - `-i/--input`
+     - `--file1/--file2`
+     - `--file1-pcapid/--file2-pcapid`
+   - **禁止**在各个命令中手写上述选项，避免与全局规则 / 校验不一致。
+
+2. **禁止调用已废弃的 `validate_dual_file_input`**
+   - 函数 `capmaster.utils.cli_options.validate_dual_file_input(...)` 仅为兼容旧代码保留，其实现是 no-op。
+   - AI Agent 和人类开发者在新代码中 **不得调用** 该函数；
+   - 如果在修改旧命令逻辑时遇到它，应顺便移除调用，改为完全依赖 `dual_file_input_options` 的 Click callback 校验。
+
+3. **单一真相源：规则与错误信息**
+   - 双文件输入在 CLI 层的**参数组合规则**与**错误提示文案**，统一定义在：
+     - `capmaster/utils/cli_options.py` 中的 `_validate_dual_file_input_callback`；
+   - 双文件输入在执行层的**语义解析与文件数量检查**，统一由：
+     - `capmaster/utils/input_parser.py` 中的 `DualFileInputParser` 负责。
+   - 如需修改：
+     - `-i` 与 `--file1/--file2` 是否互斥；
+     - `pcapid` 的合法取值范围；
+     - 错误提示文本；
+     - 以及其他与“双文件输入”相关的规则；
+     **必须只在上述集中位置修改**，不得在单个插件 / 命令中重新实现一套局部规则。
+
+4. **新增双文件命令的推荐模式**
+   - CLI 层：使用 `@dual_file_input_options` 获取 `input_path` / `file1` / `file2` / `file1_pcapid` / `file2_pcapid`。
+   - 执行层：调用 `DualFileInputParser` 进行语义解析与安全检查。
+   - 业务层：仅在解析结果的基础上编写与当前命令相关的业务逻辑，**不得重新解释双文件输入的含义**。
+
+5. **CLI 负向测试要求**
+   - 对任意使用 `dual_file_input_options` 的命令，如有新增或修改逻辑，推荐至少增加以下场景的 CLI 级负向测试：
+     - 未提供任何输入（既无 `-i/--input`，也无 `--file1/--file2`）；
+     - 同时提供 `-i/--input` 与 `--file1/--file2`；
+     - 使用 `--file1/--file2` 却缺少对应的 `pcapid`；
+     - `pcapid` 不在允许的取值范围内（当前为 `0` 或 `1`）。
+   - 推荐使用 `subprocess.run(["python", "-m", "capmaster", ...])` 直接调用 CLI，并断言：
+     - 返回码 `returncode != 0`；
+     - 标准错误输出中包含来自 `_validate_dual_file_input_callback` 的预期错误信息。
+
+
+### 5.5 ServerDetector：服务端判定的单一真相源（AI 重点）
+
+> **目标**：在项目中统一“谁是服务端”的判定逻辑，避免在各插件 / 模块中各自实现一套端口 / SYN / cardinality 规则。
+
+- **必须使用 `ServerDetector` 判定服务端**
+  - 所有需要回答“这条连接 / 会话的服务端是谁？”的问题，必须通过
+    `capmaster.plugins.match.server_detector.ServerDetector` 的 `detect()` 方法获取结果。
+  - 典型场景包括（但不限于）：
+    - 连接匹配（`match` 插件）中的 server/client 角色校正；
+    - 拓扑分析（`topology` 插件，单点 / 双点）中的 server/client 角色与 hops 计算；
+    - 任意新插件或分析模块中，需要基于 IP/端口判断“哪一侧是服务端”的场景。
+
+- **禁止在局部重写 server 判定规则**
+  - 禁止在单个插件 / 模块中根据端口号、SYN 方向、cardinality 等重新实现一套
+    “本地 server 判定逻辑”。
+  - 如需增加 / 调整启发式（例如：特殊端口、额外字段、service list 语义变化），
+    应只在 `ServerDetector` 内修改，使其成为**服务端判定的单一真相源**。
+
+- **保持与抓包拓扑解耦**
+  - `ServerDetector` 只面向 TCP 连接本身（`TcpConnection` 及其 IP/端口），
+    不感知“单点 / 双点 / 抓包点 A/B / file1/file2”等拓扑概念。
+  - 如需引入“抓包点 A 在 client 侧、B 在 server 侧”等语义，应在上层插件 / 模块
+    中基于 `ServerDetector.detect()` 的结果进行推导，而不是将这些语义塞进
+    `ServerDetector` 内部。
+
+- **推荐调用模式（示意）**
+
+  ```python
+  from capmaster.plugins.match.server_detector import ServerDetector
+
+  detector = ServerDetector(service_list_path=service_list)
+  for conn in connections:
+      detector.collect_connection(conn)
+  detector.finalize_cardinality()
+
+  for conn in connections:
+      info = detector.detect(conn)
+      # 使用 info.server_ip/info.server_port/info.client_ip/info.client_port
+      # 作为后续统计、拓扑或匹配逻辑中的“语义 server/client” 角色
+  ```
+
+- **衍生信息也应基于 ServerDetector 结果**
+  - 若需要计算“server 一侧的 TTL/hops”或“client 一侧的 TTL/hops”，
+    应先依据 `ServerDetector.detect()` 得到 server/client 角色，再将原始
+    `TcpConnection.client_ttl/server_ttl` 映射到对应一侧，避免与 service list
+    或其他启发式产生冲突。
+
+### 5.6 TTL hops 模块：基于 TTL 的跳数计算单一真相源（AI 重点）
+
+> 与 5.5 中的 `ServerDetector` 一样，`ttl_utils` 属于“单一真相源类”核心模块。
+> 当前该类模块包括：
+> - `ServerDetector`：统一 server/client 角色判定
+> - `ttl_utils`：统一 TTL → hops 及“是否存在中间网络设备”的判定
+
+- **必须使用 `ttl_utils` 计算 hops 与中间设备**
+  - 所有需要根据 IP TTL 推导“从抓包点到 client/server 的 hops 数”或“是否存在中间网络设备”的逻辑，必须通过
+    `capmaster.plugins.match.ttl_utils` 中的公共 API（如 `calculate_hops`, `most_common_hops`）实现。
+  - 典型场景包括（但不限于）：
+    - 端点统计（`EndpointStatsCollector`）中计算 `client_hops_*` / `server_hops_*`；
+    - 单/双采集拓扑（`topology` 插件）中基于 hops 决定路径顺序、标记 `[Network Device]`；
+    - 任何新插件或分析模块中，需要基于 TTL 表达“距离”或“是否经过中间设备”的场景。
+
+- **禁止在局部重写 TTL→hops 公式**
+  - 禁止在单个插件 / 模块中直接假设初始 TTL（如 64/128/255）并手写 `hops = 初始_TTL - ttl` 之类逻辑。
+  - 禁止绕开 `ttl_utils` 自行对 TTL 列表做 hops 聚合（如本地实现众数统计）。
+  - 如需调整初始 TTL 假设或 hops 计算规则，只能在 `ttl_utils.TtlDelta` / `calculate_hops` / `most_common_hops` 内修改，使其成为**TTL→hops 的单一真相源**。
+
+- **推荐调用模式（示意）**
+
+  ```python
+  from capmaster.plugins.match.ttl_utils import most_common_hops
+
+  client_hops = most_common_hops(client_ttls)
+  server_hops = most_common_hops(server_ttls)
+  ```
+
 ---
 
 ## 6. 测试要求（简化）
@@ -286,6 +459,9 @@ result = tshark.execute(
 - [ ] 使用 `@register_plugin`
 - [ ] 在 `discover_plugins()` 的 `plugin_modules` 列表中注册你的插件模块
 - [ ] **使用 `TsharkWrapper` 而非 `subprocess.run`**
+- [ ] **并发/批处理场景：不得静默吞掉 worker 异常，必须统计失败数并在有失败时返回非 0 exit code**
+- [ ] **如需判断 server/client 角色：统一使用 `ServerDetector.detect()`，不得手写本地启发式**
+- [ ] **如需基于 TTL 推导 hops/中间网络设备：统一使用 `capmaster.plugins.match.ttl_utils`（如 `calculate_hops` / `most_common_hops`），不得手写初始 TTL 判断或 hops 公式**
 - [ ] 添加类型提示
 - [ ] 编写测试 (覆盖率 ≥ 80%)
 - [ ] 运行 `mypy` 和 `ruff`

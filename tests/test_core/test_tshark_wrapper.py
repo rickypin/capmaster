@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from capmaster.core.tshark_wrapper import TsharkWrapper
+from capmaster.utils.errors import TsharkExecutionError, TsharkNotFoundError
 
 
 @pytest.mark.integration
@@ -19,7 +20,7 @@ class TestTsharkWrapper:
         """Test initialization fails when tshark is not found."""
         mock_which.return_value = None
 
-        with pytest.raises(RuntimeError, match="tshark not found"):
+        with pytest.raises(TsharkNotFoundError):
             TsharkWrapper()
 
     @patch("shutil.which")
@@ -35,6 +36,23 @@ class TestTsharkWrapper:
 
         assert wrapper.tshark_path == "/usr/bin/tshark"
         assert wrapper.version == "4.0.6"
+
+    @patch("subprocess.run")
+    def test_init_prefers_tshark_path_env(self, mock_run: MagicMock, monkeypatch) -> None:
+        """Environment variable TSHARK_PATH should override PATH discovery.
+
+        This mirrors the resolution order used by preprocess tools so that an
+        explicit environment override is always honoured.
+        """
+
+        monkeypatch.setenv("TSHARK_PATH", "/env/tshark")
+        mock_run.return_value = MagicMock(
+            stdout="TShark (Wireshark) 4.0.6 (Git v4.0.6)\n", returncode=0
+        )
+
+        wrapper = TsharkWrapper()
+
+        assert wrapper.tshark_path == "/env/tshark"
 
     @patch("shutil.which")
     @patch("subprocess.run")
@@ -56,8 +74,10 @@ class TestTsharkWrapper:
         mock_which.return_value = "/usr/bin/tshark"
         mock_run.side_effect = subprocess.TimeoutExpired("tshark", 5)
 
-        with pytest.raises(RuntimeError, match="timed out"):
+        with pytest.raises(TsharkExecutionError) as exc_info:
             TsharkWrapper()
+
+        assert "timed out" in (exc_info.value.suggestion or "")
 
     @patch("shutil.which")
     @patch("subprocess.run")
@@ -162,7 +182,7 @@ class TestTsharkWrapper:
 
         wrapper = TsharkWrapper()
 
-        with pytest.raises(subprocess.CalledProcessError):
+        with pytest.raises(TsharkExecutionError):
             wrapper.execute(["-invalid"])
 
     @patch("shutil.which")

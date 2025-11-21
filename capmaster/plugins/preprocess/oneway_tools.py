@@ -1,9 +1,8 @@
-"""Helpers for one-way TCP connection filtering in the preprocess pipeline.
+"""Helpers and core logic for one-way TCP connection filtering in the preprocess pipeline.
 
-This module reuses the detection logic from ``capmaster.plugins.filter``
-by feeding TCP packet information into :class:`OneWayDetector`. It exposes
-simple helpers that detect one-way stream IDs and filter PCAP files by
-excluding those streams.
+This module defines the one-way detection algorithm (OneWayDetector) and exposes
+helpers that detect one-way stream IDs and filter PCAP files by excluding those
+streams.
 """
 
 from __future__ import annotations
@@ -11,14 +10,107 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 import shutil
+from collections.abc import Iterator
+from dataclasses import dataclass
 
 from capmaster.core.tshark_wrapper import TsharkWrapper
-from capmaster.plugins.filter.detector import OneWayDetector, TcpPacketInfo
 from capmaster.utils.errors import CapMasterError
 from capmaster.utils.logger import get_logger
 
 
 logger = get_logger(__name__)
+
+MAX_SEQ_ACK = 2**32
+
+
+@dataclass
+class TcpPacketInfo:
+    stream_id: int
+    src_ip: str
+    src_port: int
+    dst_ip: str
+    dst_port: int
+    ack: int
+    tcp_len: int
+
+
+@dataclass
+class DirectionStats:
+    packet_count: int = 0
+    first_ack: int = 0
+    last_ack: int = 0
+    has_pure_ack: bool = False
+    prev_ack: int = 0
+
+
+@dataclass
+class StreamAnalysis:
+    stream_id: int
+    is_one_way: bool
+    active_direction: str
+    ack_delta: int
+    has_pure_ack: bool
+
+
+class OneWayDetector:
+    def __init__(self, ack_threshold: int = 20) -> None:
+        self.ack_threshold = ack_threshold
+        self._streams: dict[int, dict[str, DirectionStats]] = {}
+        self._stream_first_direction: dict[int, str] = {}
+
+    def add_packet(self, packet: TcpPacketInfo) -> None:
+        direction = f"{packet.src_ip}:{packet.src_port}->{packet.dst_ip}:{packet.dst_port}"
+        if packet.stream_id not in self._streams:
+            self._streams[packet.stream_id] = {}
+            self._stream_first_direction[packet.stream_id] = direction
+        stream = self._streams[packet.stream_id]
+        stats = stream.setdefault(direction, DirectionStats())
+        stats.packet_count += 1
+        if packet.ack > 0:
+            if stats.first_ack == 0:
+                stats.first_ack = packet.ack
+            stats.last_ack = packet.ack
+            if packet.tcp_len == 0 and stats.prev_ack > 0 and packet.ack > stats.prev_ack:
+                stats.has_pure_ack = True
+            stats.prev_ack = packet.ack
+
+    def analyze(self) -> Iterator[StreamAnalysis]:
+        for stream_id, directions in self._streams.items():
+            first_dir = self._stream_first_direction[stream_id]
+            reverse_dir = self._get_reverse_direction(first_dir)
+            fwd = directions.get(first_dir, DirectionStats())
+            rev = directions.get(reverse_dir, DirectionStats())
+            if fwd.packet_count == 0 and rev.packet_count == 0:
+                continue
+            if fwd.packet_count > 0 and rev.packet_count == 0:
+                active_dir, active_stats = first_dir, fwd
+            elif rev.packet_count > 0 and fwd.packet_count == 0:
+                active_dir, active_stats = reverse_dir, rev
+            else:
+                continue
+            if active_stats.first_ack == 0 or active_stats.last_ack == 0:
+                continue
+            ack_delta = self._calculate_ack_delta(active_stats.first_ack, active_stats.last_ack)
+            if ack_delta > self.ack_threshold and active_stats.has_pure_ack:
+                yield StreamAnalysis(
+                    stream_id=stream_id,
+                    is_one_way=True,
+                    active_direction=active_dir,
+                    ack_delta=ack_delta,
+                    has_pure_ack=active_stats.has_pure_ack,
+                )
+
+    def _get_reverse_direction(self, direction: str) -> str:
+        parts = direction.split("->", 1)
+        if len(parts) != 2:
+            return direction
+        return f"{parts[1]}->{parts[0]}"
+
+    def _calculate_ack_delta(self, first_ack: int, last_ack: int) -> int:
+        if last_ack >= first_ack:
+            return last_ack - first_ack
+        return MAX_SEQ_ACK + last_ack - first_ack
+
 
 
 def _feed_detector_from_lines(

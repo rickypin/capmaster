@@ -269,12 +269,17 @@ class PreprocessPlugin(PluginBase):
         report_path: Path | None = None,
         silent: bool = False,
     ) -> int:
-        """Execute the preprocess pipeline with merged configuration."""
-        capmaster_logger = logging.getLogger("capmaster")
-        previous_level = capmaster_logger.level
+        """Execute the preprocess pipeline with merged configuration.
+
+        The ``silent`` flag only affects this plugin's logger to avoid
+        changing the global ``capmaster`` logger level, which could
+        interfere with other commands running in the same process.
+        """
+        plugin_logger = logger
+        previous_level = plugin_logger.level
 
         if silent:
-            capmaster_logger.setLevel(logging.ERROR)
+            plugin_logger.setLevel(logging.ERROR)
 
         try:
             # Validate flag pairs
@@ -390,5 +395,5 @@ class PreprocessPlugin(PluginBase):
             return handle_error(e, show_traceback=show_traceback)
         finally:
             if silent:
-                capmaster_logger.setLevel(previous_level)
+                plugin_logger.setLevel(previous_level)
 

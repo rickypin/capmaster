@@ -615,6 +615,13 @@ def run_preprocess(
             logger.info("Running preprocess step: %s", step_name)
             current_files = handler(context, current_files)
 
+        if len(current_files) != len(context.input_files):
+            raise CapMasterError(
+                "Preprocess pipeline invariant violated",
+                "Preprocess steps must return the same number of files as the inputs. "
+                f"Expected {len(context.input_files)}, got {len(current_files)}.",
+            )
+
         # Materialise final outputs in ``output_dir`` with the
         # ``<name>.ready.pcap[ng]`` naming convention.
 

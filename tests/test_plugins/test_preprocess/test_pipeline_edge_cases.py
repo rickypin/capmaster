@@ -35,6 +35,51 @@ def _make_dummy_pcap(tmp_path: Path, name: str, content: bytes = b"dummy") -> Pa
     return path
 
 
+
+def test_run_preprocess_raises_when_step_changes_file_count(tmp_path, monkeypatch):
+    """Pipeline must raise when a step changes the number of files.
+
+    This guards against silent truncation/expansion when a buggy step returns
+    a list whose length does not match the original inputs.
+    """
+
+    input_dir = tmp_path / "in"
+    f1 = _make_dummy_pcap(input_dir, "a.pcap", b"one")
+    f2 = _make_dummy_pcap(input_dir, "b.pcap", b"two")
+
+    tools = ToolsConfig()
+    cfg = PreprocessConfig(
+        time_align_enabled=False,
+        dedup_enabled=False,
+        oneway_enabled=False,
+        archive_original_files=False,
+        report_enabled=False,
+    )
+    runtime = PreprocessRuntimeConfig(tools=tools, preprocess=cfg)
+
+    def shrinking_step(context, files):  # type: ignore[override]
+        # Drop the last file to simulate an implementation bug.
+        assert files == [f1, f2]
+        return files[:1]
+
+    monkeypatch.setitem(preprocess_pipeline.STEP_HANDLERS, "broken-step", shrinking_step)
+
+    out_dir = tmp_path / "out"
+
+    with pytest.raises(CapMasterError) as excinfo:
+        preprocess_pipeline.run_preprocess(
+            runtime=runtime,
+            input_files=[f1, f2],
+            output_dir=out_dir,
+            steps=["broken-step"],
+        )
+
+    error = excinfo.value
+    assert error.message == "Preprocess pipeline invariant violated"
+    suggestion = error.suggestion or ""
+    assert "Expected 2, got 1" in suggestion
+
+
 def test_time_align_no_overlap_skips_step_and_preserves_files(tmp_path, monkeypatch):
     """No overlap: time-align should skip and leave inputs unchanged.
 

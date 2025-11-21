@@ -127,12 +127,28 @@ class TlsClientHelloExtractor:
         for line in tsv_string.strip().split("\n"):
             if not line:
                 continue
-            
+
             fields = line.split("\t")
+
+            # Allow one specific schema variation: missing trailing session_id field.
+            # In this case tshark may omit the last column entirely when Session ID
+            # length is 0. Treat this as an empty session_id instead of malformed.
+            if len(fields) == len(self.FIELDS) - 1:
+                logger.debug(
+                    "TLS TSV line missing trailing session_id field, treating "
+                    "session_id as empty: %s",
+                    line,
+                )
+                fields.append('""')
+
             if len(fields) != len(self.FIELDS):
-                logger.warning(f"Skipping malformed line: {line}")
+                logger.warning(
+                    "Skipping malformed TLS TSV line (field count=%d): %s",
+                    len(fields),
+                    line,
+                )
                 continue
-            
+
             info = self._parse_fields(fields)
             if info:
                 yield info

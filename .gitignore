@@ -149,6 +149,7 @@ downloads/
 benchmarks/
 tmp/
 
+.capmaster_tmp_match/
 # Analysis output (statistics directory created by analyze_pcap.sh)
 statistics/
 **/statistics/

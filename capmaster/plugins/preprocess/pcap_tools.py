@@ -346,20 +346,25 @@ def run_editcap_time_crop_and_dedup(
 
 
 
-def get_time_range_tshark(*, input_file: Path, timeout: int | None = None) -> TimeRange:
+def get_time_range_tshark(
+    *, tools: ToolsConfig, input_file: Path, timeout: int | None = None
+) -> TimeRange:
     """Fallback: obtain first/last timestamps using ``tshark``.
 
     This uses :class:`capmaster.core.tshark_wrapper.TsharkWrapper` to extract
     ``frame.time_epoch`` values and derives the minimum/maximum.
 
     It is less efficient than ``capinfos`` because it may need to scan the
-    entire capture, but it keeps the behaviour correct in environments where
-    capinfos is unavailable.
+    entire capture. However, it keeps the behaviour correct in environments
+    where capinfos is unavailable while still honouring the same tool
+    resolution order (ToolsConfig -> TSHARK_PATH -> PATH).
     """
 
     from capmaster.core.tshark_wrapper import TsharkWrapper  # local import to avoid cycles
 
-    tshark = TsharkWrapper()
+    tshark_path = _resolve_tool_path(tools.tshark_path, "TSHARK_PATH", "tshark")
+    tshark = TsharkWrapper(tshark_path)
+
     args = [
         "-T",
         "fields",
@@ -394,8 +399,12 @@ def get_time_range(*, tools: ToolsConfig, input_file: Path, timeout: int | None 
     try:
         return get_time_range_capinfos(tools=tools, input_file=input_file, timeout=timeout)
     except CapMasterError as exc:
-        logger.warning("capinfos time range failed for %s: %s; falling back to tshark", input_file, exc)
-        return get_time_range_tshark(input_file=input_file, timeout=timeout)
+        logger.warning(
+            "capinfos time range failed for %s: %s; falling back to tshark",
+            input_file,
+            exc,
+        )
+        return get_time_range_tshark(tools=tools, input_file=input_file, timeout=timeout)
 
 
 _EDITCAP_DEDUP_DEFAULT_WINDOW: Final[int] = 5

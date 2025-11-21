@@ -40,14 +40,14 @@ pytest tests/test_core/ -v
 # Analyze 插件
 pytest tests/test_plugins/test_analyze/ -v
 
-# Filter 插件
-pytest tests/test_plugins/test_filter/ -v
-
 # Match 插件
 pytest tests/test_plugins/test_match/ -v
 
 # Compare 插件
 pytest tests/test_plugins/test_compare/ -v
+
+# Preprocess 插件
+pytest tests/test_plugins/test_preprocess/ -v
 
 # Clean 插件
 pytest tests/test_plugins/test_clean.py -v
@@ -173,7 +173,7 @@ pytest --strict-warnings
 按组件:
 ├── Core: 23 个
 ├── Analyze: 120 个
-├── Filter: 45 个
+
 ├── Match: 25 个
 ├── Compare: 30 个
 ├── Clean: 20 个

@@ -104,6 +104,9 @@ class TcpConnection:
     total_bytes: int = 0
     """Total bytes (sum of frame lengths) for all packets in the stream"""
 
+    has_syn: bool = False
+    """Whether a SYN or SYN-ACK handshake packet was observed for this connection"""
+
     def __str__(self) -> str:
         """String representation for debugging."""
         return (
@@ -362,6 +365,9 @@ class ConnectionBuilder:
             server_isn = 0
             ipid_first = first_packet.ip_id
 
+        # Track whether we observed any SYN or SYN-ACK handshake packet
+        has_syn = bool(syn_packet or syn_ack_packet)
+
         # Extract TCP timestamp from SYN packet (if available)
         if syn_packet:
             tcp_timestamp_tsval = syn_packet.tcp_timestamp_tsval
@@ -436,6 +442,7 @@ class ConnectionBuilder:
             server_port=server_port,
             syn_timestamp=syn_timestamp,
             syn_options=syn_options,
+            has_syn=has_syn,
             client_isn=client_isn,
             server_isn=server_isn,
             tcp_timestamp_tsval=tcp_timestamp_tsval,

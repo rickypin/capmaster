@@ -135,9 +135,9 @@ class PacketExtractor:
         # Note: TsharkWrapper.execute() already handles exit codes:
         # - Exit code 0: Success
         # - Exit code 2: Warning (e.g., truncated PCAP) - logs warning but continues
-        # - Other codes: Raises CalledProcessError
+        # - Other codes: Raises TsharkExecutionError
         # So if we reach here, the command succeeded or had only warnings
-        
+
         # Parse output
         packets = []
         for line in result.stdout.strip().split("\n"):
@@ -213,9 +213,9 @@ class PacketExtractor:
         # Note: TsharkWrapper.execute() already handles exit codes:
         # - Exit code 0: Success
         # - Exit code 2: Warning (e.g., truncated PCAP) - logs warning but continues
-        # - Other codes: Raises CalledProcessError
+        # - Other codes: Raises TsharkExecutionError
         # So if we reach here, the command succeeded or had only warnings
-        
+
         # Parse output
         packets = []
         for line in result.stdout.strip().split("\n"):
@@ -304,7 +304,7 @@ class PacketExtractor:
         # Note: TsharkWrapper.execute() already handles exit codes:
         # - Exit code 0: Success
         # - Exit code 2: Warning (e.g., truncated PCAP) - logs warning but continues
-        # - Other codes: Raises CalledProcessError
+        # - Other codes: Raises TsharkExecutionError
         # So if we reach here, the command succeeded or had only warnings
 
         # Parse output and group by stream_id

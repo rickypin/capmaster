@@ -5,8 +5,8 @@ Run capmaster match on all TC-* subdirectories under a root directory (e.g. /Use
 and summarize results into Markdown and JSON.
 
 - Uses AUTO bucket by default (now NAT-aware), can be overridden via --bucket
-- Parses the Statistics block
-- Counts strong IPID matches (evidence contains 'ipid*') and normal ipid matches (' ipid')
+- Parses the Statistics block from CLI output
+- Uses match JSON to count strong/normal IPID matches, and F5 / TLS based matches
 
 Outputs:
 - analysis/2hops_match_summary.md
@@ -40,20 +40,41 @@ class CaseResult:
     average_score: float = 0.0
     strong_ipid_matches: int = 0
     normal_ipid_matches: int = 0
+    f5_matches: int = 0
+    tls_matches: int = 0
 
 
-def run_match(case_dir: Path, bucket: str) -> str:
-    # Use the current Python interpreter to run the module to avoid relying on a global 'capmaster' entry point
+def run_match(case_dir: Path, bucket: str, match_json: Path | None = None) -> str:
+    """Run `capmaster match` for a single case and optionally emit match JSON.
+
+    Using the current Python interpreter avoids relying on a global `capmaster` entry point.
+    """
     cmd = [
-        sys.executable, "-m", "capmaster", "match",
-        "--bucket", bucket,
-        "-i", str(case_dir),
+        sys.executable,
+        "-m",
+        "capmaster",
+        "match",
+        "--bucket",
+        bucket,
+        "-i",
+        str(case_dir),
     ]
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if match_json is not None:
+        cmd.extend(["--match-json", str(match_json)])
+    proc = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
     return proc.stdout
 
 
 def parse_output(case: str, output: str) -> CaseResult:
+    """Parse the CLI output `Statistics` block into a CaseResult.
+
+    Evidence-related statistics (IPID/F5/TLS) are populated separately from match JSON.
+    """
     res = CaseResult(case=case)
     in_stats = False
     for line in output.splitlines():
@@ -78,23 +99,47 @@ def parse_output(case: str, output: str) -> CaseResult:
                 elif key.startswith("Unmatched (file 2)"):
                     res.unmatched2 = int(val)
                 elif key.startswith("Match rate (file 1)"):
-                    res.match_rate1 = float(val.rstrip('%')) / 100.0 if val.endswith('%') else float(val)
+                    res.match_rate1 = float(val.rstrip("%")) / 100.0 if val.endswith("%") else float(val)
                 elif key.startswith("Match rate (file 2)"):
-                    res.match_rate2 = float(val.rstrip('%')) / 100.0 if val.endswith('%') else float(val)
+                    res.match_rate2 = float(val.rstrip("%")) / 100.0 if val.endswith("%") else float(val)
                 elif key.startswith("Average score"):
                     try:
                         res.average_score = float(val)
                     except ValueError:
                         res.average_score = 0.0
-        # Count evidence lines for ipid/ipid*
-        m2 = EVIDENCE_RE.search(line)
-        if m2:
-            ev = m2.group(1)
-            if 'ipid*' in ev:
-                res.strong_ipid_matches += 1
-            elif 'ipid' in ev:
-                res.normal_ipid_matches += 1
     return res
+
+
+def count_evidence_from_json(match_json: Path, res: CaseResult) -> None:
+    """Populate IPID/F5/TLS statistics for a case based on match JSON output.
+
+    The JSON structure is produced by MatchSerializer.save_matches and contains:
+      - "matches": [{"score": {"evidence": str, ...}}, ...]
+    """
+    if not match_json.is_file():
+        return
+
+    try:
+        with match_json.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return
+
+    for match in data.get("matches", []):
+        score = match.get("score", {})
+        evidence = str(score.get("evidence", "")) or ""
+
+        # IPID statistics
+        if "ipid*" in evidence:
+            res.strong_ipid_matches += 1
+        elif "ipid" in evidence:
+            res.normal_ipid_matches += 1
+
+        # F5 / TLS statistics
+        if "F5_TRAILER(" in evidence:
+            res.f5_matches += 1
+        if "TLS_CLIENT_HELLO(" in evidence:
+            res.tls_matches += 1
 
 
 def format_markdown(results: List[CaseResult]) -> str:
@@ -109,6 +154,8 @@ def format_markdown(results: List[CaseResult]) -> str:
     )
     strong_sum = sum(r.strong_ipid_matches for r in results)
     normal_sum = sum(r.normal_ipid_matches for r in results)
+    f5_sum = sum(r.f5_matches for r in results)
+    tls_sum = sum(r.tls_matches for r in results)
 
     lines = []
     lines.append(f"# 2hops Match 汇总结果\n")
@@ -118,15 +165,17 @@ def format_markdown(results: List[CaseResult]) -> str:
     lines.append(f"- 平均置信度(跨有匹配的用例): {avg_score_cases:.2f}")
     lines.append(f"- 强 IPID 匹配总数: {strong_sum}")
     lines.append(f"- 普通 IPID 匹配总数: {normal_sum}")
+    lines.append(f"- F5 匹配总数: {f5_sum}")
+    lines.append(f"- TLS 匹配总数: {tls_sum}")
     lines.append("")
 
     # Table header
-    lines.append("| 用例 | f1连接 | f2连接 | 匹配对 | 强IPID | 普通IPID | 平均分 |")
-    lines.append("|------|--------|--------|--------|--------|----------|--------|")
+    lines.append("| 用例 | f1连接 | f2连接 | 匹配对 | 强IPID | 普通IPID | F5 | TLS | 平均分 |")
+    lines.append("|------|--------|--------|--------|--------|----------|----|-----|--------|")
     for r in results:
         lines.append(
             f"| {r.case} | {r.total1} | {r.total2} | {r.matched_pairs} | "
-            f"{r.strong_ipid_matches} | {r.normal_ipid_matches} | {r.average_score:.2f} |"
+            f"{r.strong_ipid_matches} | {r.normal_ipid_matches} | {r.f5_matches} | {r.tls_matches} | {r.average_score:.2f} |"
         )
     lines.append("")
     return "\n".join(lines)
@@ -160,18 +209,23 @@ def main():
     cases = sorted(candidate_dirs)
     results: List[CaseResult] = []
 
+    # Ensure analysis dir exists and prepare directory for per-case match JSON files
+    analysis_dir = Path("analysis")
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+    match_json_dir = analysis_dir / "2hops_matches"
+    match_json_dir.mkdir(parents=True, exist_ok=True)
+
     for case_dir in cases:
         try:
-            out = run_match(case_dir, args.bucket)
+            match_json = match_json_dir / f"{case_dir.name}.json"
+            out = run_match(case_dir, args.bucket, match_json=match_json)
             res = parse_output(case_dir.name, out)
+            count_evidence_from_json(match_json, res)
             results.append(res)
         except Exception:
             # Record an empty result with error indicator
             results.append(CaseResult(case=case_dir.name))
 
-    # Ensure analysis dir exists
-    analysis_dir = Path("analysis")
-    analysis_dir.mkdir(parents=True, exist_ok=True)
 
     # Write Markdown
     md = format_markdown(results)

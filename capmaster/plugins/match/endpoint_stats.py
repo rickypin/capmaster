@@ -230,34 +230,50 @@ class EndpointStatsCollector:
             self._process_match(match)
 
     def _process_match(self, match: ConnectionMatch) -> None:
-        """
-        Process a single match with server detection.
+        """Process a single match with server detection.
+
+        This implementation respects the server/client roles determined by
+        :class:`ServerDetector`, including service_list hints, and aligns TTL
+        statistics with the potentially corrected roles.
 
         Args:
             match: Matched connection pair from files A and B
         """
-        # Use the client/server roles from the connections directly
-        # (these may have been aligned by the matcher to ensure port consistency)
-        # But still detect to get confidence levels
-        info_a = self.detector.detect(match.conn1)
-        info_b = self.detector.detect(match.conn2)
+        # Detect server/client roles for both connections. This may differ from
+        # the raw TcpConnection roles if service_list/cardinality/heuristics
+        # indicate a swap is needed.
+        info_a: ServerInfo = self.detector.detect(match.conn1)
+        info_b: ServerInfo = self.detector.detect(match.conn2)
 
         # Get protocol from connections
         protocol_a = match.conn1.protocol
         protocol_b = match.conn2.protocol
 
-        # Create endpoint tuples using the connection's client/server roles
-        # (not the detector's results, which may differ after alignment)
+        # Determine if roles should be swapped relative to the original
+        # TcpConnection direction. This mirrors the logic used in
+        # _improve_server_detection.
+        needs_swap_a = (
+            info_a.server_ip != match.conn1.server_ip
+            or info_a.server_port != match.conn1.server_port
+        )
+        needs_swap_b = (
+            info_b.server_ip != match.conn2.server_ip
+            or info_b.server_port != match.conn2.server_port
+        )
+
+        # Create endpoint tuples using the detector's client/server roles so
+        # that topology/endpoint statistics consistently reflect the
+        # service_list-aware server detection.
         tuple_a = EndpointTuple(
-            client_ip=match.conn1.client_ip,
-            server_ip=match.conn1.server_ip,
-            server_port=match.conn1.server_port,
+            client_ip=info_a.client_ip,
+            server_ip=info_a.server_ip,
+            server_port=info_a.server_port,
             protocol=protocol_a,
         )
         tuple_b = EndpointTuple(
-            client_ip=match.conn2.client_ip,
-            server_ip=match.conn2.server_ip,
-            server_port=match.conn2.server_port,
+            client_ip=info_b.client_ip,
+            server_ip=info_b.server_ip,
+            server_port=info_b.server_port,
             protocol=protocol_b,
         )
 
@@ -271,15 +287,28 @@ class EndpointStatsCollector:
         confidence = self._min_confidence(info_a.confidence, info_b.confidence)
         self.confidences[pair_key].append(confidence)
 
-        # Track TTL values
-        if match.conn1.client_ttl > 0:
-            self.client_ttls_a[pair_key].append(match.conn1.client_ttl)
-        if match.conn1.server_ttl > 0:
-            self.server_ttls_a[pair_key].append(match.conn1.server_ttl)
-        if match.conn2.client_ttl > 0:
-            self.client_ttls_b[pair_key].append(match.conn2.client_ttl)
-        if match.conn2.server_ttl > 0:
-            self.server_ttls_b[pair_key].append(match.conn2.server_ttl)
+        # Track TTL values, swapping client/server TTLs when detector indicates
+        # that roles should be swapped. This keeps "client hops" and
+        # "server hops" aligned with the corrected direction.
+        client_ttl_a = match.conn1.client_ttl
+        server_ttl_a = match.conn1.server_ttl
+        if needs_swap_a:
+            client_ttl_a, server_ttl_a = server_ttl_a, client_ttl_a
+
+        if client_ttl_a > 0:
+            self.client_ttls_a[pair_key].append(client_ttl_a)
+        if server_ttl_a > 0:
+            self.server_ttls_a[pair_key].append(server_ttl_a)
+
+        client_ttl_b = match.conn2.client_ttl
+        server_ttl_b = match.conn2.server_ttl
+        if needs_swap_b:
+            client_ttl_b, server_ttl_b = server_ttl_b, client_ttl_b
+
+        if client_ttl_b > 0:
+            self.client_ttls_b[pair_key].append(client_ttl_b)
+        if server_ttl_b > 0:
+            self.server_ttls_b[pair_key].append(server_ttl_b)
 
         # Track total bytes
         self.total_bytes_a[pair_key] += match.conn1.total_bytes
