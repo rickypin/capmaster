@@ -452,7 +452,12 @@ def _determine_matching_strategy(
     match_file2: Path,
     mode: str,
 ) -> tuple[bool, bool, bool]:
-    """Determine whether to use F5, TLS, behavioral or feature-based matching."""
+    """Determine whether to use F5, TLS, behavioral or feature-based matching.
+
+    In non-behavioral modes this performs lightweight header-level detection
+    only. The actual matching pipeline may then use F5/TLS/feature in multiple
+    stages.
+    """
 
     use_f5_matching = False
     use_tls_matching = False
@@ -461,8 +466,10 @@ def _determine_matching_strategy(
     if use_behavioral:
         logger.info("Behavioral-only mode selected - skipping F5/TLS detection")
     else:
-        # Check for F5 Ethernet Trailer first (highest priority)
-        detect_task = progress.add_task("[cyan]Detecting F5 Ethernet Trailer...", total=2)
+        # Check for F5 Ethernet Trailer (highest priority stage)
+        detect_task = progress.add_task(
+            "[cyan]Detecting F5 Ethernet Trailer...", total=2
+        )
         f5_matcher = F5Matcher()
 
         has_f5_file1 = f5_matcher.detect_f5_trailer(match_file1)
@@ -474,45 +481,50 @@ def _determine_matching_strategy(
         use_f5_matching = has_f5_file1 and has_f5_file2
 
         if use_f5_matching:
-            logger.info("F5 Ethernet Trailer detected in both files - using F5 matching mode")
-        else:
-            if has_f5_file1 or has_f5_file2:
-                logger.warning(
-                    f"F5 trailer found in {'file1' if has_f5_file1 else 'file2'} only - "
-                    "will check for TLS Client Hello"
-                )
+            logger.info(
+                "F5 Ethernet Trailer detected in both files - enabling F5 matching stage"
+            )
+        elif has_f5_file1 or has_f5_file2:
+            logger.warning(
+                f"F5 trailer found in {'file1' if has_f5_file1 else 'file2'} only - "
+                "F5-based matching will be disabled for this run"
+            )
 
-            # Check for TLS Client Hello if F5 is not available (medium priority)
-            detect_task = progress.add_task("[cyan]Detecting TLS Client Hello...", total=2)
-            tls_matcher = TlsMatcher()
+        # Check for TLS Client Hello independently of F5 so that both stages can run.
+        detect_task = progress.add_task(
+            "[cyan]Detecting TLS Client Hello...", total=2
+        )
+        tls_matcher = TlsMatcher()
 
-            has_tls_file1 = tls_matcher.detect_tls_client_hello(match_file1)
-            progress.update(detect_task, advance=1)
+        has_tls_file1 = tls_matcher.detect_tls_client_hello(match_file1)
+        progress.update(detect_task, advance=1)
 
-            has_tls_file2 = tls_matcher.detect_tls_client_hello(match_file2)
-            progress.update(detect_task, advance=1)
+        has_tls_file2 = tls_matcher.detect_tls_client_hello(match_file2)
+        progress.update(detect_task, advance=1)
 
-            use_tls_matching = has_tls_file1 and has_tls_file2
+        use_tls_matching = has_tls_file1 and has_tls_file2
 
-            if use_tls_matching:
-                logger.info("TLS Client Hello detected in both files - using TLS matching mode")
-            else:
-                if has_tls_file1 or has_tls_file2:
-                    logger.warning(
-                        f"TLS Client Hello found in {'file1' if has_tls_file1 else 'file2'} only - "
-                        "falling back to feature-based matching"
-                    )
-                logger.info("Using feature-based matching mode")
+        if use_tls_matching:
+            logger.info(
+                "TLS Client Hello detected in both files - enabling TLS matching stage"
+            )
+        elif has_tls_file1 or has_tls_file2:
+            logger.warning(
+                f"TLS Client Hello found in {'file1' if has_tls_file1 else 'file2'} only - "
+                "TLS-based matching will be disabled for this run"
+            )
 
     # Log final matching strategy
-    if use_f5_matching:
-        logger.info("Final matching strategy: F5 Ethernet Trailer")
-    elif use_tls_matching:
-        logger.info("Final matching strategy: TLS Client Hello")
-    elif use_behavioral:
+    if use_behavioral:
         logger.info("Final matching strategy: Behavioral (behavior-only)")
     else:
-        logger.info("Final matching strategy: Feature-based")
+        stages = []
+        if use_f5_matching:
+            stages.append("F5")
+        if use_tls_matching:
+            stages.append("TLS")
+        stages.append("feature-based")
+        logger.info("Final matching strategy: " + " + ".join(stages))
 
     return use_f5_matching, use_tls_matching, use_behavioral
 
@@ -640,64 +652,23 @@ def _match_connections_with_strategy(
     behavioral_weight_bytes: float,
     service_list: Path | None = None,
 ) -> tuple[ConnectionMatcher | BehavioralMatcher, list]:
-    """Perform matching using F5, TLS, behavioral or feature-based strategy."""
+    """Perform matching using F5, TLS, behavioral or feature-based strategy.
 
-    matcher: ConnectionMatcher | BehavioralMatcher
-    matches: list
+    In non-behavioral modes this runs a multi-stage header/feature pipeline:
+    F5 (if available) -> TLS (if available) -> feature/IPID-based matching.
+    """
 
-    if use_f5_matching:
-        match_task = progress.add_task(
-            "[green]Matching connections using F5 trailers...", total=1
-        )
-        logger.info("Matching connections using F5 Ethernet Trailer...")
-
-        f5_matcher = F5Matcher()
-        f5_matches = f5_matcher.match(match_file1, match_file2)
-        logger.info(f"Found {len(f5_matches)} F5-based matches")
-
-        # Convert F5 matches to standard ConnectionMatch format
-        matches = convert_f5_matches_to_connection_matches(
-            f5_matches, connections1, connections2
-        )
-        progress.update(match_task, advance=1)
-
-        # Create a matcher instance for statistics calculation
-        matcher = ConnectionMatcher(
-            bucket_strategy=BucketStrategy("auto"),
-            score_threshold=score_threshold,
-            match_mode=MatchMode(match_mode),
-        )
-    elif use_tls_matching:
-        match_task = progress.add_task(
-            "[green]Matching connections using TLS Client Hello...", total=1
-        )
-        logger.info("Matching connections using TLS Client Hello...")
-
-        tls_matcher = TlsMatcher()
-        tls_matches = tls_matcher.match(match_file1, match_file2)
-        logger.info(f"Found {len(tls_matches)} TLS-based matches")
-
-        # Convert TLS matches to standard ConnectionMatch format
-        matches = convert_tls_matches_to_connection_matches(
-            tls_matches, connections1, connections2
-        )
-        progress.update(match_task, advance=1)
-
-        # Create a matcher instance for statistics calculation
-        matcher = ConnectionMatcher(
-            bucket_strategy=BucketStrategy("auto"),
-            score_threshold=score_threshold,
-            match_mode=MatchMode(match_mode),
-        )
-    elif use_behavioral:
-        # Behavioral-only matching
+    # Behavioral-only matching keeps its own dedicated path.
+    if use_behavioral:
         detector_task = progress.add_task(
             "[yellow]Analyzing server/client roles...", total=1
         )
         logger.info(
             "Performing cardinality analysis for server detection (behavioral mode)..."
         )
-        detector = _create_and_populate_detector(connections1, connections2, service_list=service_list)
+        detector = _create_and_populate_detector(
+            connections1, connections2, service_list=service_list
+        )
         connections1 = _improve_server_detection(connections1, detector)
         connections2 = _improve_server_detection(connections2, detector)
         progress.update(detector_task, advance=1)
@@ -720,34 +691,124 @@ def _match_connections_with_strategy(
         matches = matcher.match(connections1, connections2)
         logger.info(f"Found {len(matches)} matches (behavioral)")
         progress.update(match_task, advance=1)
-    else:
-        # Feature-based matching (original logic)
-        detector_task = progress.add_task(
-            "[yellow]Analyzing server/client roles...", total=1
-        )
-        logger.info("Performing cardinality analysis for server detection...")
+        return matcher, matches
 
-        detector = _create_and_populate_detector(connections1, connections2, service_list=service_list)
-        connections1 = _improve_server_detection(connections1, detector)
-        connections2 = _improve_server_detection(connections2, detector)
-        logger.info("Server detection improved using cardinality analysis")
-        progress.update(detector_task, advance=1)
+    # Helper to remove already matched connections from the candidate pools.
+    def _remove_matched(
+        remaining1: list[TcpConnection],
+        remaining2: list[TcpConnection],
+        new_matches: list[ConnectionMatch],
+    ) -> tuple[list[TcpConnection], list[TcpConnection]]:
+        if not new_matches:
+            return remaining1, remaining2
+        matched1_ids = {id(m.conn1) for m in new_matches}
+        matched2_ids = {id(m.conn2) for m in new_matches}
+        remaining1 = [c for c in remaining1 if id(c) not in matched1_ids]
+        remaining2 = [c for c in remaining2 if id(c) not in matched2_ids]
+        return remaining1, remaining2
 
-        # Match connections
-        match_task = progress.add_task("[green]Matching connections...", total=1)
-        logger.info("Matching connections...")
-        bucket_enum = BucketStrategy(bucket_strategy)
-        match_mode_enum = MatchMode(match_mode)
-        matcher = ConnectionMatcher(
-            bucket_strategy=bucket_enum,
-            score_threshold=score_threshold,
-            match_mode=match_mode_enum,
+    remaining1 = list(connections1)
+    remaining2 = list(connections2)
+    all_matches: list[ConnectionMatch] = []
+
+    # Stage 1: F5-based matching (if enabled).
+    if use_f5_matching:
+        match_task = progress.add_task(
+            "[green]Matching connections using F5 trailers...", total=1
         )
-        matches = matcher.match(connections1, connections2)
-        logger.info(f"Found {len(matches)} matches")
+        logger.info("Matching connections using F5 Ethernet Trailer...")
+
+        f5_matcher = F5Matcher()
+        f5_matches = f5_matcher.match(match_file1, match_file2)
+        logger.info(f"Found {len(f5_matches)} F5-based matches")
+
+        f5_conn_matches = convert_f5_matches_to_connection_matches(
+            f5_matches, remaining1, remaining2
+        )
         progress.update(match_task, advance=1)
 
-    return matcher, matches
+        if f5_conn_matches:
+            logger.info(
+                "Converted %d F5-based matches to ConnectionMatch objects",
+                len(f5_conn_matches),
+            )
+        else:
+            logger.info("No F5-based matches could be converted to connections")
+
+        all_matches.extend(f5_conn_matches)
+        remaining1, remaining2 = _remove_matched(remaining1, remaining2, f5_conn_matches)
+
+    # Stage 2: TLS-based matching on remaining connections (if enabled).
+    if use_tls_matching:
+        match_task = progress.add_task(
+            "[green]Matching connections using TLS Client Hello...", total=1
+        )
+        logger.info("Matching connections using TLS Client Hello...")
+
+        tls_matcher = TlsMatcher()
+        tls_matches = tls_matcher.match(match_file1, match_file2)
+        logger.info(f"Found {len(tls_matches)} TLS-based matches")
+
+        tls_conn_matches = convert_tls_matches_to_connection_matches(
+            tls_matches, remaining1, remaining2
+        )
+        progress.update(match_task, advance=1)
+
+        if not tls_conn_matches:
+            logger.warning(
+                "TLS Client Hello detected in both files but produced 0 "
+                "connection-level matches"
+            )
+
+        all_matches.extend(tls_conn_matches)
+        remaining1, remaining2 = _remove_matched(remaining1, remaining2, tls_conn_matches)
+
+    # Decide whether to run server detection for the feature-based stage.
+    # For pure feature-based runs (no F5/TLS), we keep the original behaviour and
+    # run server detection. When F5/TLS stages were used, we match the previous
+    # fallback behaviour and skip server detection for the remaining subset.
+    run_server_detection = not use_f5_matching and not use_tls_matching
+
+    bucket_enum = BucketStrategy(bucket_strategy)
+    match_mode_enum = MatchMode(match_mode)
+    matcher = ConnectionMatcher(
+        bucket_strategy=bucket_enum,
+        score_threshold=score_threshold,
+        match_mode=match_mode_enum,
+    )
+
+    # Stage 3: feature/IPID-based matching on remaining connections.
+    if remaining1 and remaining2:
+        if run_server_detection:
+            detector_task = progress.add_task(
+                "[yellow]Analyzing server/client roles...", total=1
+            )
+            logger.info("Performing cardinality analysis for server detection...")
+
+            detector = _create_and_populate_detector(
+                remaining1, remaining2, service_list=service_list
+            )
+            remaining1 = _improve_server_detection(remaining1, detector)
+            remaining2 = _improve_server_detection(remaining2, detector)
+            logger.info("Server detection improved using cardinality analysis")
+            progress.update(detector_task, advance=1)
+
+        match_task = progress.add_task(
+            "[green]Matching connections (feature-based)...", total=1
+        )
+        logger.info("Matching connections using feature/IPID-based matcher...")
+        feature_matches = matcher.match(remaining1, remaining2)
+        logger.info(
+            "Found %d matches using feature-based matcher", len(feature_matches)
+        )
+        progress.update(match_task, advance=1)
+        all_matches.extend(feature_matches)
+    else:
+        logger.info(
+            "No remaining connections for feature-based matching after F5/TLS stages"
+        )
+
+    return matcher, all_matches
 
 
 def _handle_outputs(
