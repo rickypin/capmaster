@@ -50,6 +50,7 @@ def discover_plugins() -> None:
         "capmaster.plugins.compare",
         "capmaster.plugins.preprocess",
         "capmaster.plugins.topology",
+        "capmaster.plugins.streamdiff",
     ]
 
     for module_name in plugin_modules:

@@ -34,6 +34,8 @@ def cli(ctx: click.Context, verbose: int) -> None:
       analyze               Analyze PCAP files and generate statistics
       match                 Match TCP connections between PCAP files
       compare               Compare TCP connections at packet level between PCAP files
+      streamdiff           Compare TCP stream packets and report A-only/B-only packets
+
       comparative-analysis  Perform comparative analysis between two PCAP files
       preprocess            Preprocess PCAP files before further analysis
       clean                 Remove statistics directories and their contents
