@@ -270,6 +270,10 @@ def format_topology(topology: TopologyInfo) -> str:
         for idx, service in enumerate(topology.services, start=1):
             proto_str = _format_protocol(service.protocol)
             lines.append(f"=== Service {idx}: Port {service.server_port} ({proto_str}) ===")
+            lines.append(
+                "    (Service is keyed by the server port as observed at Capture Point A; "
+                "per-capture server ports are shown below.)"
+            )
             lines.append("")
 
             sequence = _determine_capture_sequence_from_hops(
@@ -329,7 +333,6 @@ def format_single_topology(topology: SingleTopologyInfo, *, capture_label: str =
             client_list = _format_ip_list(service.client_ips)
             server_list = _format_server_list_single_port(service.server_ips, service.server_port)
 
-
             lines.append("")
             lines.append(
                 _build_single_communication_path_for_service(
@@ -337,6 +340,7 @@ def format_single_topology(topology: SingleTopologyInfo, *, capture_label: str =
                     service,
                     client_list,
                     server_list,
+                    capture_label=capture_label,
                 )
             )
             lines.append("")
@@ -345,11 +349,10 @@ def format_single_topology(topology: SingleTopologyInfo, *, capture_label: str =
                     service,
                     client_list,
                     server_list,
+                    capture_label=capture_label,
                 )
             )
             lines.append("")
-
-
 
     lines.append("```")
     return "\n".join(lines)
@@ -577,6 +580,8 @@ def _build_single_communication_path_for_service(
     service: ServiceTopologyInfo,
     client_list: str,
     server_list: str,
+    *,
+    capture_label: str,
 ) -> str:
     """Build communication path for a single service in single-capture scenario.
 
@@ -586,7 +591,7 @@ def _build_single_communication_path_for_service(
     """
     nodes = [
         "Client",
-        "Capture Point A",
+        f"Capture Point {capture_label}",
         "Server",
     ]
     edges = [
@@ -600,6 +605,8 @@ def _describe_single_capture_position_for_service(
     service: ServiceTopologyInfo,
     client_list: str,
     server_list: str,
+    *,
+    capture_label: str,
 ) -> str:
     """Summarize capture point distance for a single service using hops only."""
     client_hops = service.client_hops
@@ -607,22 +614,22 @@ def _describe_single_capture_position_for_service(
 
     if client_hops is not None and server_hops is not None:
         return (
-            f"Capture Point A: Clients {client_list} -> Servers {server_list}, "
+            f"Capture Point {capture_label}: Clients {client_list} -> Servers {server_list}, "
             f"{client_hops} hops away from the client and {server_hops} hops away from the server."
         )
 
     if client_hops is None and server_hops is None:
         return (
-            "Capture Point A: TTL data was unavailable to describe its distance "
+            f"Capture Point {capture_label}: TTL data was unavailable to describe its distance "
             "to the client or the server."
         )
     if client_hops is None:
         return (
-            f"Capture Point A: Clients {client_list} -> Servers {server_list}, "
+            f"Capture Point {capture_label}: Clients {client_list} -> Servers {server_list}, "
             f"{server_hops} hops away from the server; client TTL data was unavailable."
         )
     return (
-        f"Capture Point A: Clients {client_list} -> Servers {server_list}, "
+        f"Capture Point {capture_label}: Clients {client_list} -> Servers {server_list}, "
         f"{client_hops} hops away from the client; server TTL data was unavailable."
     )
 

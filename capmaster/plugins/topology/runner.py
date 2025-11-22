@@ -192,10 +192,24 @@ def _run_single_capture_pipeline(
             service_data[service_key]["server_ips"].add(info.server_ip)
             service_data[service_key]["count"] += 1
 
-            if connection.client_ttl > 0:
-                service_data[service_key]["client_ttls"].append(connection.client_ttl)
-            if connection.server_ttl > 0:
-                service_data[service_key]["server_ttls"].append(connection.server_ttl)
+            # Align TTL direction with the final server/client roles determined by
+            # ServerDetector. When the detector decides that the true server is on
+            # the opposite side of the TcpConnection, swap client/server TTLs so
+            # that "client_hops" and "server_hops" in the final topology reflect
+            # the corrected direction instead of the raw SYN-based guess.
+            needs_swap = (
+                info.server_ip != connection.server_ip
+                or info.server_port != connection.server_port
+            )
+            client_ttl = connection.client_ttl
+            server_ttl = connection.server_ttl
+            if needs_swap:
+                client_ttl, server_ttl = server_ttl, client_ttl
+
+            if client_ttl > 0:
+                service_data[service_key]["client_ttls"].append(client_ttl)
+            if server_ttl > 0:
+                service_data[service_key]["server_ttls"].append(server_ttl)
 
         progress.update(detector_task, advance=1)
 
