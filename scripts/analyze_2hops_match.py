@@ -42,6 +42,7 @@ class CaseResult:
     normal_ipid_matches: int = 0
     f5_matches: int = 0
     tls_matches: int = 0
+    evidence_types: List[str] | None = None
 
 
 def run_match(case_dir: Path, bucket: str, match_json: Path | None = None) -> str:
@@ -110,8 +111,29 @@ def parse_output(case: str, output: str) -> CaseResult:
     return res
 
 
+def _normalize_evidence_token(token: str) -> str:
+    """Normalize a single evidence token to its *kind*.
+
+    Examples:
+      - "ipid(n=...,r=...)" -> "ipid"
+      - "ipid*(n=...,r=...)" -> "ipid*"
+      - "F5_TRAILER(0.99)" -> "F5_TRAILER"
+      - "TLS_CLIENT_HELLO(1.00)" -> "TLS_CLIENT_HELLO"
+    """
+    token = token.strip()
+    if not token:
+        return ""
+    # Strip any trailing comma
+    if token.endswith(","):
+        token = token[:-1]
+    # Split at first "(" to drop parameters
+    if "(" in token:
+        token = token.split("(", 1)[0]
+    return token
+
+
 def count_evidence_from_json(match_json: Path, res: CaseResult) -> None:
-    """Populate IPID/F5/TLS statistics for a case based on match JSON output.
+    """Populate IPID/F5/TLS statistics and evidence kinds for a case.
 
     The JSON structure is produced by MatchSerializer.save_matches and contains:
       - "matches": [{"score": {"evidence": str, ...}}, ...]
@@ -124,6 +146,8 @@ def count_evidence_from_json(match_json: Path, res: CaseResult) -> None:
             data = json.load(f)
     except (OSError, json.JSONDecodeError):
         return
+
+    seen_kinds: set[str] = set(res.evidence_types or [])
 
     for match in data.get("matches", []):
         score = match.get("score", {})
@@ -140,6 +164,15 @@ def count_evidence_from_json(match_json: Path, res: CaseResult) -> None:
             res.f5_matches += 1
         if "TLS_CLIENT_HELLO(" in evidence:
             res.tls_matches += 1
+
+        # Collect evidence kinds
+        for raw_token in evidence.split():
+            kind = _normalize_evidence_token(raw_token)
+            if kind:
+                seen_kinds.add(kind)
+
+    # Store sorted list for stable JSON/Markdown output
+    res.evidence_types = sorted(seen_kinds)
 
 
 def format_markdown(results: List[CaseResult]) -> str:
@@ -170,12 +203,13 @@ def format_markdown(results: List[CaseResult]) -> str:
     lines.append("")
 
     # Table header
-    lines.append("| 用例 | f1连接 | f2连接 | 匹配对 | 强IPID | 普通IPID | F5 | TLS | 平均分 |")
-    lines.append("|------|--------|--------|--------|--------|----------|----|-----|--------|")
+    lines.append("| 用例 | f1连接 | f2连接 | 匹配对 | 强IPID | 普通IPID | F5 | TLS | 平均分 | Evidence种类 |")
+    lines.append("|------|--------|--------|--------|--------|----------|----|-----|--------|--------------|")
     for r in results:
+        evidence_col = ",".join(r.evidence_types) if r.evidence_types else ""
         lines.append(
             f"| {r.case} | {r.total1} | {r.total2} | {r.matched_pairs} | "
-            f"{r.strong_ipid_matches} | {r.normal_ipid_matches} | {r.f5_matches} | {r.tls_matches} | {r.average_score:.2f} |"
+            f"{r.strong_ipid_matches} | {r.normal_ipid_matches} | {r.f5_matches} | {r.tls_matches} | {r.average_score:.2f} | {evidence_col} |"
         )
     lines.append("")
     return "\n".join(lines)
