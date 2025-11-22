@@ -310,11 +310,11 @@ def _run_dual_single_fallback(file_a: Path, file_b: Path, service_list: Path | N
     lines.append("")
 
     lines.append(f"=== Single-capture topology for Capture Point A ({file_a.name}) ===")
-    lines.append(format_single_topology(single_a))
+    lines.append(format_single_topology(single_a, capture_label="A"))
     lines.append("")
 
     lines.append(f"=== Single-capture topology for Capture Point B ({file_b.name}) ===")
-    lines.append(format_single_topology(single_b))
+    lines.append(format_single_topology(single_b, capture_label="B"))
 
     return "\n".join(lines)
 
