@@ -327,14 +327,35 @@ class ConnectionMatcher:
                     micro_score = self.scorer.score_microflow(conn1, conn2)
                     if micro_score and micro_score.is_valid_match(self.score_threshold):
                         scored_pairs.append((0, micro_score.normalized_score, i, j, conn1, conn2, micro_score))
+                        continue
+
+                    # Second-stage NAT-agnostic handshake scoring (no IPID requirement)
+                    nat_score = self.scorer.score_handshake_nat_agnostic(conn1, conn2)
+                    if nat_score and nat_score.is_valid_match(self.score_threshold):
+                        # Treat NAT-agnostic matches similar to microflow (force_accept=0)
+                        scored_pairs.append((0, nat_score.normalized_score, i, j, conn1, conn2, nat_score))
                     continue
 
-                # Only score if pre-checks pass
+                # At this point IPID prefilter passed. We still apply the primary
+                # IPID-based scorer first, but if it does not accept the pair we
+                # give handshake microflow logic a chance (this is important for
+                # cases like tcp.port==45220 where IPID is strong but other
+                # features are sparse).
                 score = self.scorer.score(conn1, conn2)
 
                 if score.is_valid_match(self.score_threshold):
                     # Prioritize strong IPID matches in sorting
                     scored_pairs.append((1 if score.force_accept else 0, score.normalized_score, i, j, conn1, conn2, score))
+                    continue
+
+                # Fallback for very short handshake microflows: reuse the NAT-agnostic
+                # scorer even when IPID prefilter passed, but only when the primary
+                # scorer did not accept. This keeps existing strong matches
+                # unchanged while allowing ISN+IPID+time evidence to rescue
+                # Half-open microflows.
+                nat_score = self.scorer.score_handshake_nat_agnostic(conn1, conn2)
+                if nat_score and nat_score.is_valid_match(self.score_threshold):
+                    scored_pairs.append((0, nat_score.normalized_score, i, j, conn1, conn2, nat_score))
 
         # Sort by (force_accept, normalized score, stream_id1, stream_id2) descending
         # Using stream IDs as tie-breakers ensures stable, deterministic sorting
@@ -393,6 +414,12 @@ class ConnectionMatcher:
                     micro_score = self.scorer.score_microflow(conn1, conn2)
                     if micro_score and micro_score.is_valid_match(self.score_threshold):
                         matches.append(ConnectionMatch(conn1, conn2, micro_score))
+                        continue
+
+                    # Second-stage NAT-agnostic handshake scoring (no IPID requirement)
+                    nat_score = self.scorer.score_handshake_nat_agnostic(conn1, conn2)
+                    if nat_score and nat_score.is_valid_match(self.score_threshold):
+                        matches.append(ConnectionMatch(conn1, conn2, nat_score))
                     continue
 
                 # Only score if pre-checks pass

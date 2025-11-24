@@ -56,9 +56,12 @@ class MatchScore:
     # Microflow acceptance flag: when True, this match is accepted by microflow rule without IPID>=2
     microflow_accept: bool = False
 
+    # NAT-agnostic acceptance flag: when True, this match is accepted based on
+    # strong NAT-agnostic handshake evidence without requiring IPID.
+    nat_agnostic_accept: bool = False
+
     def is_valid_match(self, threshold: float = 0.60) -> bool:
-        """
-        Check if this is a valid match.
+        """Check if this is a valid match.
 
         Args:
             threshold: Minimum normalized score required (default: 0.60)
@@ -66,9 +69,10 @@ class MatchScore:
         Returns:
             True if ANY of the following holds:
             - microflow_accept is True (auto-accept for microflow with strong handshake evidence), or
+            - nat_agnostic_accept is True (auto-accept for NAT-agnostic handshake matches), or
             - IPID requirement is met and (normalized score meets threshold or force_accept is True)
         """
-        if self.microflow_accept:
+        if self.microflow_accept or self.nat_agnostic_accept:
             return True
         return self.ipid_match and (self.normalized_score >= threshold or self.force_accept)
 
@@ -142,9 +146,208 @@ class ConnectionScorer:
     MICRO_W_TTL = 0.10
     MICRO_W_LEN = 0.10
 
+    # NAT-agnostic handshake scoring configuration (second-stage)
+    # Default threshold for normal handshake flows (with richer features like TS/length/payload)
+    HANDSHAKE_NAT_THRESHOLD = 0.85
+    HANDSHAKE_NAT_MIN_EVIDENCE = 0.50
+
+    # Specialized acceptance for extreme handshake microflows (Half-open, no data):
+    # allow ISN+IPID+time+port to dominate even when SYN options differ.
+    HANDSHAKE_NAT_MICROFLOW_IPID_MIN = 2
+
+    # NAT-agnostic handshake feature weights (sum to 1.0)
+    NAT_W_SYN = 0.30
+    NAT_W_ISN_CLIENT = 0.25
+    NAT_W_ISN_SERVER = 0.10
+    NAT_W_TIMESTAMP = 0.15
+    NAT_W_PAYLOAD = 0.05
+    NAT_W_LENGTH = 0.10
+    NAT_W_TTL = 0.05
+
+    # For extreme handshake microflows across distant taps, allow a larger
+    # absolute time gap when we still see consistent ISN/IPID, so that
+    # Half-open flows like tcp.port==45220 can be rescued by NAT-agnostic
+    # logic even if clocks are skewed by tens of seconds.
+    HANDSHAKE_NAT_MICROFLOW_TIME_MAX_GAP = 60.0
+
     def __init__(self) -> None:
         """Initialize the scorer."""
         pass
+
+    # --- NAT-agnostic handshake scoring (second-stage) ---
+
+    def score_handshake_nat_agnostic(self, conn1: TcpConnection, conn2: TcpConnection) -> MatchScore | None:
+        """Score handshake similarity in a NAT-agnostic way.
+
+        This is used as **second stage** matching on pairs that are not accepted by
+        the primary IPID-based scorer. It deliberately **does not** treat IPID as
+        a hard requirement and only uses it (and TTL) as optional bonus
+        evidence.
+
+        The method focuses on handshake / very short flows where we still have
+        access to:
+        - SYN options
+        - client/server ISN
+        - TCP timestamps
+        - first payload hashes
+        - length signature
+        - TTL (bonus)
+        - IPID (bonus)
+
+        Returns a MatchScore with ipid_match=False if accepted, or None when
+        evidence is insufficient.
+        """
+        # Basic time sanity: require some overlap or small gap (< STRONG_TIME_MAX_GAP)
+        start_max = max(conn1.first_packet_time, conn2.first_packet_time)
+        end_min = min(conn1.last_packet_time, conn2.last_packet_time)
+        gap = 0.0
+        if end_min < start_max:
+            gap = start_max - end_min
+            if gap > self.HANDSHAKE_NAT_MICROFLOW_TIME_MAX_GAP:
+                # For very large gaps we bail out early even for microflows.
+                return None
+        elif start_max - end_min > self.STRONG_TIME_MAX_GAP:
+            # No ordering issues but the windows are far apart in time; for normal
+            # flows we are strict here, while the microflow fallback below will
+            # consider a relaxed bound.
+            gap = start_max - end_min
+            return None
+
+        score = 0.0
+        avail = 0.0
+        evidence_parts: list[str] = ["nat2"]
+
+        # 1. SYN options fingerprint (soft feature: presence contributes to evidence mass,
+        #    but equality is **not** mandatory for acceptance, to tolerate MSS clamping).
+        has_syn1 = bool(conn1.syn_options)
+        has_syn2 = bool(conn2.syn_options)
+        if has_syn1 or has_syn2:
+            # Count as available evidence if either side observed SYN options
+            avail += self.NAT_W_SYN
+            if has_syn1 and has_syn2 and conn1.syn_options == conn2.syn_options:
+                score += self.NAT_W_SYN
+                evidence_parts.append("synopt")
+
+        # 2. Client ISN
+        if has_syn1 or has_syn2:
+            avail += self.NAT_W_ISN_CLIENT
+            if conn1.client_isn and conn2.client_isn and conn1.client_isn == conn2.client_isn:
+                score += self.NAT_W_ISN_CLIENT
+                evidence_parts.append("isnC")
+
+        # 3. Server ISN
+        if has_syn1 or has_syn2:
+            avail += self.NAT_W_ISN_SERVER
+            if conn1.server_isn and conn2.server_isn and conn1.server_isn == conn2.server_isn:
+                score += self.NAT_W_ISN_SERVER
+                evidence_parts.append("isnS")
+
+        # 4. TCP timestamp (TSval/TSecr)
+        has_ts1 = bool(conn1.tcp_timestamp_tsval or conn1.tcp_timestamp_tsecr)
+        has_ts2 = bool(conn2.tcp_timestamp_tsval or conn2.tcp_timestamp_tsecr)
+        if has_ts1 or has_ts2:
+            avail += self.NAT_W_TIMESTAMP
+            tsval_match = (
+                conn1.tcp_timestamp_tsval
+                and conn2.tcp_timestamp_tsval
+                and conn1.tcp_timestamp_tsval == conn2.tcp_timestamp_tsval
+            )
+            tsecr_match = (
+                conn1.tcp_timestamp_tsecr
+                and conn2.tcp_timestamp_tsecr
+                and conn1.tcp_timestamp_tsecr != "0"
+                and conn1.tcp_timestamp_tsecr == conn2.tcp_timestamp_tsecr
+            )
+            if tsval_match or tsecr_match:
+                score += self.NAT_W_TIMESTAMP
+                evidence_parts.append("ts")
+
+        # 5. First payload hashes (direction-insensitive OR)
+        if conn1.client_payload_md5 and conn2.client_payload_md5:
+            avail += self.NAT_W_PAYLOAD
+            if conn1.client_payload_md5 == conn2.client_payload_md5:
+                score += self.NAT_W_PAYLOAD
+                evidence_parts.append("dataC")
+        elif conn1.server_payload_md5 and conn2.server_payload_md5:
+            avail += self.NAT_W_PAYLOAD
+            if conn1.server_payload_md5 == conn2.server_payload_md5:
+                score += self.NAT_W_PAYLOAD
+                evidence_parts.append("dataS")
+
+        # 6. Length signature
+        if conn1.length_signature and conn2.length_signature:
+            avail += self.NAT_W_LENGTH
+            similarity = self._calculate_jaccard_similarity(conn1.length_signature, conn2.length_signature)
+            if similarity >= self.LENGTH_SIG_THRESHOLD:
+                score += self.NAT_W_LENGTH
+                evidence_parts.append(f"shape({similarity:.2f})")
+
+        # 7. TTL (bonus only if close)
+        can_ttl, ttl_close = self._ttl_close(conn1, conn2)
+        if can_ttl:
+            avail += self.NAT_W_TTL
+            if ttl_close:
+                score += self.NAT_W_TTL
+                evidence_parts.append("ttl")
+
+        # 8. IPID (bonus only; no hard requirement)
+        overlap = len(conn1.ipid_set & conn2.ipid_set)
+        if overlap > 0:
+            # Treat as small bonus feature; we don't adjust avail so that TTL/IPID stay soft
+            # but we expose evidence for observability.
+            evidence_parts.append(f"ipid({overlap})")
+
+        # If we have no evidence mass at all, bail out.
+        if avail <= 0.0:
+            return None
+
+        normalized = score / avail
+
+        # Evidence gating: require enough hard evidence mass before accepting
+        if avail < self.HANDSHAKE_NAT_MIN_EVIDENCE:
+            return None
+
+        # Fast path: normal NAT-agnostic flows with rich features
+        if normalized >= self.HANDSHAKE_NAT_THRESHOLD:
+            return MatchScore(
+                normalized_score=normalized,
+                raw_score=score,
+                available_weight=avail,
+                ipid_match=False,
+                evidence=" ".join(evidence_parts),
+                nat_agnostic_accept=True,
+            )
+
+        # Specialized path: extreme handshake microflows (very short, Half-open, no data) where we
+        # want ISN+IPID+time+port to dominate, even if SYN options differ (MSS clamping etc.).
+        is_micro = self._is_microflow(conn1, conn2)
+        no_payload = not (conn1.client_payload_md5 or conn1.server_payload_md5 or conn2.client_payload_md5 or conn2.server_payload_md5)
+        same_client_isn = bool(conn1.client_isn and conn2.client_isn and conn1.client_isn == conn2.client_isn)
+
+        strong_ipid = overlap >= self.HANDSHAKE_NAT_MICROFLOW_IPID_MIN
+
+        # For this very constrained microflow path we allow a much larger wall-clock
+        # skew between taps, as long as the clocks move forward (no reordering) and
+        # other evidence (ISN/IPID/ports) is strong. We deliberately do **not**
+        # require actual overlap here, only that the gap is within a relaxed bound.
+        gap = max(conn1.first_packet_time, conn2.first_packet_time) - min(conn1.last_packet_time, conn2.last_packet_time)
+        time_ok_for_micro = gap <= self.HANDSHAKE_NAT_MICROFLOW_TIME_MAX_GAP
+
+        if is_micro and no_payload and same_client_isn and strong_ipid and time_ok_for_micro:
+            # Build a synthetic, conservative MatchScore that clearly shows the nature
+            # of this acceptance in the evidence string.
+            evidence_parts.append("micro-isnC-ipid")
+            return MatchScore(
+                normalized_score=normalized,
+                raw_score=score,
+                available_weight=avail,
+                ipid_match=False,
+                evidence=" ".join(evidence_parts),
+                nat_agnostic_accept=True,
+            )
+
+        # Otherwise, not enough evidence for NAT-agnostic acceptance.
+        return None
 
     def score(
         self, conn1: TcpConnection, conn2: TcpConnection, use_payload: bool = True

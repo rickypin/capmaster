@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Tuple
+from typing import Literal, Tuple, Optional
 
 from capmaster.core.connection.matcher import ConnectionMatch
 from capmaster.plugins.match.endpoint_stats import EndpointStatsCollector, aggregate_by_service
 from capmaster.plugins.match.server_detector import ServerDetector
+from capmaster.plugins.analyze.modules.icmp_stats import IcmpStatsModule
 
 
 class TopologyAnalyzer:
@@ -50,14 +51,26 @@ class TopologyAnalyzer:
         # Build ServiceTopologyInfoDual for each service
         services = []
         for service_stats in service_stats_list:
-            # Calculate most common hops for this service
-            # Use the first endpoint pair's hops as representative
-            # (all pairs in the same service should have similar hops)
-            first_pair = service_stats.endpoint_pairs[0]
-            client_hops_a = first_pair.client_hops_a
-            server_hops_a = first_pair.server_hops_a
-            client_hops_b = first_pair.client_hops_b
-            server_hops_b = first_pair.server_hops_b
+            # Calculate representative hops for this service across all endpoint
+            # pairs. Using a small aggregation (median) guards against
+            # outliers in multi-path scenarios while remaining stable for the
+            # common case where all pairs share similar hops.
+            client_hops_a_values = [p.client_hops_a for p in service_stats.endpoint_pairs if p.client_hops_a is not None]
+            server_hops_a_values = [p.server_hops_a for p in service_stats.endpoint_pairs if p.server_hops_a is not None]
+            client_hops_b_values = [p.client_hops_b for p in service_stats.endpoint_pairs if p.client_hops_b is not None]
+            server_hops_b_values = [p.server_hops_b for p in service_stats.endpoint_pairs if p.server_hops_b is not None]
+
+            def _median_or_none(values: list[int | None]) -> int | None:
+                if not values:
+                    return None
+                sorted_vals = sorted(values)
+                mid = len(sorted_vals) // 2
+                return sorted_vals[mid]
+
+            client_hops_a = _median_or_none(client_hops_a_values)
+            server_hops_a = _median_or_none(server_hops_a_values)
+            client_hops_b = _median_or_none(client_hops_b_values)
+            server_hops_b = _median_or_none(server_hops_b_values)
 
             # Determine network position for this service
             position = self._determine_position(
@@ -96,16 +109,49 @@ class TopologyAnalyzer:
         )
 
     def _determine_position(
-        self, client_hops_a: int, server_hops_a: int, client_hops_b: int, server_hops_b: int
+        self,
+        client_hops_a: int | None,
+        server_hops_a: int | None,
+        client_hops_b: int | None,
+        server_hops_b: int | None,
     ) -> str:
-        server_delta_diff = server_hops_a - server_hops_b
+        """Derive a coarse position label from hop-based capture sequence.
 
-        if server_delta_diff > 0:
+        This method is kept for backward-compatibility with existing
+        expectations around the ``position`` field. The actual drawing order
+        and textual descriptions are driven by
+        :func:`_determine_capture_sequence_from_hops`, and this helper simply
+        projects that ordering into a legacy enum
+        (A_CLOSER_TO_CLIENT/B_CLOSER_TO_CLIENT/SAME_POSITION/UNKNOWN).
+        """
+        sequence = _determine_capture_sequence_from_hops(
+            client_hops_a,
+            server_hops_a,
+            client_hops_b,
+            server_hops_b,
+        )
+
+        if sequence == ("A", "B"):
             return "A_CLOSER_TO_CLIENT"
-        elif server_delta_diff < 0:
+        if sequence == ("B", "A"):
             return "B_CLOSER_TO_CLIENT"
-        else:
+
+        # If we could not derive a sequence but both capture points observe the
+        # same number of hops to the client, and both observe the same number of
+        # hops to the server (not necessarily equal between client and server),
+        # treat them as being at the same position. Otherwise fall back to
+        # UNKNOWN.
+        if (
+            client_hops_a is not None
+            and client_hops_b is not None
+            and server_hops_a is not None
+            and server_hops_b is not None
+            and client_hops_a == client_hops_b
+            and server_hops_a == server_hops_b
+        ):
             return "SAME_POSITION"
+
+        return "UNKNOWN"
 
 
 @dataclass
@@ -130,17 +176,17 @@ class ServiceTopologyInfoDual:
     server_ips_b: set[str]
     """Set of server IP addresses in file B"""
 
-    client_hops_a: int
-    """Number of network hops from capture point A to client"""
+    client_hops_a: int | None
+    """Number of network hops from capture point A to client (None if unavailable)"""
 
-    server_hops_a: int
-    """Number of network hops from capture point A to server"""
+    server_hops_a: int | None
+    """Number of network hops from capture point A to server (None if unavailable)"""
 
-    client_hops_b: int
-    """Number of network hops from capture point B to client"""
+    client_hops_b: int | None
+    """Number of network hops from capture point B to client (None if unavailable)"""
 
-    server_hops_b: int
-    """Number of network hops from capture point B to server"""
+    server_hops_b: int | None
+    """Number of network hops from capture point B to server (None if unavailable)"""
 
     position: str
     """Relative position of capture points (A_CLOSER_TO_CLIENT, B_CLOSER_TO_CLIENT, SAME_POSITION, UNKNOWN)"""
@@ -196,6 +242,26 @@ class ServiceTopologyInfo:
 
 
 @dataclass
+class IcmpUnreachableEventInfo:
+    """Aggregated ICMP destination unreachable event for single-capture topology.
+
+    Combines inner (embedded original client→server flow) and outer (ICMP
+    reporter→reported_to) information so that the Agent can see both which
+    service was affected and where along the path the error was generated.
+    """
+
+    client_ip: str
+    reporter_ip: str | None
+    reported_to_ip: str | None
+    icmp_code: int
+    inner_dst_ip: str
+    inner_protocol: int
+    inner_dst_port: int
+    count: int
+    hops_from_reporter: int | None
+
+
+@dataclass
 class SingleTopologyInfo:
     """Topology information for a single capture point with multiple services."""
 
@@ -205,6 +271,8 @@ class SingleTopologyInfo:
     services: list[ServiceTopologyInfo]
     """List of services detected in the capture, sorted by port number"""
 
+    icmp_unreachable_events: list[IcmpUnreachableEventInfo] = field(default_factory=list)
+    """Aggregated ICMP destination unreachable events observed in this capture."""
 
 def format_topology(topology: TopologyInfo) -> str:
     """
@@ -228,6 +296,10 @@ def format_topology(topology: TopologyInfo) -> str:
         for idx, service in enumerate(topology.services, start=1):
             proto_str = _format_protocol(service.protocol)
             lines.append(f"=== Service {idx}: Port {service.server_port} ({proto_str}) ===")
+            lines.append(
+                "    (Service is keyed by the server port as observed at Capture Point A; "
+                "per-capture server ports are shown below.)"
+            )
             lines.append("")
 
             sequence = _determine_capture_sequence_from_hops(
@@ -261,16 +333,19 @@ def format_topology(topology: TopologyInfo) -> str:
     return "\n".join(lines)
 
 
-def format_single_topology(topology: SingleTopologyInfo) -> str:
-    """
-    Format topology information for a single capture point with multiple services.
+def format_single_topology(topology: SingleTopologyInfo, *, capture_label: str = "A") -> str:
+    """Format topology information for a single capture point with multiple services.
 
     Each service (identified by server port) is displayed separately with its own
     communication path and topology description.
+
+    The ``capture_label`` parameter allows callers (such as the dual-capture
+    fallback path) to render per-capture sections that are consistent with the
+    surrounding "Capture Point A/B" headings.
     """
     lines: list[str] = []
     lines.append("```text")
-    lines.append(f"Capture Point A: {topology.file_name}")
+    lines.append(f"Capture Point {capture_label}: {topology.file_name}")
     lines.append("")
 
     if not topology.services:
@@ -284,7 +359,6 @@ def format_single_topology(topology: SingleTopologyInfo) -> str:
             client_list = _format_ip_list(service.client_ips)
             server_list = _format_server_list_single_port(service.server_ips, service.server_port)
 
-
             lines.append("")
             lines.append(
                 _build_single_communication_path_for_service(
@@ -292,6 +366,7 @@ def format_single_topology(topology: SingleTopologyInfo) -> str:
                     service,
                     client_list,
                     server_list,
+                    capture_label=capture_label,
                 )
             )
             lines.append("")
@@ -300,11 +375,41 @@ def format_single_topology(topology: SingleTopologyInfo) -> str:
                     service,
                     client_list,
                     server_list,
+                    capture_label=capture_label,
                 )
             )
             lines.append("")
 
+    if topology.icmp_unreachable_events:
+        lines.append("=== ICMP Unreachable Events ===")
+        for event in topology.icmp_unreachable_events:
+            proto_str = _format_protocol(event.inner_protocol)
+            desc_key = f"3:{event.icmp_code}"
+            code_desc = IcmpStatsModule.ICMP_TYPES.get(desc_key, "Unknown")
+            type_desc = "Destination Unreachable"
+            hops_str = (
+                f", hops={event.hops_from_reporter}"
+                if event.hops_from_reporter is not None
+                else ", hops=Unknown"
+            )
 
+            # When reporter_ip / reported_to_ip are unavailable (None), we do not
+            # fabricate them. This keeps the message truthful on environments
+            # where outer ICMP headers cannot be reliably parsed.
+            if event.reporter_ip is None and event.reported_to_ip is None:
+                lines.append(
+                    f"Client {event.client_ip} → {event.inner_dst_ip} ({proto_str}/{event.inner_dst_port}), "
+                    f"type 3 ({type_desc}), code {event.icmp_code} ({code_desc}), "
+                    f"count={event.count}{hops_str}"
+                )
+            else:
+                reporter = event.reporter_ip or "Unknown"
+                reported_to = event.reported_to_ip or "Unknown"
+                lines.append(
+                    f"Client {event.client_ip}  {event.inner_dst_ip} ({proto_str}/{event.inner_dst_port}), "
+                    f"type 3 ({type_desc}), code {event.icmp_code} ({code_desc}), "
+                    f"count={event.count}, reported by {reporter}, reported to {reported_to}{hops_str}"
+                )
 
     lines.append("```")
     return "\n".join(lines)
@@ -353,18 +458,18 @@ def _format_server_list(server_ips: set[str], server_ports: set[int]) -> str:
 @dataclass(frozen=True)
 class _CapturePointMetrics:
     label: str
-    client_hops: int
-    server_hops: int
+    client_hops: int | None
+    server_hops: int | None
 
 
 CaptureSequence = Tuple[str, str]
 
 
 def _determine_capture_sequence_from_hops(
-    client_hops_a: int,
-    server_hops_a: int,
-    client_hops_b: int,
-    server_hops_b: int,
+    client_hops_a: int | None,
+    server_hops_a: int | None,
+    client_hops_b: int | None,
+    server_hops_b: int | None,
 ) -> CaptureSequence | None:
     """Determine capture-point ordering from TTL-derived hop counts.
 
@@ -377,6 +482,16 @@ def _determine_capture_sequence_from_hops(
     # In this scenario, the capture point with zero hops to the *server* is
     # placed on the left, and the capture point with zero hops to the *client*
     # is placed on the right.
+    # If any side completely lacks TTL information, we cannot derive a
+    # reliable ordering from hops alone.
+    if (
+        client_hops_a is None
+        or client_hops_b is None
+        or server_hops_a is None
+        or server_hops_b is None
+    ):
+        return None
+
     client_delta = client_hops_a - client_hops_b
     server_delta = server_hops_a - server_hops_b
     if client_delta != server_delta:
@@ -403,8 +518,7 @@ def _determine_capture_sequence_from_hops(
     if server_hops_b > server_hops_a:
         return ("B", "A")
 
-    # All hops equal (including the case where TTL data is unavailable and
-    # encoded as zeros) – treat as unknown ordering.
+    # All hops equal – treat as unknown ordering.
     return None
 
 
@@ -426,12 +540,30 @@ def _build_measurements(
     role: Literal["client", "server"],
     balanced: bool,
 ) -> list[tuple[str, int]]:
-    if role == "client":
-        second_label = "server" if balanced else "intermediate network device"
-        return [("client", point.client_hops), (second_label, point.server_hops)]
+    """Build (label, hops) pairs for textual description.
 
+    None hop values indicate that TTL data was not available for that side and
+    are omitted from the measurement list so that callers can render a
+    dedicated "no TTL data available" message instead of printing a synthetic
+    "0 hops" line.
+    """
+    measurements: list[tuple[str, int]] = []
+
+    if role == "client":
+        if point.client_hops is not None:
+            measurements.append(("client", point.client_hops))
+        second_label = "server" if balanced else "intermediate network device"
+        if point.server_hops is not None:
+            measurements.append((second_label, point.server_hops))
+        return measurements
+
+    # role == "server"
     first_label = "client" if balanced else "intermediate network device"
-    return [(first_label, point.client_hops), ("server", point.server_hops)]
+    if point.client_hops is not None:
+        measurements.append((first_label, point.client_hops))
+    if point.server_hops is not None:
+        measurements.append(("server", point.server_hops))
+    return measurements
 
 
 def _format_measurements(measurements: list[tuple[str, int]]) -> str:
@@ -505,6 +637,8 @@ def _build_single_communication_path_for_service(
     service: ServiceTopologyInfo,
     client_list: str,
     server_list: str,
+    *,
+    capture_label: str,
 ) -> str:
     """Build communication path for a single service in single-capture scenario.
 
@@ -514,7 +648,7 @@ def _build_single_communication_path_for_service(
     """
     nodes = [
         "Client",
-        "Capture Point A",
+        f"Capture Point {capture_label}",
         "Server",
     ]
     edges = [
@@ -528,6 +662,8 @@ def _describe_single_capture_position_for_service(
     service: ServiceTopologyInfo,
     client_list: str,
     server_list: str,
+    *,
+    capture_label: str,
 ) -> str:
     """Summarize capture point distance for a single service using hops only."""
     client_hops = service.client_hops
@@ -535,23 +671,23 @@ def _describe_single_capture_position_for_service(
 
     if client_hops is not None and server_hops is not None:
         return (
-            f"Capture Point A: Clients {client_list} -> Servers {server_list}, "
+            f"Capture Point {capture_label}: Clients {client_list} -> Servers {server_list}, "
             f"{client_hops} hops away from the client and {server_hops} hops away from the server."
         )
 
     if client_hops is None and server_hops is None:
         return (
-            "Capture Point A: TTL data was unavailable to describe its distance "
-            "to the client or the server."
+            f"Capture Point {capture_label}: Clients {client_list} -> Servers {server_list}, "
+            "no TTL data available."
         )
     if client_hops is None:
         return (
-            f"Capture Point A: Clients {client_list} -> Servers {server_list}, "
-            f"{server_hops} hops away from the server; client TTL data was unavailable."
+            f"Capture Point {capture_label}: Clients {client_list} -> Servers {server_list}, "
+            f"{server_hops} hops away from the server; client TTL data unavailable."
         )
     return (
-        f"Capture Point A: Clients {client_list} -> Servers {server_list}, "
-        f"{client_hops} hops away from the client; server TTL data was unavailable."
+        f"Capture Point {capture_label}: Clients {client_list} -> Servers {server_list}, "
+        f"{client_hops} hops away from the client; server TTL data unavailable."
     )
 
 
@@ -585,13 +721,24 @@ def _build_dual_communication_path_for_service(
 
 
 def _has_client_device_for_service(service: ServiceTopologyInfoDual, label: str) -> bool:
-    """Check if there's a network device between capture point and client for a service."""
+    """Return True when hops suggest at least one device between client and capture.
+
+    This helper is deliberately conservative: it only uses hop counts to infer
+    whether there is *some* network infrastructure between the client and the
+    capture point (``hops > 0``). It does **not** attempt to classify the type
+    or number of devices.
+    """
     hops = service.client_hops_a if label == "A" else service.client_hops_b
     return bool(hops and hops > 0)
 
 
 def _has_server_device_for_service(service: ServiceTopologyInfoDual, label: str) -> bool:
-    """Check if there's a network device between capture point and server for a service."""
+    """Return True when hops suggest at least one device between capture and server.
+
+    Similar to :func:`_has_client_device_for_service`, this only checks whether
+    the hop count is strictly greater than zero and does not try to infer
+    intermediate topology beyond that.
+    """
     hops = service.server_hops_a if label == "A" else service.server_hops_b
     return bool(hops and hops > 0)
 
@@ -657,7 +804,12 @@ def _get_capture_point_metrics_for_service(
     service: ServiceTopologyInfoDual,
     label: str,
 ) -> _CapturePointMetrics:
-    """Get capture point metrics for a service."""
+    """Get capture point metrics for a service.
+
+    Hop values may be None when TTL data was not available for that side. This
+    is propagated into measurements so that the formatter can emit a clear
+    "no TTL data available" message instead of fabricating 0-hop distances.
+    """
     if label == "A":
         return _CapturePointMetrics(
             "A",
@@ -688,18 +840,25 @@ def _build_unknown_descriptions_for_service(service: ServiceTopologyInfoDual) ->
     ports_b = service.server_ports_b or {service.server_port}
     servers_b = _format_server_list(service.server_ips_b, ports_b)
 
+    def _format_unknown_hops(client_hops: int | None, server_hops: int | None) -> str:
+        client_part = (
+            f"observed {client_hops} client hops" if client_hops is not None else "client TTL data unavailable"
+        )
+        server_part = (
+            f"{server_hops} server hops" if server_hops is not None else "server TTL data unavailable"
+        )
+        return f"{client_part} and {server_part}."
+
     lines.append(
         (
             f"Capture Point A: Clients {clients_a} -> Servers {servers_a}, "
-            f"observed {service.client_hops_a} client hops and "
-            f"{service.server_hops_a} server hops."
+            f"{_format_unknown_hops(service.client_hops_a, service.server_hops_a)}"
         )
     )
     lines.append(
         (
             f"Capture Point B: Clients {clients_b} -> Servers {servers_b}, "
-            f"observed {service.client_hops_b} client hops and "
-            f"{service.server_hops_b} server hops."
+            f"{_format_unknown_hops(service.client_hops_b, service.server_hops_b)}"
         )
     )
     return lines

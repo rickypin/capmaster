@@ -64,17 +64,17 @@ class EndpointPairStats:
     server_ttl_b: int = 0
     """Most common server TTL from file B"""
 
-    client_hops_a: int = 0
-    """Number of network hops for client in file A (calculated from TTL)"""
+    client_hops_a: int | None = None
+    """Number of network hops for client in file A (calculated from TTL, None if unavailable)"""
 
-    server_hops_a: int = 0
-    """Number of network hops for server in file A (calculated from TTL)"""
+    server_hops_a: int | None = None
+    """Number of network hops for server in file A (calculated from TTL, None if unavailable)"""
 
-    client_hops_b: int = 0
-    """Number of network hops for client in file B (calculated from TTL)"""
+    client_hops_b: int | None = None
+    """Number of network hops for client in file B (calculated from TTL, None if unavailable)"""
 
-    server_hops_b: int = 0
-    """Number of network hops for server in file B (calculated from TTL)"""
+    server_hops_b: int | None = None
+    """Number of network hops for server in file B (calculated from TTL, None if unavailable)"""
 
     total_bytes_a: int = 0
     """Total bytes (sum of frame lengths) for all matched connections in file A"""
@@ -333,11 +333,26 @@ class EndpointStatsCollector:
             client_ttl_b = self._most_common_ttl(self.client_ttls_b[(tuple_a, tuple_b)])
             server_ttl_b = self._most_common_ttl(self.server_ttls_b[(tuple_a, tuple_b)])
 
-            # Calculate network hops from TTL values
-            client_hops_a = most_common_hops(self.client_ttls_a[(tuple_a, tuple_b)])
-            server_hops_a = most_common_hops(self.server_ttls_a[(tuple_a, tuple_b)])
-            client_hops_b = most_common_hops(self.client_ttls_b[(tuple_a, tuple_b)])
-            server_hops_b = most_common_hops(self.server_ttls_b[(tuple_a, tuple_b)])
+            # Calculate network hops from TTL values.
+            #
+            # For topology purposes we want to distinguish between "no TTL data"
+            # and a true "0 hops" observation. The ttl_utils.most_common_hops()
+            # helper returns 0 when given an empty list, which would conflate these
+            # cases. Here we interpret an empty TTL list as "no data" and report
+            # hops as None; non-empty TTL lists are converted to hops via
+            # most_common_hops(). This keeps EndpointPairStats compatible with both
+            # topology (which treats None specially) and match diagnostics (which
+            # can still display the raw TTL values stored above).
+
+            client_ttls_a = self.client_ttls_a[(tuple_a, tuple_b)]
+            server_ttls_a = self.server_ttls_a[(tuple_a, tuple_b)]
+            client_ttls_b = self.client_ttls_b[(tuple_a, tuple_b)]
+            server_ttls_b = self.server_ttls_b[(tuple_a, tuple_b)]
+
+            client_hops_a = most_common_hops(client_ttls_a) if client_ttls_a else None
+            server_hops_a = most_common_hops(server_ttls_a) if server_ttls_a else None
+            client_hops_b = most_common_hops(client_ttls_b) if client_ttls_b else None
+            server_hops_b = most_common_hops(server_ttls_b) if server_ttls_b else None
 
             # Get total bytes for this endpoint pair
             total_bytes_a = self.total_bytes_a[(tuple_a, tuple_b)]

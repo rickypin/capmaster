@@ -26,6 +26,8 @@ def _make_service(**overrides) -> ServiceTopologyInfoDual:
         "server_hops_b": 4,
         "position": "A_CLOSER_TO_CLIENT",
         "connection_count": 10,
+        "server_ports_a": {80},
+        "server_ports_b": {80},
     }
     base.update(overrides)
     return ServiceTopologyInfoDual(**base)
@@ -138,6 +140,31 @@ def test_format_topology_unknown_position():
     assert "Topology: Cannot determine (same position or insufficient TTL data)" in output
     assert "Capture Point A: Clients" in output
     assert "Capture Point B: Clients" in output
+
+
+
+@pytest.mark.unit
+def test_format_topology_unknown_position_all_hops_missing():
+    """Unknown-position fallback should describe missing TTL data explicitly."""
+    # Explicitly simulate the case where no TTL data was available on either side,
+    # so all hop counts are None. This exercises the text branch that distinguishes
+    # between "no TTL data" and real numeric hop values.
+    service = _make_service(
+        client_hops_a=None,
+        server_hops_a=None,
+        client_hops_b=None,
+        server_hops_b=None,
+        position="UNKNOWN",
+    )
+    topology = _make_topology(services=[service])
+
+    output = format_topology(topology)
+
+    assert "Topology: Cannot determine (same position or insufficient TTL data)" in output
+    assert "Capture Point A: Clients" in output
+    assert "client TTL data unavailable and server TTL data unavailable." in output
+    assert "Capture Point B: Clients" in output
+    assert output.count("client TTL data unavailable and server TTL data unavailable.") == 2
 
 
 
