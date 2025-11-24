@@ -172,7 +172,7 @@ def _run_single_capture_pipeline(
         # Group connections by service (server_port + protocol)
         from collections import defaultdict
 
-        service_data: dict[tuple[int, int], dict] = defaultdict(
+        tcp_service_data: dict[tuple[int, int], dict] = defaultdict(
             lambda: {
                 "client_ips": set(),
                 "server_ips": set(),
@@ -184,13 +184,14 @@ def _run_single_capture_pipeline(
 
         for connection in connections:
             info = detector.detect(connection)
-            # Use protocol from connection (6=TCP, 17=UDP)
-            protocol = 6  # Assume TCP for now (TcpConnection)
+            # Use protocol from connection (currently 6=TCP); UDP is handled
+            # separately via the udp_connections module.
+            protocol = connection.protocol
             service_key = (info.server_port, protocol)
 
-            service_data[service_key]["client_ips"].add(info.client_ip)
-            service_data[service_key]["server_ips"].add(info.server_ip)
-            service_data[service_key]["count"] += 1
+            tcp_service_data[service_key]["client_ips"].add(info.client_ip)
+            tcp_service_data[service_key]["server_ips"].add(info.server_ip)
+            tcp_service_data[service_key]["count"] += 1
 
             # Align TTL direction with the final server/client roles determined by
             # ServerDetector. When the detector decides that the true server is on
@@ -207,15 +208,15 @@ def _run_single_capture_pipeline(
                 client_ttl, server_ttl = server_ttl, client_ttl
 
             if client_ttl > 0:
-                service_data[service_key]["client_ttls"].append(client_ttl)
+                tcp_service_data[service_key]["client_ttls"].append(client_ttl)
             if server_ttl > 0:
-                service_data[service_key]["server_ttls"].append(server_ttl)
+                tcp_service_data[service_key]["server_ttls"].append(server_ttl)
 
         progress.update(detector_task, advance=1)
 
-    # Build ServiceTopologyInfo for each service
-    services = []
-    for (server_port, protocol), data in service_data.items():
+    # Build ServiceTopologyInfo for each TCP service
+    services: list[ServiceTopologyInfo] = []
+    for (server_port, protocol), data in tcp_service_data.items():
         services.append(
             ServiceTopologyInfo(
                 server_port=server_port,
@@ -228,12 +229,34 @@ def _run_single_capture_pipeline(
             )
         )
 
-    # Sort services by port number
-    services.sort(key=lambda s: s.server_port)
+    # Add UDP services extracted directly from the PCAP, as per design doc.
+    from capmaster.plugins.topology.udp_connections import extract_udp_services_for_topology
+
+    try:
+        udp_services = extract_udp_services_for_topology(file_path)
+    except Exception:
+        # Be defensive: topology is a reporting tool; if UDP extraction fails we
+        # still want TCP results.
+        udp_services = []
+
+    services.extend(udp_services)
+
+    # Sort services primarily by protocol, then by port to keep TCP and UDP
+    # groupings stable and predictable in the output.
+    services.sort(key=lambda s: (s.protocol, s.server_port))
+
+    # Extract ICMP unreachable events for this capture.
+    from capmaster.plugins.topology.icmp_unreachable import extract_icmp_unreachable_events
+
+    try:
+        icmp_events = extract_icmp_unreachable_events(file_path)
+    except Exception:
+        icmp_events = []
 
     return SingleTopologyInfo(
         file_name=file_path.name,
         services=services,
+        icmp_unreachable_events=icmp_events,
     )
 
 
@@ -373,9 +396,23 @@ def _build_matches_from_pairs(
 
 
 def _output_results(output_text: str, output_file: Path | None) -> None:
+    """Print or persist topology output (and meta.json when writing to file).
+
+    The topology plugin is a reporting tool that renders human-readable
+    communication paths. To make the output easier to consume in Markdown
+    renderers (including the CapMaster UI), we always prepend a consistent
+    section heading.
     """
-    Print or persist topology output (and meta.json when writing to file).
-    """
+    header = "## Communication Topology"
+
+    # Ensure the report always starts with the Markdown heading. We strip
+    # leading whitespace from the original text to avoid accidental blank
+    # lines or indentation before the header, but keep the rest unchanged.
+    stripped = output_text.lstrip()
+    if not stripped.startswith(header):
+        # Prepend the header and a blank line for proper Markdown formatting.
+        output_text = f"{header}\n\n{stripped}"
+
     if output_file:
         output_file.parent.mkdir(parents=True, exist_ok=True)
         output_file.write_text(output_text)

@@ -7,6 +7,7 @@ from typing import Literal, Tuple, Optional
 from capmaster.core.connection.matcher import ConnectionMatch
 from capmaster.plugins.match.endpoint_stats import EndpointStatsCollector, aggregate_by_service
 from capmaster.plugins.match.server_detector import ServerDetector
+from capmaster.plugins.analyze.modules.icmp_stats import IcmpStatsModule
 
 
 class TopologyAnalyzer:
@@ -135,8 +136,11 @@ class TopologyAnalyzer:
         if sequence == ("B", "A"):
             return "B_CLOSER_TO_CLIENT"
 
-        # If we could not derive a sequence but all hop values are equal,
-        # indicate SAME_POSITION, otherwise fall back to UNKNOWN.
+        # If we could not derive a sequence but both capture points observe the
+        # same number of hops to the client, and both observe the same number of
+        # hops to the server (not necessarily equal between client and server),
+        # treat them as being at the same position. Otherwise fall back to
+        # UNKNOWN.
         if (
             client_hops_a is not None
             and client_hops_b is not None
@@ -238,6 +242,26 @@ class ServiceTopologyInfo:
 
 
 @dataclass
+class IcmpUnreachableEventInfo:
+    """Aggregated ICMP destination unreachable event for single-capture topology.
+
+    Combines inner (embedded original client→server flow) and outer (ICMP
+    reporter→reported_to) information so that the Agent can see both which
+    service was affected and where along the path the error was generated.
+    """
+
+    client_ip: str
+    reporter_ip: str | None
+    reported_to_ip: str | None
+    icmp_code: int
+    inner_dst_ip: str
+    inner_protocol: int
+    inner_dst_port: int
+    count: int
+    hops_from_reporter: int | None
+
+
+@dataclass
 class SingleTopologyInfo:
     """Topology information for a single capture point with multiple services."""
 
@@ -247,6 +271,8 @@ class SingleTopologyInfo:
     services: list[ServiceTopologyInfo]
     """List of services detected in the capture, sorted by port number"""
 
+    icmp_unreachable_events: list[IcmpUnreachableEventInfo] = field(default_factory=list)
+    """Aggregated ICMP destination unreachable events observed in this capture."""
 
 def format_topology(topology: TopologyInfo) -> str:
     """
@@ -353,6 +379,37 @@ def format_single_topology(topology: SingleTopologyInfo, *, capture_label: str =
                 )
             )
             lines.append("")
+
+    if topology.icmp_unreachable_events:
+        lines.append("=== ICMP Unreachable Events ===")
+        for event in topology.icmp_unreachable_events:
+            proto_str = _format_protocol(event.inner_protocol)
+            desc_key = f"3:{event.icmp_code}"
+            code_desc = IcmpStatsModule.ICMP_TYPES.get(desc_key, "Unknown")
+            type_desc = "Destination Unreachable"
+            hops_str = (
+                f", hops={event.hops_from_reporter}"
+                if event.hops_from_reporter is not None
+                else ", hops=Unknown"
+            )
+
+            # When reporter_ip / reported_to_ip are unavailable (None), we do not
+            # fabricate them. This keeps the message truthful on environments
+            # where outer ICMP headers cannot be reliably parsed.
+            if event.reporter_ip is None and event.reported_to_ip is None:
+                lines.append(
+                    f"Client {event.client_ip} → {event.inner_dst_ip} ({proto_str}/{event.inner_dst_port}), "
+                    f"type 3 ({type_desc}), code {event.icmp_code} ({code_desc}), "
+                    f"count={event.count}{hops_str}"
+                )
+            else:
+                reporter = event.reporter_ip or "Unknown"
+                reported_to = event.reported_to_ip or "Unknown"
+                lines.append(
+                    f"Client {event.client_ip}  {event.inner_dst_ip} ({proto_str}/{event.inner_dst_port}), "
+                    f"type 3 ({type_desc}), code {event.icmp_code} ({code_desc}), "
+                    f"count={event.count}, reported by {reporter}, reported to {reported_to}{hops_str}"
+                )
 
     lines.append("```")
     return "\n".join(lines)
@@ -620,17 +677,17 @@ def _describe_single_capture_position_for_service(
 
     if client_hops is None and server_hops is None:
         return (
-            f"Capture Point {capture_label}: TTL data was unavailable to describe its distance "
-            "to the client or the server."
+            f"Capture Point {capture_label}: Clients {client_list} -> Servers {server_list}, "
+            "no TTL data available."
         )
     if client_hops is None:
         return (
             f"Capture Point {capture_label}: Clients {client_list} -> Servers {server_list}, "
-            f"{server_hops} hops away from the server; client TTL data was unavailable."
+            f"{server_hops} hops away from the server; client TTL data unavailable."
         )
     return (
         f"Capture Point {capture_label}: Clients {client_list} -> Servers {server_list}, "
-        f"{client_hops} hops away from the client; server TTL data was unavailable."
+        f"{client_hops} hops away from the client; server TTL data unavailable."
     )
 
 
