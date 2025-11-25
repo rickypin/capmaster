@@ -13,10 +13,14 @@ This comprehensive guide covers all aspects of using CapMaster for PCAP analysis
 2. [Analyze Command](#analyze-command)
 3. [Match Command](#match-command)
 4. [Compare Command](#compare-command)
-5. [Clean Command](#clean-command)
-6. [Advanced Usage](#advanced-usage)
-7. [Troubleshooting](#troubleshooting)
-8. [Best Practices](#best-practices)
+5. [Preprocess Command](#preprocess-command)
+6. [Topology Command](#topology-command)
+7. [StreamDiff Command](#streamdiff-command)
+8. [Comparative Analysis Command](#comparative-analysis-command)
+9. [Clean Command](#clean-command)
+10. [Advanced Usage](#advanced-usage)
+11. [Troubleshooting](#troubleshooting)
+12. [Best Practices](#best-practices)
 
 ## Getting Started
 
@@ -418,7 +422,7 @@ capmaster compare -i captures/ --show-flow-hash
 - Group packets belonging to the same flow
 - Correlate connections in network analysis
 
-See [Flow Hash Feature Documentation](FLOW_HASH_FEATURE.md) for detailed information.
+For implementation details of the flow hash algorithm (bidirectional, 5-tuple based, normalized), see the code and tests around `capmaster.plugins.compare.flow_hash` and `tests/test_flow_hash.py`.
 
 ### Score Threshold
 
@@ -571,6 +575,108 @@ capmaster compare -i captures/ --bucket port --threshold 0.70
 ```
 
 
+
+## Preprocess Command
+
+The `preprocess` command cleans and standardises PCAP files before further analysis.
+
+### Basic Usage
+
+```bash
+# Preprocess a single file with default configuration
+capmaster preprocess -i capture.pcap
+
+# Preprocess multiple files (comma-separated list)
+capmaster preprocess -i "a.pcap,b.pcap,c.pcap"
+
+# Preprocess all files in a directory
+capmaster preprocess -i /path/to/pcaps/
+```
+
+### Typical Pipeline
+
+```bash
+# Preprocess then analyze
+capmaster preprocess -i noisy/ -o clean/
+capmaster analyze -i clean/
+```
+
+Key steps performed by preprocess:
+
+- **time-align**: compute a common time window and trim captures
+- **dedup**: remove duplicate packets within a sliding window
+- **oneway**: detect one-way TCP streams (using ACK threshold)
+
+Use `capmaster preprocess --help` 查看完整参数说明，包括：
+
+- `--step` 显式指定步骤（`time-align`、`dedup`、`oneway`）
+- `--enable/--disable-*` 控制各个步骤是否启用
+- `--dedup-window-packets` / `--dedup-ignore-bytes`
+- `--oneway-ack-threshold`
+- `--archive-original-files` / `--no-archive-original-files`
+- 报告控制：`--no-report`、`--report-path`
+
+## Topology Command
+
+The `topology` command renders network topology for one or two capture points.
+
+### Basic Usage
+
+```bash
+# Single capture point topology
+capmaster topology --single-file single_capture.pcap -o single_topology.txt
+
+# Directory containing exactly two captures + matched connections
+capmaster topology -i /path/to/2hops/ --matched-connections matched_connections.txt -o topology.txt
+
+# Explicit files
+capmaster topology --file1 a.pcap --file2 b.pcap --matched-connections matched_connections.txt -o topology.txt
+```
+
+Key options:
+
+- `-i/--input`: 目录或逗号分隔的 PCAP 文件列表（1 或 2 个文件）
+- `--single-file`: 单文件拓扑分析（单抓包点）
+- `--file1/--file2`: 显式指定两个 PCAP 文件
+- `--matched-connections`: 来自 `capmaster match` 的匹配连接结果
+- `--empty-match-behavior`: 无有效匹配时的行为（`error` / `fallback-single`）
+- `--service-list`: 可选服务列表文件，辅助服务端识别
+- `-o/--output`: 输出报告文件（默认 stdout）
+
+## StreamDiff Command
+
+The `streamdiff` command compares a single TCP connection between two captures and lists packets that are present only in A or only in B (by IP ID).
+
+### Basic Usage
+
+```bash
+# 使用 matched-connections 文件选择连接对
+capmaster streamdiff -i /path/to/2pcaps \
+  --matched-connections matched_connections.txt \
+  --pair-index 1 -o streamdiff_report.txt
+
+# 使用显式 tcp.stream ID 选择连接
+capmaster streamdiff -i /path/to/2pcaps \
+  --file1-stream-id 7 --file2-stream-id 33 -o streamdiff_report.txt
+```
+
+Key options:
+
+- `-i/--input` 或 `--file1/--file2`：指定两个 PCAP 文件
+- `--matched-connections` + `--pair-index`：从 `capmaster match` 输出中选择连接对
+- `--file1-stream-id` / `--file2-stream-id`：手动指定两个文件中的 `tcp.stream` ID
+- `-o/--output`：输出报告文件（默认 stdout）
+
+## Comparative Analysis Command
+
+The `comparative-analysis` command performs network quality analysis between two capture points.
+
+It is exposed as a top-level command by the match plugin and uses the same dual-file input options as `match` and `compare`.
+
+For详细说明（丢包、重传、ACK Lost、Real Loss 等指标，以及服务级别/连接对级别输出示例），参见:
+
+- `docs/COMPARATIVE_ANALYSIS_GUIDE.md`
+- `docs/ACK_LOST_SEGMENT_FEATURE.md`
 
 ## Clean Command
 
@@ -841,14 +947,15 @@ done
 Combine CapMaster commands:
 
 ```bash
-# Filter then analyze
-capmaster filter -i noisy.pcap -o clean.pcap
-capmaster analyze -i clean.pcap
+# Preprocess then analyze
+capmaster preprocess -i noisy.pcap -o clean/
+capmaster analyze -i clean/
 
-# Match then filter both files
+# Match, preprocess by capture point, then compare or analyze
 capmaster match -i captures/ -o matches.txt
-capmaster filter -i captures/client.pcap -o captures/client_clean.pcap
-capmaster filter -i captures/server.pcap -o captures/server_clean.pcap
+capmaster preprocess -i captures/client.pcap -o captures/client_clean/
+capmaster preprocess -i captures/server.pcap -o captures/server_clean/
+# Now you can run analyze/match/compare on the cleaned PCAPs
 ```
 
 ### Scripting with Python
@@ -994,7 +1101,7 @@ Document your analysis:
 
 ## Next Steps
 
-- Explore the [API Documentation](API.md) for programmatic usage
+- 如需以编程方式集成 CapMaster，当前推荐通过 CLI 封装（例如 Python 的 `subprocess.run(["capmaster", ...])`），或直接阅读 `capmaster/` 源码和对应 tests 了解调用方式（目前仓库中不再维护单独的 API.md 文档）。
 - Check the [CHANGELOG](../CHANGELOG.md) for version history
 - Report issues on [GitHub](https://github.com/yourusername/capmaster/issues)
 

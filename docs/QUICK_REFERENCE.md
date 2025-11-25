@@ -18,6 +18,19 @@ capmaster --version
 
 ## Common Commands
 
+### Preprocess PCAP Files (Cleaning / One-way / Time Align)
+
+```bash
+# Basic preprocessing for a single file
+capmaster preprocess -i sample.pcap
+
+# Preprocess a directory of PCAPs
+capmaster preprocess -i /path/to/pcaps/ -o /path/to/pcaps-preprocessed/
+
+# Run only time-align and dedup steps
+capmaster preprocess -i sample.pcap --step time-align --step dedup
+```
+
 ### Analyze PCAP Files
 
 ```bash
@@ -117,15 +130,23 @@ capmaster clean -i /path/to/data -y
 | `--bucket` | | Bucketing strategy | auto |
 | `--threshold` | | Score threshold (0.0-1.0) | 0.60 |
 
-### Filter Options
+### Preprocess Options
+
+> **Note**: The legacy `filter` subcommand has been replaced by the more general `preprocess` pipeline.
+> 以下是常用 `preprocess` 选项的速查（完整参数以 `capmaster preprocess --help` 为准）。
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
-| `--input` | `-i` | Input file or directory | Required |
-| `--output` | `-o` | Output file or directory | `<input>_filtered.pcap` |
-| `--threshold` | `-t` | ACK threshold | 20 |
-| `--no-recursive` | `-r` | Do NOT recursively scan directories | Recursive by default |
-| `--workers` | `-w` | Number of worker processes | 1 |
+| `--input` | `-i` | Input PCAP file, directory, or comma-separated file list | Required |
+| `--output` | `-o` | Output directory for preprocessed files | Auto-created under input when omitted |
+| `--step` | | Explicit step list (time-align, dedup, oneway) | From config |
+| `--enable-dedup` / `--disable-dedup` | | Enable/disable dedup step | From config |
+| `--enable-oneway` / `--disable-oneway` | | Enable/disable one-way detection step | From config |
+| `--enable-time-align` / `--disable-time-align` | | Enable/disable time-align step | From config |
+| `--dedup-window-packets` | | Dedup window size in packets | From config |
+| `--dedup-ignore-bytes` | | Ignore N bytes at packet end when deduplicating | From config |
+| `--oneway-ack-threshold` | | ACK threshold for one-way detection | From config |
+| `--workers` | `-w` | Number of worker processes | From config |
 
 ### Clean Options
 
@@ -226,13 +247,9 @@ capmaster clean -i /path/to/data -y
 | 0.60-0.70 | Balanced (default) |
 | 0.70-0.85 | Strict matching, high confidence |
 
-### Filter Threshold
-
-| Range | Use Case |
-|-------|----------|
-| 10-20 | Aggressive filtering |
-| 20-50 | Balanced (default) |
-| 50-100 | Conservative filtering |
+> **Note**: The legacy `filter` subcommand has been removed in favor of the more general `preprocess` pipeline.
+> 
+Threshold tuning for one-way detection is now controlled via `--oneway-ack-threshold` and related preprocess settings (see `capmaster preprocess --help`).
 
 ---
 
@@ -376,7 +393,10 @@ capmaster --help
 # Command-specific help
 capmaster analyze --help
 capmaster match --help
-capmaster filter --help
+capmaster preprocess --help
+capmaster topology --help
+capmaster streamdiff --help
+capmaster comparative-analysis --help
 
 # Version info
 capmaster --version
@@ -477,11 +497,14 @@ capmaster match -i captures/ \
   -o high_confidence_matches.txt
 ```
 
-### Example 3: Clean and Analyze
+### Example 3: Preprocess and Analyze
 
 ```bash
-capmaster filter -i noisy.pcap -o clean.pcap
-capmaster analyze -i clean.pcap
+# Preprocess noisy capture into a clean directory
+capmaster preprocess -i noisy.pcap -o clean/
+
+# Run analysis on preprocessed PCAPs
+capmaster analyze -i clean/
 ```
 
 ### Example 4: Consistent Match & Compare Workflow

@@ -161,10 +161,12 @@ Client -> Capture Point A -> Network Device(10.93.136.244:443) -> Capture Point 
    - 服务标识 (IP:Port)
    - 两个 PCAP 文件的分别统计
    - 每个方向的指标：
-     - 总数据包数
-     - 重传数量和比率
-     - 重复 ACK 数量和比率
-     - 丢包数量和比率
+     - 总数据包数 (Packets)
+     - 重传数量和比率 (Retrans / Retrans %)
+     - 重复 ACK 数量和比率 (Dup ACK / Dup ACK %)
+     - 丢包数量和比率 (Lost Seg / Lost Seg %)
+     - ACK 丢失段数量和比率 (ACK Lost / ACK Lost %)
+     - 真实丢包数量和比率 (Real Loss / Real Loss %)
 
 ### 输出示例
 
@@ -224,6 +226,7 @@ Service: 10.93.75.130:8443
 - `tcp.analysis.retransmission`: TCP 重传
 - `tcp.analysis.duplicate_ack`: 重复 ACK
 - `tcp.analysis.lost_segment`: 丢失的数据段
+- `tcp.analysis.ack_lost_segment`: 已被 ACK 确认但在当前抓包中缺失的数据段（用于识别抓包遗漏）
 
 ### 方向判断
 
@@ -238,14 +241,22 @@ Service: 10.93.75.130:8443
 Rate (%) = (Event Count / Total Packets) × 100
 ```
 
+其中：
+- Lost Seg Rate 基于 `tcp.analysis.lost_segment`
+- ACK Lost Rate 基于 `tcp.analysis.ack_lost_segment`
+- Real Loss Rate 使用 cross-direction 关系排除抓包遗漏（详见 `ACK_LOST_SEGMENT_FEATURE.md` 与 `quality_analyzer.py`）
+
 ### 性能评分
 
 在连接对分析中，系统会为每个连接对计算性能评分（0-100 分）：
 
-- **评分算法**: 基于重传率、重复 ACK 率和丢包率的加权平均
+- **评分算法**: 基于重传率、重复 ACK 率和**真实丢包率 (Real Loss Rate)** 的加权平均
   - 重传率权重: 40%
   - 重复 ACK 率权重: 30%
-  - 丢包率权重: 30%
+  - 真实丢包率权重: 30%（使用 Real Loss，而非简单的 Lost Seg）
+- **实现参考**:
+  - `capmaster/plugins/match/quality_analyzer.py` 中的 `calculate_performance_score()` 实现
+  - `docs/ACK_LOST_SEGMENT_FEATURE.md` 中对 Real Loss 的定义与公式
 - **评分含义**:
   - 100 分: 完美性能，无任何网络质量问题
   - 90-99 分: 优秀性能，偶尔有轻微问题

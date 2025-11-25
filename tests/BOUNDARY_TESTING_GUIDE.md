@@ -99,23 +99,23 @@ def test_analyze_nonexistent_file():
     # Should fail with clear error
     assert exit_code != 0
 
-def test_filter_with_missing_tshark(tmp_path: Path, monkeypatch):
-    """Test filter plugin when tshark is not available."""
+def test_preprocess_with_missing_tshark(tmp_path: Path, monkeypatch):
+    """Test preprocess plugin when tshark is not available."""
     # Mock subprocess to simulate missing tshark
     def mock_run(*args, **kwargs):
         raise FileNotFoundError("tshark not found")
-    
+
     monkeypatch.setattr("subprocess.run", mock_run)
-    
+
     pcap_file = tmp_path / "test.pcap"
     pcap_file.touch()
-    
-    plugin = FilterPlugin()
+
+    plugin = PreprocessPlugin()
     exit_code = plugin.execute(
         input_path=pcap_file,
-        output_path=tmp_path / "output.pcap",
+        output_dir=tmp_path / "output",
     )
-    
+
     # Should handle missing dependency gracefully
     assert exit_code != 0
 ```
@@ -195,22 +195,22 @@ def test_analyze_unreadable_file(tmp_path: Path):
         pcap_file.chmod(0o644)
 
 @pytest.mark.skipif(os.name == "nt", reason="Unix-only test")
-def test_filter_unwritable_output(tmp_path: Path):
-    """Test filter with unwritable output directory."""
+def test_preprocess_unwritable_output(tmp_path: Path):
+    """Test preprocess with unwritable output directory."""
     pcap_file = tmp_path / "input.pcap"
     pcap_file.touch()
-    
+
     output_dir = tmp_path / "readonly"
     output_dir.mkdir()
     output_dir.chmod(0o444)  # Read-only
-    
+
     try:
-        plugin = FilterPlugin()
+        plugin = PreprocessPlugin()
         exit_code = plugin.execute(
             input_path=pcap_file,
-            output_path=output_dir / "output.pcap",
+            output_dir=output_dir,
         )
-        
+
         # Should fail gracefully
         assert exit_code != 0
     finally:
