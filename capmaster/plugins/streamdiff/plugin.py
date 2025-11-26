@@ -198,28 +198,11 @@ class StreamDiffPlugin(PluginBase):
         connection_id = conn_label or f"stream {stream_id_a} vs {stream_id_b}"
         result = comparator.compare(packets_a, packets_b, connection_id, matched_only=False)
 
-        # Filter for A-only and B-only packet diffs (IP_ID diffs where frame of the
-        # other side is -1). We keep this symmetric so the plugin can report both
-        # directions explicitly.
-        a_only_diffs = [
-            diff
-            for diff in result.differences
-            if diff.diff_type == DiffType.IP_ID and diff.frame_b == -1
-        ]
-        b_only_diffs = [
-            diff
-            for diff in result.differences
-            if diff.diff_type == DiffType.IP_ID and diff.frame_a == -1
-        ]
-
-        report = self._build_report(
-            file_a=file_a,
-            file_b=file_b,
-            stream_id_a=stream_id_a,
-            stream_id_b=stream_id_b,
+        # Generate flow comparison report
+        report = comparator.format_flow_comparison(
+            packets_a=packets_a,
+            packets_b=packets_b,
             result=result,
-            a_only_diffs=a_only_diffs,
-            b_only_diffs=b_only_diffs,
         )
 
         if output_file:

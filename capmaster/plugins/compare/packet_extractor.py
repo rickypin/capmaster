@@ -21,12 +21,18 @@ class TcpPacket:
     - TCP flags
     - Sequence number
     - Acknowledgment number
+    - Timestamp
+    - Source/Dest IP/Port (for direction)
+    - Info string (for display)
 
     OPTIMIZATION: Uses __slots__ to reduce memory overhead per instance.
     With large numbers of packets, this can save 20-30% memory.
     """
 
-    __slots__ = ('frame_number', 'ip_id', 'tcp_flags', 'seq', 'ack', 'timestamp')
+    __slots__ = (
+        'frame_number', 'ip_id', 'tcp_flags', 'seq', 'ack', 'timestamp',
+        'src_ip', 'dst_ip', 'src_port', 'dst_port', 'info'
+    )
 
     frame_number: int
     """Frame number in the PCAP file"""
@@ -46,6 +52,21 @@ class TcpPacket:
     timestamp: Decimal
     """Packet timestamp in seconds (Unix epoch) with full nanosecond precision"""
 
+    src_ip: str
+    """Source IP address"""
+
+    dst_ip: str
+    """Destination IP address"""
+
+    src_port: int
+    """Source port"""
+
+    dst_port: int
+    """Destination port"""
+
+    info: str
+    """Packet info string (e.g. from _ws.col.Info)"""
+
     def __str__(self) -> str:
         """String representation for display."""
         return (
@@ -53,7 +74,8 @@ class TcpPacket:
             f"IPID={self.ip_id:#06x} "
             f"Flags={self.tcp_flags} "
             f"Seq={self.seq} "
-            f"Ack={self.ack}"
+            f"Ack={self.ack} "
+            f"Info={self.info}"
         )
 
 
@@ -73,6 +95,11 @@ class PacketExtractor:
         "tcp.seq",          # TCP sequence number (absolute)
         "tcp.ack",          # TCP acknowledgment number (absolute)
         "frame.time_epoch", # Timestamp
+        "ip.src",           # Source IP
+        "ip.dst",           # Destination IP
+        "tcp.srcport",      # Source Port
+        "tcp.dstport",      # Destination Port
+        "_ws.col.Info",     # Info column
     ]
     
     def __init__(self, tshark: TsharkWrapper | None = None):
@@ -157,6 +184,11 @@ class PacketExtractor:
                 seq_str = fields[3].strip('"')
                 ack_str = fields[4].strip('"')
                 timestamp_str = fields[5].strip('"')
+                src_ip_val = fields[6].strip('"')
+                dst_ip_val = fields[7].strip('"')
+                src_port_val = int(fields[8].strip('"')) if fields[8] else 0
+                dst_port_val = int(fields[9].strip('"')) if fields[9] else 0
+                info_val = fields[10].strip('"')
 
                 packet = TcpPacket(
                     frame_number=frame_number,
@@ -165,6 +197,11 @@ class PacketExtractor:
                     seq=int(seq_str) if seq_str else 0,
                     ack=int(ack_str) if ack_str else 0,
                     timestamp=Decimal(timestamp_str) if timestamp_str else Decimal('0'),
+                    src_ip=src_ip_val,
+                    dst_ip=dst_ip_val,
+                    src_port=src_port_val,
+                    dst_port=dst_port_val,
+                    info=info_val,
                 )
                 packets.append(packet)
             except (ValueError, IndexError) as e:
@@ -235,6 +272,11 @@ class PacketExtractor:
                 seq_str = fields[3].strip('"')
                 ack_str = fields[4].strip('"')
                 timestamp_str = fields[5].strip('"')
+                src_ip_val = fields[6].strip('"')
+                dst_ip_val = fields[7].strip('"')
+                src_port_val = int(fields[8].strip('"')) if fields[8] else 0
+                dst_port_val = int(fields[9].strip('"')) if fields[9] else 0
+                info_val = fields[10].strip('"')
 
                 packet = TcpPacket(
                     frame_number=frame_number,
@@ -243,6 +285,11 @@ class PacketExtractor:
                     seq=int(seq_str) if seq_str else 0,
                     ack=int(ack_str) if ack_str else 0,
                     timestamp=Decimal(timestamp_str) if timestamp_str else Decimal('0'),
+                    src_ip=src_ip_val,
+                    dst_ip=dst_ip_val,
+                    src_port=src_port_val,
+                    dst_port=dst_port_val,
+                    info=info_val,
                 )
                 packets.append(packet)
             except (ValueError, IndexError) as e:
@@ -336,6 +383,11 @@ class PacketExtractor:
                 seq_str = fields[4].strip('"')
                 ack_str = fields[5].strip('"')
                 timestamp_str = fields[6].strip('"')
+                src_ip_val = fields[7].strip('"')
+                dst_ip_val = fields[8].strip('"')
+                src_port_val = int(fields[9].strip('"')) if fields[9] else 0
+                dst_port_val = int(fields[10].strip('"')) if fields[10] else 0
+                info_val = fields[11].strip('"')
 
                 packet = TcpPacket(
                     frame_number=frame_number,
@@ -344,6 +396,11 @@ class PacketExtractor:
                     seq=int(seq_str) if seq_str else 0,
                     ack=int(ack_str) if ack_str else 0,
                     timestamp=Decimal(timestamp_str) if timestamp_str else Decimal('0'),
+                    src_ip=src_ip_val,
+                    dst_ip=dst_ip_val,
+                    src_port=src_port_val,
+                    dst_port=dst_port_val,
+                    info=info_val,
                 )
                 packets_by_stream[stream_id].append(packet)
             except (ValueError, IndexError) as e:

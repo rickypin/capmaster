@@ -398,3 +398,155 @@ class PacketComparator:
 
         return "\n".join(lines)
 
+    def format_flow_comparison(
+        self,
+        packets_a: list[TcpPacket],
+        packets_b: list[TcpPacket],
+        result: ComparisonResult,
+    ) -> str:
+        """
+        Format comparison result as a visual flow graph.
+
+        Args:
+            packets_a: Packets from PCAP A
+            packets_b: Packets from PCAP B
+            result: Comparison result
+
+        Returns:
+            Formatted table string
+        """
+        lines = []
+        lines.append(f"\n{'='*150}")
+        lines.append(f"Connection: {result.connection_id}")
+        lines.append(f"{'='*150}")
+
+        # Build IP ID index for both sides
+        ipid_map_a: dict[int, list[TcpPacket]] = defaultdict(list)
+        ipid_map_b: dict[int, list[TcpPacket]] = defaultdict(list)
+
+        for pkt in packets_a:
+            ipid_map_a[pkt.ip_id].append(pkt)
+
+        for pkt in packets_b:
+            ipid_map_b[pkt.ip_id].append(pkt)
+
+        # Get all unique IP IDs
+        all_ipids = set(ipid_map_a.keys()) | set(ipid_map_b.keys())
+
+        # Create a list of rows to be sorted by timestamp
+        rows = []
+
+        for ipid in all_ipids:
+            pkts_a = ipid_map_a.get(ipid, [])
+            pkts_b = ipid_map_b.get(ipid, [])
+
+            max_count = max(len(pkts_a), len(pkts_b))
+            for i in range(max_count):
+                pkt_a = pkts_a[i] if i < len(pkts_a) else None
+                pkt_b = pkts_b[i] if i < len(pkts_b) else None
+
+                # Determine timestamp for sorting
+                if pkt_a and pkt_b:
+                    ts = min(pkt_a.timestamp, pkt_b.timestamp)
+                elif pkt_a:
+                    ts = pkt_a.timestamp
+                elif pkt_b:
+                    ts = pkt_b.timestamp
+                else:
+                    continue
+
+                # Determine status
+                status_str = ""
+                if pkt_a and pkt_b:
+                    diffs = []
+                    if pkt_a.tcp_flags != pkt_b.tcp_flags:
+                        diffs.append("FLAGS")
+                    if pkt_a.seq != pkt_b.seq:
+                        diffs.append("SEQ")
+                    if pkt_a.ack != pkt_b.ack:
+                        diffs.append("ACK")
+                    
+                    if diffs:
+                        status_str = f"DIFF({','.join(diffs)})"
+                    else:
+                        status_str = "MATCH"
+                elif pkt_a:
+                    status_str = "ONLY_IN_A"
+                else:
+                    status_str = "ONLY_IN_B"
+
+                rows.append({
+                    "ts": ts,
+                    "ipid": ipid,
+                    "pkt_a": pkt_a,
+                    "pkt_b": pkt_b,
+                    "status": status_str
+                })
+
+        # Sort rows by timestamp
+        rows.sort(key=lambda x: x["ts"])
+
+        # Calculate relative time
+        start_time = rows[0]["ts"] if rows else 0
+
+        # Header
+        # Time | Capture A (Flow) | Capture B (Flow) | Diff
+        # We need to determine the "Client" IP to orient arrows consistently.
+        # Heuristic: Use the src IP of the first packet as "Client" (Left side).
+        client_ip = ""
+        if rows:
+            first_row = rows[0]
+            pkt = first_row["pkt_a"] or first_row["pkt_b"]
+            if pkt:
+                client_ip = pkt.src_ip
+
+        header = (
+            f"{'Time':<10} {'IPID':<8} | "
+            f"{'Capture A Flow':<80} | "
+            f"{'Capture B Flow':<80} | "
+            f"{'Status':<15}"
+        )
+        lines.append(header)
+        lines.append("-" * 210)
+
+        for row in rows:
+            ts = row["ts"]
+            rel_time = float(ts - start_time)
+            ipid_str = f"{row['ipid']:#06x}"
+            pkt_a = row["pkt_a"]
+            pkt_b = row["pkt_b"]
+            status = row["status"]
+            time_str = f"{rel_time:.6f}"
+
+            # Helper to format flow string
+            def format_flow(pkt: TcpPacket | None) -> str:
+                if not pkt:
+                    return ""
+                
+                # Determine direction arrow
+                # If src_ip matches our "client_ip", it's -->
+                # Otherwise it's <--
+                arrow = "-->" if pkt.src_ip == client_ip else "<--"
+                
+                # Format: Arrow Info (Seq/Ack)
+                # Truncate info if too long
+                info = pkt.info[:60]
+                return f"{arrow} {info:<60} {pkt.seq}/{pkt.ack}"
+
+            flow_a = format_flow(pkt_a)
+            flow_b = format_flow(pkt_b)
+
+            line = (
+                f"{time_str:<10} {ipid_str:<8} | "
+                f"{flow_a:<80} | "
+                f"{flow_b:<80} | "
+                f"{status:<15}"
+            )
+            lines.append(line)
+
+        # Summary footer
+        lines.append(f"\n{'='*210}")
+        lines.append(f"Summary: {result}")
+        lines.append(f"{'='*210}\n")
+
+        return "\n".join(lines)
