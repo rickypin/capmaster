@@ -7,6 +7,8 @@ import click
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
 from capmaster.plugins.pipeline.runner import PipelineRunner
+from capmaster.core.input_manager import InputManager
+from capmaster.utils.cli_options import unified_input_options
 
 
 @register_plugin
@@ -22,6 +24,7 @@ class PipelinePlugin(PluginBase):
         """Register the run-pipeline command."""
 
         @cli_group.command(name=self.name)
+        @unified_input_options
         @click.option(
             "-c",
             "--config",
@@ -29,13 +32,6 @@ class PipelinePlugin(PluginBase):
             required=True,
             type=click.Path(exists=True, path_type=Path),
             help="Path to the pipeline configuration YAML file.",
-        )
-        @click.option(
-            "-i",
-            "--input",
-            "input_path",
-            required=True,
-            help="Input PCAP file or directory.",
         )
         @click.option(
             "-o",
@@ -61,7 +57,20 @@ class PipelinePlugin(PluginBase):
         def command(
             ctx: click.Context,
             config_path: Path,
-            input_path: str,
+            input_path: str | None,
+            file1: Path | None,
+            file1_pcapid: int | None,
+            file2: Path | None,
+            file2_pcapid: int | None,
+            file3: Path | None,
+            file3_pcapid: int | None,
+            file4: Path | None,
+            file4_pcapid: int | None,
+            file5: Path | None,
+            file5_pcapid: int | None,
+            file6: Path | None,
+            file6_pcapid: int | None,
+            silent_exit: bool,
             output_dir: Path,
             dry_run: bool,
             silent: bool,
@@ -70,6 +79,13 @@ class PipelinePlugin(PluginBase):
             exit_code = self.execute(
                 config_path=config_path,
                 input_path=input_path,
+                file1=file1,
+                file2=file2,
+                file3=file3,
+                file4=file4,
+                file5=file5,
+                file6=file6,
+                silent_exit=silent_exit,
                 output_dir=output_dir,
                 dry_run=dry_run,
                 silent=silent,
@@ -79,19 +95,32 @@ class PipelinePlugin(PluginBase):
     def execute(
         self,
         config_path: Path,
-        input_path: str,
         output_dir: Path,
+        input_path: str | None = None,
+        file1: Path | None = None,
+        file2: Path | None = None,
+        file3: Path | None = None,
+        file4: Path | None = None,
+        file5: Path | None = None,
+        file6: Path | None = None,
+        silent_exit: bool = False,
         dry_run: bool = False,
         silent: bool = False,
         **kwargs,
     ) -> int:
         """Execute the pipeline."""
-        # Note: We do not modify global logger level here to avoid side effects.
-        # The silent flag is passed to the runner and individual plugins.
+        # Resolve inputs
+        file_args = {
+            1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6
+        }
+        input_files = InputManager.resolve_inputs(input_path, file_args)
+        
+        # Validate for PipelinePlugin (needs at least 1 file)
+        InputManager.validate_file_count(input_files, min_files=1, silent_exit=silent_exit)
 
         runner = PipelineRunner(
             config_path=config_path,
-            input_path=input_path,
+            input_files=input_files,
             output_dir=output_dir,
             dry_run=dry_run,
             silent=silent,

@@ -1,6 +1,12 @@
 name: standard_analysis
 description: "Standard full-link analysis flow: Match -> Topology -> Quality Analysis"
 
+# Input variables available:
+# - ${INPUT} or ${FILE1}: First input file (for backward compatibility)
+# - ${FILE1}, ${FILE2}, ..., ${FILE6}: Individual input files
+# - ${OUTPUT}: Output directory
+# - ${STEP.step_id.output}: Output from previous steps
+
 steps:
   # ========================================================================
   # Step 1: TCP Connection Matching
@@ -9,7 +15,8 @@ steps:
   - id: match_conn
     command: match
     args:
-      input: "${INPUT}"
+      file1: "${FILE1}"
+      file2: "${FILE2}"
       output: "${OUTPUT}/matched_connections.txt"
       mode: "auto"
       threshold: 0.6
@@ -21,7 +28,8 @@ steps:
   - id: topo_analysis
     command: topology
     args:
-      input: "${INPUT}"
+      file1: "${FILE1}"
+      file2: "${FILE2}"
       matched-connections: "${STEP.match_conn.output}"
       service-list: "services.txt"
       output: "${OUTPUT}/topology.txt"
@@ -33,7 +41,8 @@ steps:
   - id: service_quality
     command: comparative-analysis
     args:
-      input: "${INPUT}"
+      file1: "${FILE1}"
+      file2: "${FILE2}"
       service: true
       topology: "${STEP.topo_analysis.output}"
       output: "${OUTPUT}/service-network-quality.txt"
@@ -45,7 +54,8 @@ steps:
   - id: conn_quality
     command: comparative-analysis
     args:
-      input: "${INPUT}"
+      file1: "${FILE1}"
+      file2: "${FILE2}"
       matched-connections: "${STEP.match_conn.output}"
       top-n: 10
       output: "${OUTPUT}/poor-quality-connections.txt"

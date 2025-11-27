@@ -11,6 +11,8 @@ import yaml
 
 from capmaster.plugins import get_all_plugins
 from capmaster.plugins.base import PluginBase
+from capmaster.core.input_manager import InputFile
+
 
 logger = logging.getLogger(__name__)
 
@@ -21,13 +23,14 @@ class PipelineRunner:
     def __init__(
         self,
         config_path: Path,
-        input_path: str,
+        input_files: list[InputFile],
         output_dir: Path,
         dry_run: bool = False,
         silent: bool = False,
     ):
         self.config_path = config_path
-        self.input_path = input_path
+        self.input_files = input_files
+        self.output_dir = output_dir
         self.output_dir = output_dir
         self.dry_run = dry_run
         self.silent = silent
@@ -142,8 +145,13 @@ class PipelineRunner:
 
     def _resolve_string(self, value: str) -> str:
         """Resolve variables in a single string."""
-        # Replace ${INPUT}
-        value = value.replace("${INPUT}", self.input_path)
+        # Replace ${INPUT} (backward compatibility, use first file)
+        if self.input_files:
+            value = value.replace("${INPUT}", str(self.input_files[0].path))
+
+        # Replace ${FILE1}, ${FILE2}, etc.
+        for i, input_file in enumerate(self.input_files, start=1):
+            value = value.replace(f"${{FILE{i}}}", str(input_file.path))
 
         # Replace ${OUTPUT}
         value = value.replace("${OUTPUT}", str(self.output_dir))
