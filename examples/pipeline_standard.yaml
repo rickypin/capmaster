@@ -1,0 +1,51 @@
+name: standard_analysis
+description: "Standard full-link analysis flow: Match -> Topology -> Quality Analysis"
+
+steps:
+  # ========================================================================
+  # Step 1: TCP Connection Matching
+  # Command: capmaster match -i ... -o tmp/matched_connections.txt
+  # ========================================================================
+  - id: match_conn
+    command: match
+    args:
+      input: "${INPUT}"
+      output: "${OUTPUT}/matched_connections.txt"
+      mode: "auto"
+      threshold: 0.6
+
+  # ========================================================================
+  # Step 2: Topology Analysis
+  # Command: capmaster topology ... --matched-connections ...
+  # ========================================================================
+  - id: topo_analysis
+    command: topology
+    args:
+      input: "${INPUT}"
+      matched-connections: "${STEP.match_conn.output}"
+      service-list: "services.txt"
+      output: "${OUTPUT}/topology.txt"
+
+  # ========================================================================
+  # Step 3: Service-based Quality Analysis
+  # Command: capmaster comparative-analysis --service ...
+  # ========================================================================
+  - id: service_quality
+    command: comparative-analysis
+    args:
+      input: "${INPUT}"
+      service: true
+      topology: "${STEP.topo_analysis.output}"
+      output: "${OUTPUT}/service-network-quality.txt"
+
+  # ========================================================================
+  # Step 4: Connection-based Quality Analysis
+  # Command: capmaster comparative-analysis --matched-connections ... --top-n 10
+  # ========================================================================
+  - id: conn_quality
+    command: comparative-analysis
+    args:
+      input: "${INPUT}"
+      matched-connections: "${STEP.match_conn.output}"
+      top-n: 10
+      output: "${OUTPUT}/poor-quality-connections.txt"

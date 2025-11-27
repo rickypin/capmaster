@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -87,6 +88,7 @@ class MatchPlugin(PluginBase):
         service_group_mapping: Path | None = None,
         match_json: Path | None = None,
         service_list: Path | None = None,
+        silent: bool = False,
         # Legacy args to ignore if passed
         file1_pcapid: int | None = None,
         file2_pcapid: int | None = None,
@@ -141,6 +143,7 @@ class MatchPlugin(PluginBase):
             service_group_mapping=service_group_mapping,
             match_json=match_json,
             service_list=service_list,
+            silent=silent,
         )
         # Legacy implementation of execute() moved to runner.run_match_pipeline.
 
@@ -332,4 +335,44 @@ class MatchPlugin(PluginBase):
             top_n=top_n,
             output_file=output_file,
         )
+
+    def get_command_map(self) -> dict[str, str]:
+        """Return mapping for match and comparative-analysis commands."""
+        return {
+            "match": "execute",
+            "comparative-analysis": "execute_comparative_analysis",
+        }
+
+    def resolve_args(self, command: str, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Resolve arguments for match plugin commands."""
+        # 1. Default resolution (kebab-case -> snake_case)
+        args = super().resolve_args(command, kwargs)
+
+        # Map threshold -> score_threshold
+        if "threshold" in args and "score_threshold" not in args:
+            args["score_threshold"] = args.pop("threshold")
+
+        if command == "comparative-analysis":
+            # 2. Handle special logic for analysis_type
+            service = args.pop("service", False)
+            matched = args.get("matched_connections_file") or args.get(
+                "matched_connections"
+            )
+
+            # Ensure matched_connections_file is set if matched_connections was used
+            if "matched_connections" in args:
+                args["matched_connections_file"] = args.pop("matched_connections")
+
+            if service and matched:
+                args["analysis_type"] = "both"
+            elif service:
+                args["analysis_type"] = "service"
+            elif matched:
+                args["analysis_type"] = "connections"
+
+            # Map topology -> topology_file
+            if "topology" in args and "topology_file" not in args:
+                args["topology_file"] = args.pop("topology")
+
+        return args
 

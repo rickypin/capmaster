@@ -59,6 +59,11 @@ class TopologyPlugin(PluginBase):
             type=click.Path(exists=True, dir_okay=False, path_type=Path),
             help="Optional service list file (ip:port or ip:*) to aid server detection.",
         )
+        @click.option(
+            "--silent",
+            is_flag=True,
+            help="Suppress progress bars and non-error logs.",
+        )
         @click.pass_context
         def topology_command(
             ctx: click.Context,
@@ -80,6 +85,7 @@ class TopologyPlugin(PluginBase):
             empty_match_behavior: str,
             output_file: Path | None,
             service_list: Path | None,
+            silent: bool,
         ) -> None:
             """Render network topology for one or two capture points.
 
@@ -107,6 +113,7 @@ class TopologyPlugin(PluginBase):
                 empty_match_behavior=empty_match_behavior,
                 output_file=output_file,
                 service_list=service_list,
+                silent=silent,
             )
             ctx.exit(exit_code)
 
@@ -124,6 +131,7 @@ class TopologyPlugin(PluginBase):
         empty_match_behavior: str = "error",
         output_file: Path | None = None,
         service_list: Path | None = None,
+        silent: bool = False,
         # Legacy
         single_file: Path | None = None,
     ) -> int:
@@ -157,5 +165,10 @@ class TopologyPlugin(PluginBase):
             empty_match_behavior=empty_match_behavior,
             output_file=output_file,
             service_list=service_list,
+            silent=silent,
         )
+
+    def get_command_map(self) -> dict[str, str]:
+        """Return mapping for topology command."""
+        return {self.name: "execute"}
 
