@@ -88,6 +88,11 @@ class StreamDiffPlugin(PluginBase):
             type=click.Path(path_type=Path),
             help="Output file for the streamdiff report (default: stdout).",
         )
+        @click.option(
+            "--silent",
+            is_flag=True,
+            help="Suppress progress bars and non-error logs.",
+        )
         @click.pass_context
         def streamdiff_command(
             ctx: click.Context,
@@ -110,6 +115,7 @@ class StreamDiffPlugin(PluginBase):
             file1_stream_id: int | None,
             file2_stream_id: int | None,
             output_file: Path | None,
+            silent: bool,
         ) -> None:
             """Compare a single TCP connection between two captures and list
             packets that are present only in A or only in B.
@@ -142,6 +148,7 @@ class StreamDiffPlugin(PluginBase):
                 file1_stream_id=file1_stream_id,
                 file2_stream_id=file2_stream_id,
                 output_file=output_file,
+                silent=silent,
             )
             ctx.exit(exit_code)
 
@@ -160,6 +167,7 @@ class StreamDiffPlugin(PluginBase):
         file1_stream_id: int | None = None,
         file2_stream_id: int | None = None,
         output_file: Path | None = None,
+        silent: bool = False,
         # Legacy args
         file1_pcapid: int | None = None,
         file2_pcapid: int | None = None,
@@ -170,6 +178,9 @@ class StreamDiffPlugin(PluginBase):
         are missing in capture B for a single TCP connection. Also reports
         packets that exist in capture B but are missing in capture A.
         """
+        if silent:
+            logging.getLogger("capmaster").setLevel(logging.ERROR)
+
         # Resolve inputs
         file_args = {
             1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6

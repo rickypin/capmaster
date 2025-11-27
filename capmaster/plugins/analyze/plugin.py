@@ -145,6 +145,11 @@ class AnalyzePlugin(PluginBase):
             is_flag=True,
             help="Generate a JSON sidecar (*.meta.json) for each module output.",
         )
+        @click.option(
+            "--silent",
+            is_flag=True,
+            help="Suppress progress bars and non-error logs.",
+        )
         @click.pass_context
         def analyze_command(
             ctx: click.Context,
@@ -167,6 +172,7 @@ class AnalyzePlugin(PluginBase):
             output_format: str,
             selected_modules: tuple[str, ...],
             generate_sidecar: bool,
+            silent: bool,
         ) -> None:
             """
             Analyze PCAP files and generate statistics.
@@ -233,6 +239,7 @@ class AnalyzePlugin(PluginBase):
                 output_format=output_format,
                 selected_modules=selected_modules,
                 generate_sidecar=generate_sidecar,
+                silent=silent,
             )
             ctx.exit(exit_code)
 
@@ -251,6 +258,7 @@ class AnalyzePlugin(PluginBase):
         output_format: str = "txt",
         selected_modules: tuple[str, ...] | None = None,
         generate_sidecar: bool = False,
+        silent: bool = False,
         **kwargs: Any,
     ) -> int:
         """
@@ -316,17 +324,23 @@ class AnalyzePlugin(PluginBase):
             # Process files with progress bar
             total_outputs = 0
             failed_files = 0
-            with Progress(
+
+            from contextlib import nullcontext
+            progress_ctx = nullcontext() if silent else Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
                 BarColumn(),
                 TaskProgressColumn(),
-            ) as progress:
+            )
+
+            with progress_ctx as progress:
                 # Create overall progress task
-                overall_task = progress.add_task(
-                    f"[cyan]Analyzing {len(pcap_files)} file(s)...",
-                    total=len(pcap_files)
-                )
+                overall_task = None
+                if progress:
+                    overall_task = progress.add_task(
+                        f"[cyan]Analyzing {len(pcap_files)} file(s)...",
+                        total=len(pcap_files)
+                    )
 
                 # Use concurrent processing if workers > 1
                 if workers > 1 and len(pcap_files) > 1:
@@ -357,15 +371,17 @@ class AnalyzePlugin(PluginBase):
                                 failed_files += 1
                                 logger.error(f"Failed to process {pcap_file.name}: {e}")
 
-                            progress.update(overall_task, advance=1)
+                            if progress and overall_task:
+                                progress.update(overall_task, advance=1)
                 else:
                     # Sequential processing
                     for file_index, pcap_file in enumerate(pcap_files, start=1):
                         # Update progress description
-                        progress.update(
-                            overall_task,
-                            description=f"[cyan]Analyzing {pcap_file.name} ({file_index}/{len(pcap_files)})"
-                        )
+                        if progress and overall_task:
+                            progress.update(
+                                overall_task,
+                                description=f"[cyan]Analyzing {pcap_file.name} ({file_index}/{len(pcap_files)})"
+                            )
 
                         # Create output directory
                         try:
@@ -396,7 +412,8 @@ class AnalyzePlugin(PluginBase):
                             logger.debug(f"  - {output_file.name}")
 
                         # Update overall progress
-                        progress.update(overall_task, advance=1)
+                        if progress and overall_task:
+                            progress.update(overall_task, advance=1)
 
             if failed_files > 0:
                 logger.error(
