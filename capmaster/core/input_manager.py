@@ -56,7 +56,10 @@ class InputManager:
             raw_paths = PcapScanner.parse_input(input_path)
             # We need to handle directories here if PcapScanner.parse_input doesn't fully expand them
             # PcapScanner.scan does the expansion
-            resolved_paths = PcapScanner.scan(raw_paths, recursive=False, preserve_order=True)
+            try:
+                resolved_paths = PcapScanner.scan(raw_paths, recursive=False, preserve_order=True)
+            except FileNotFoundError as e:
+                raise click.BadParameter(str(e))
 
         # Case 2: --fileX arguments provided
         elif file_args:
