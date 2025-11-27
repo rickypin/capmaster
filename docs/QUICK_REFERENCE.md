@@ -79,24 +79,6 @@ capmaster match -i /path/to/pcaps/ \
   -o results.txt
 ```
 
-
-
-### Clean Statistics Directories
-
-```bash
-# Clean recursively (with confirmation)
-capmaster clean -i /path/to/data
-
-# Clean only top-level directory
-capmaster clean -i /path/to/data -r
-
-# Dry run to preview
-capmaster clean -i /path/to/data --dry-run
-
-# Clean without confirmation
-capmaster clean -i /path/to/data -y
-```
-
 ---
 
 ## Command Options
@@ -147,15 +129,6 @@ capmaster clean -i /path/to/data -y
 | `--dedup-ignore-bytes` | | Ignore N bytes at packet end when deduplicating | From config |
 | `--oneway-ack-threshold` | | ACK threshold for one-way detection | From config |
 | `--workers` | `-w` | Number of worker processes | From config |
-
-### Clean Options
-
-| Option | Short | Description | Default |
-|--------|-------|-------------|---------|
-| `--input` | `-i` | Input directory to search | Required |
-| `--no-recursive` | `-r` | Do NOT recursively search directories | Recursive by default |
-| `--dry-run` | | Show what would be deleted | False |
-| `--yes` | `-y` | Skip confirmation prompt | False |
 
 ---
 

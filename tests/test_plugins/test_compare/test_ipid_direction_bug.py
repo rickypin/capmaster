@@ -65,6 +65,11 @@ class TestIPIDDirectionBug:
                 seq=1000,
                 ack=0,
                 timestamp=1000.0,
+                src_ip="10.0.0.1",
+                dst_ip="10.0.0.2",
+                src_port=1000,
+                dst_port=80,
+                info="SYN",
             ),
             # Server -> Client: IPID=0x5678, Seq=2000, Ack=1001
             TcpPacket(
@@ -74,6 +79,11 @@ class TestIPIDDirectionBug:
                 seq=2000,
                 ack=1001,
                 timestamp=1000.1,
+                src_ip="10.0.0.2",
+                dst_ip="10.0.0.1",
+                src_port=80,
+                dst_port=1000,
+                info="SYN, ACK",
             ),
         ]
 
@@ -87,6 +97,11 @@ class TestIPIDDirectionBug:
                 seq=1000,
                 ack=0,
                 timestamp=1000.0,
+                src_ip="10.0.0.1",
+                dst_ip="10.0.0.2",
+                src_port=1000,
+                dst_port=80,
+                info="SYN",
             ),
             # Server -> Client: IPID=0x1234, Seq=2000, Ack=1001 (SAME IPID!)
             TcpPacket(
@@ -96,6 +111,11 @@ class TestIPIDDirectionBug:
                 seq=2000,
                 ack=1001,
                 timestamp=1000.1,
+                src_ip="10.0.0.2",
+                dst_ip="10.0.0.1",
+                src_port=80,
+                dst_port=1000,
+                info="SYN, ACK",
             ),
         ]
 

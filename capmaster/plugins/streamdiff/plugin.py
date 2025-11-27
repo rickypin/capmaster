@@ -198,17 +198,41 @@ class StreamDiffPlugin(PluginBase):
         connection_id = conn_label or f"stream {stream_id_a} vs {stream_id_b}"
         result = comparator.compare(packets_a, packets_b, connection_id, matched_only=False)
 
+        # Filter for A-only and B-only packets
+        a_only_diffs = [
+            d for d in result.differences
+            if d.diff_type == DiffType.IP_ID and d.value_b == "MISSING"
+        ]
+        b_only_diffs = [
+            d for d in result.differences
+            if d.diff_type == DiffType.IP_ID and d.value_a == "MISSING"
+        ]
+
+        # Generate streamdiff specific report
+        streamdiff_report = self._build_report(
+            file_a=file_a,
+            file_b=file_b,
+            stream_id_a=stream_id_a,
+            stream_id_b=stream_id_b,
+            result=result,
+            a_only_diffs=a_only_diffs,
+            b_only_diffs=b_only_diffs,
+        )
+
         # Generate flow comparison report
-        report = comparator.format_flow_comparison(
+        flow_report = comparator.format_flow_comparison(
             packets_a=packets_a,
             packets_b=packets_b,
             result=result,
         )
 
+        # Combine reports
+        full_report = f"{streamdiff_report}\n\n{flow_report}"
+
         if output_file:
-            output_file.write_text(report)
+            output_file.write_text(full_report)
         else:
-            click.echo(report)
+            click.echo(full_report)
 
         return 0
 

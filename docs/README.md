@@ -10,7 +10,7 @@ Welcome to the CapMaster documentation! This directory contains comprehensive gu
 
 - **[USER_GUIDE.md](USER_GUIDE.md)** - Complete user guide covering all features
   - Installation and setup
-  - Command usage (analyze, match, compare, preprocess, clean)
+  - Command usage (analyze, match, compare, preprocess)
   - Advanced features (F5 matching, sampling, module selection)
   - Troubleshooting and best practices
 

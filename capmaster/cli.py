@@ -38,7 +38,6 @@ def cli(ctx: click.Context, verbose: int) -> None:
 
       comparative-analysis  Perform comparative analysis between two PCAP files
       preprocess            Preprocess PCAP files before further analysis
-      clean                 Remove statistics directories and their contents
 
     \b
     Examples:
@@ -53,9 +52,6 @@ def cli(ctx: click.Context, verbose: int) -> None:
 
       # Preprocess PCAP files (time-align, deduplicate, one-way analysis)
       capmaster preprocess -i capture.pcap
-
-      # Clean statistics directories
-      capmaster clean -i /path/to/data
 
       # Run with verbose output
       capmaster -v analyze -i capture.pcap
