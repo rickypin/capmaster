@@ -427,13 +427,11 @@ class TestMatchPlugin:
         non_existent = tmp_path / "non_existent"
         output_file = tmp_path / "matches.txt"
 
-        exit_code = plugin.execute(
-            input_path=non_existent,
-            output_file=output_file,
-        )
-
-        # Should fail gracefully
-        assert exit_code != 0, "Should fail with non-existent input"
+        with pytest.raises(FileNotFoundError):
+            plugin.execute(
+                input_path=non_existent,
+                output_file=output_file,
+            )
 
 
 @pytest.mark.integration

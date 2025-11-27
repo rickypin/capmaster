@@ -10,6 +10,8 @@ import click
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
 from capmaster.plugins.topology.runner import run_topology_analysis
+from capmaster.core.input_manager import InputManager
+from capmaster.utils.cli_options import unified_input_options
 
 logger = logging.getLogger(__name__)
 
@@ -27,28 +29,7 @@ class TopologyPlugin(PluginBase):
         """Register the topology CLI."""
 
         @cli_group.command(name=self.name)
-        @click.option(
-            "-i",
-            "--input",
-            "input_path",
-            type=str,
-            help="Directory or comma-separated list containing 1 or 2 PCAP files.",
-        )
-        @click.option(
-            "--single-file",
-            type=click.Path(exists=True, dir_okay=False, path_type=Path),
-            help="Single PCAP file for single-point topology analysis.",
-        )
-        @click.option(
-            "--file1",
-            type=click.Path(exists=True, dir_okay=False, path_type=Path),
-            help="First PCAP file (Capture Point A) for dual-point analysis.",
-        )
-        @click.option(
-            "--file2",
-            type=click.Path(exists=True, dir_okay=False, path_type=Path),
-            help="Second PCAP file (Capture Point B) for dual-point analysis.",
-        )
+        @unified_input_options
         @click.option(
             "--matched-connections",
             type=click.Path(exists=True, dir_okay=False, path_type=Path),
@@ -82,9 +63,19 @@ class TopologyPlugin(PluginBase):
         def topology_command(
             ctx: click.Context,
             input_path: str | None,
-            single_file: Path | None,
             file1: Path | None,
+            file1_pcapid: int | None,
             file2: Path | None,
+            file2_pcapid: int | None,
+            file3: Path | None,
+            file3_pcapid: int | None,
+            file4: Path | None,
+            file4_pcapid: int | None,
+            file5: Path | None,
+            file5_pcapid: int | None,
+            file6: Path | None,
+            file6_pcapid: int | None,
+            silent_exit: bool,
             matched_connections: Path | None,
             empty_match_behavior: str,
             output_file: Path | None,
@@ -105,9 +96,13 @@ class TopologyPlugin(PluginBase):
 
             exit_code = self.execute(
                 input_path=input_path,
-                single_file=single_file,
                 file1=file1,
                 file2=file2,
+                file3=file3,
+                file4=file4,
+                file5=file5,
+                file6=file6,
+                silent_exit=silent_exit,
                 matched_connections=matched_connections,
                 empty_match_behavior=empty_match_behavior,
                 output_file=output_file,
@@ -117,21 +112,47 @@ class TopologyPlugin(PluginBase):
 
     def execute(  # type: ignore[override]
         self,
-        input_path: str | Path | None = None,
-        single_file: Path | None = None,
+        input_path: str | None = None,
         file1: Path | None = None,
         file2: Path | None = None,
+        file3: Path | None = None,
+        file4: Path | None = None,
+        file5: Path | None = None,
+        file6: Path | None = None,
+        silent_exit: bool = False,
         matched_connections: Path | None = None,
         empty_match_behavior: str = "error",
         output_file: Path | None = None,
         service_list: Path | None = None,
+        # Legacy
+        single_file: Path | None = None,
     ) -> int:
         """Delegate to the topology runner."""
+        # Resolve inputs
+        file_args = {
+            1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6
+        }
+        input_files = InputManager.resolve_inputs(input_path, file_args)
+        
+        # Validate for TopologyPlugin (needs 1 or 2 files)
+        InputManager.validate_file_count(input_files, min_files=1, max_files=2, silent_exit=silent_exit)
+        
+        # Map to legacy args
+        single_file_path = None
+        file1_path = None
+        file2_path = None
+        
+        if len(input_files) == 1:
+            single_file_path = input_files[0].path
+        elif len(input_files) == 2:
+            file1_path = input_files[0].path
+            file2_path = input_files[1].path
+
         return run_topology_analysis(
-            input_path=input_path,
-            single_file=single_file,
-            file1=file1,
-            file2=file2,
+            input_path=None,
+            single_file=single_file_path,
+            file1=file1_path,
+            file2=file2_path,
             matched_connections_file=matched_connections,
             empty_match_behavior=empty_match_behavior,
             output_file=output_file,

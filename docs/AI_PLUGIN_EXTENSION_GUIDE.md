@@ -315,48 +315,53 @@ result = tshark.execute(
 )
 ```
 
-### 5.4 CLI 双文件输入约束（AI 重点）
+### 5.4 CLI 统一输入控制约束（AI 重点）
 
-> 适用于需要“两个 PCAP 输入”的顶层命令，例如 `match`、`compare` 以及相关子命令（如 `match comparative-analysis`）。
+> 适用于所有需要 PCAP 输入的插件命令，例如 `match`、`compare`、`analyze` 等。
 
-1. **必须使用统一装饰器 `dual_file_input_options`**
-   - 所有“双文件输入”命令必须使用 `capmaster.utils.cli_options.dual_file_input_options` 来声明：
-     - `-i/--input`
-     - `--file1/--file2`
-     - `--file1-pcapid/--file2-pcapid`
-   - **禁止**在各个命令中手写上述选项，避免与全局规则 / 校验不一致。
+1. **必须使用统一装饰器 `unified_input_options`**
+   - 所有插件命令必须使用 `capmaster.utils.cli_options.unified_input_options` 来声明输入参数：
+     - `-i/--input`: 支持目录、文件或逗号分隔的文件列表。
+     - `--file1` 至 `--file6`: 支持显式指定最多 6 个文件。
+     - `--silent-exit`: 支持在文件数量不满足要求时静默退出（返回码 0）。
+   - **禁止**在各个命令中手写上述选项，避免与全局规则不一致。
 
-2. **禁止调用已废弃的 `validate_dual_file_input`**
-   - 函数 `capmaster.utils.cli_options.validate_dual_file_input(...)` 仅为兼容旧代码保留，其实现是 no-op。
-   - AI Agent 和人类开发者在新代码中 **不得调用** 该函数；
-   - 如果在修改旧命令逻辑时遇到它，应顺便移除调用，改为完全依赖 `dual_file_input_options` 的 Click callback 校验。
+2. **必须使用 `InputManager` 进行解析**
+   - 在命令执行逻辑中，必须调用 `capmaster.core.input_manager.InputManager.resolve_inputs` 来解析输入参数。
+   - 解析后，必须调用 `InputManager.validate_file_count` 来验证文件数量是否符合当前插件的要求。
+   - `InputManager` 会自动处理：
+     - 输入源的互斥检查（`-i` vs `--fileX`）。
+     - 文件的存在性检查和扩展名验证。
+     - 自动分配 `pcapid` (0-5) 和 `capture_point` (A-F)。
 
-3. **单一真相源：规则与错误信息**
-   - 双文件输入在 CLI 层的**参数组合规则**与**错误提示文案**，统一定义在：
-     - `capmaster/utils/cli_options.py` 中的 `_validate_dual_file_input_callback`；
-   - 双文件输入在执行层的**语义解析与文件数量检查**，统一由：
-     - `capmaster/utils/input_parser.py` 中的 `DualFileInputParser` 负责。
-   - 如需修改：
-     - `-i` 与 `--file1/--file2` 是否互斥；
-     - `pcapid` 的合法取值范围；
-     - 错误提示文本；
-     - 以及其他与“双文件输入”相关的规则；
-     **必须只在上述集中位置修改**，不得在单个插件 / 命令中重新实现一套局部规则。
+3. **单一真相源**
+   - 输入参数的定义在 `capmaster/utils/cli_options.py`。
+   - 输入解析和验证逻辑在 `capmaster/core/input_manager.py`。
+   - 如需修改输入规则（如最大文件数、支持的扩展名等），**必须只在上述位置修改**。
 
-4. **新增双文件命令的推荐模式**
-   - CLI 层：使用 `@dual_file_input_options` 获取 `input_path` / `file1` / `file2` / `file1_pcapid` / `file2_pcapid`。
-   - 执行层：调用 `DualFileInputParser` 进行语义解析与安全检查。
-   - 业务层：仅在解析结果的基础上编写与当前命令相关的业务逻辑，**不得重新解释双文件输入的含义**。
+4. **新增命令的推荐模式**
+   ```python
+   @cli_group.command()
+   @unified_input_options
+   @click.pass_context
+   def my_command(ctx, input_path, file1, file2, file3, file4, file5, file6, silent_exit, ...):
+       # 1. 解析输入
+       file_args = {1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6}
+       input_files = InputManager.resolve_inputs(input_path, file_args)
+       
+       # 2. 验证数量 (例如需要至少 1 个文件)
+       InputManager.validate_file_count(input_files, min_files=1, silent_exit=silent_exit)
+       
+       # 3. 业务逻辑
+       for input_file in input_files:
+           process(input_file.path)
+   ```
 
 5. **CLI 负向测试要求**
-   - 对任意使用 `dual_file_input_options` 的命令，如有新增或修改逻辑，推荐至少增加以下场景的 CLI 级负向测试：
-     - 未提供任何输入（既无 `-i/--input`，也无 `--file1/--file2`）；
-     - 同时提供 `-i/--input` 与 `--file1/--file2`；
-     - 使用 `--file1/--file2` 却缺少对应的 `pcapid`；
-     - `pcapid` 不在允许的取值范围内（当前为 `0` 或 `1`）。
-   - 推荐使用 `subprocess.run(["python", "-m", "capmaster", ...])` 直接调用 CLI，并断言：
-     - 返回码 `returncode != 0`；
-     - 标准错误输出中包含来自 `_validate_dual_file_input_callback` 的预期错误信息。
+   - 对任意使用 `unified_input_options` 的命令，如有新增或修改逻辑，推荐增加以下场景的 CLI 级负向测试：
+     - 未提供任何输入；
+     - 同时提供 `-i/--input` 与 `--fileX`；
+     - 提供超过限制数量的文件（如通过 `-i` 列表）。
 
 
 ### 5.5 ServerDetector：服务端判定的单一真相源（AI 重点）

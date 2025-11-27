@@ -10,7 +10,7 @@ import click
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
 from capmaster.core.connection.connection_extractor import extract_connections_from_pcap
-from capmaster.utils.input_parser import DualFileInputParser
+from capmaster.core.input_manager import InputManager
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
 from capmaster.plugins.compare.packet_comparator import PacketComparator
@@ -67,11 +67,14 @@ class ComparePlugin(PluginBase):
 
     def execute(  # type: ignore[override]
         self,
-        input_path: str | Path | None = None,
+        input_path: str | None = None,
         file1: Path | None = None,
-        file1_pcapid: int | None = None,
         file2: Path | None = None,
-        file2_pcapid: int | None = None,
+        file3: Path | None = None,
+        file4: Path | None = None,
+        file5: Path | None = None,
+        file6: Path | None = None,
+        silent_exit: bool = False,
         output_file: Path | None = None,
         score_threshold: float = 0.60,
         bucket_strategy: str = "auto",
@@ -82,6 +85,9 @@ class ComparePlugin(PluginBase):
         silent: bool = False,
         match_mode: str = "one-to-one",
         match_file: Path | None = None,
+        # Legacy args
+        file1_pcapid: int | None = None,
+        file2_pcapid: int | None = None,
     ) -> int:
         """
         Execute the compare plugin.
@@ -92,9 +98,9 @@ class ComparePlugin(PluginBase):
         Args:
             input_path: Directory or comma-separated list of exactly 2 PCAP files (optional)
             file1: First PCAP file (baseline) (optional)
-            file1_pcapid: PCAP ID for file1 (0 or 1) (optional)
             file2: Second PCAP file (compare) (optional)
-            file2_pcapid: PCAP ID for file2 (0 or 1) (optional)
+            file3-file6: Additional files (ignored)
+            silent_exit: Exit silently if file count mismatch
             output_file: Output file for results (None for stdout)
             score_threshold: Minimum score threshold for matching
             bucket_strategy: Bucketing strategy for matching
@@ -109,12 +115,22 @@ class ComparePlugin(PluginBase):
             Exit code (0 for success, non-zero for failure)
         """
         try:
-            dual_input = DualFileInputParser.parse(
-                input_path, file1, file2, file1_pcapid, file2_pcapid
-            )
-            baseline_file = dual_input.file1
-            compare_file = dual_input.file2
-            pcap_id_mapping = dual_input.pcap_id_mapping
+            # Resolve inputs
+            file_args = {
+                1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6
+            }
+            input_files = InputManager.resolve_inputs(input_path, file_args)
+            
+            # Validate for ComparePlugin (needs exactly 2 files)
+            InputManager.validate_file_count(input_files, min_files=2, max_files=2, silent_exit=silent_exit)
+            
+            # Extract files
+            baseline_file = input_files[0].path
+            compare_file = input_files[1].path
+            pcap_id_mapping = {
+                str(baseline_file): input_files[0].pcapid,
+                str(compare_file): input_files[1].pcapid
+            }
 
             logger.info(f"Baseline file: {baseline_file.name}")
             logger.info(f"Compare file: {compare_file.name}")

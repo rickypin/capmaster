@@ -100,12 +100,14 @@ class PcapScanner:
 
         if recursive:
             # Recursively scan all subdirectories
-            for item in directory.rglob("*"):
+            # Sort to ensure deterministic order
+            for item in sorted(directory.rglob("*")):
                 if item.is_file() and cls.is_valid_pcap(item):
                     pcap_files.append(item)
         else:
             # Only scan immediate children
-            for item in directory.iterdir():
+            # Sort to ensure deterministic order
+            for item in sorted(directory.iterdir()):
                 if item.is_file() and cls.is_valid_pcap(item):
                     pcap_files.append(item)
 

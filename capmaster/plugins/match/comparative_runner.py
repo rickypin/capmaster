@@ -36,30 +36,26 @@ def run_comparative_analysis(
         parse_topology_services,
     )
     from capmaster.utils.errors import InsufficientFilesError, handle_error
-    from capmaster.utils.input_parser import DualFileInputParser
+    from capmaster.core.input_manager import InputManager
     from capmaster.utils.meta_writer import write_meta_json
 
     try:
         logger.info(f"Starting comparative analysis (type: {analysis_type})...")
 
         # Parse input to get file1 and file2
-        if input_path:
-            try:
-                dual_input = DualFileInputParser.parse(
-                    input_path=input_path,
-                    file1=file1,
-                    file2=file2,
-                    file1_pcapid=None,
-                    file2_pcapid=None,
-                )
-                file1 = dual_input.file1
-                file2 = dual_input.file2
-                logger.info("Using files from input path:")
+        file_args = {1: file1, 2: file2}
+        try:
+            input_files = InputManager.resolve_inputs(input_path, file_args)
+            if input_files:
+                InputManager.validate_file_count(input_files, min_files=2, max_files=2)
+                file1 = input_files[0].path
+                file2 = input_files[1].path
+                logger.info("Using files:")
                 logger.info(f"  File 1: {file1}")
                 logger.info(f"  File 2: {file2}")
-            except InsufficientFilesError as e:
-                logger.error(str(e))
-                return 1
+        except Exception as e:
+            logger.error(str(e))
+            return 1
 
         # Validate that we have both files
         if not file1 or not file2:

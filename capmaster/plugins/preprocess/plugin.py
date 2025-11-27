@@ -9,6 +9,7 @@ import logging
 import click
 
 from capmaster.core.file_scanner import PcapScanner
+from capmaster.core.input_manager import InputManager
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
 from capmaster.plugins.preprocess.config import build_runtime_config
@@ -18,6 +19,7 @@ from capmaster.plugins.preprocess.pipeline import (
     STEP_TIME_ALIGN,
     run_preprocess,
 )
+from capmaster.utils.cli_options import unified_input_options
 from capmaster.utils.errors import CapMasterError, NoPcapFilesError, handle_error
 from capmaster.utils.logger import get_logger
 
@@ -52,14 +54,7 @@ class PreprocessPlugin(PluginBase):
         """Register the preprocess command."""
 
         @cli_group.command(name="preprocess")
-        @click.option(
-            "-i",
-            "--input",
-            "input_path",
-            type=str,
-            required=True,
-            help="Input PCAP file, directory, or comma-separated file list",
-        )
+        @unified_input_options
         @click.option(
             "-o",
             "--output",
@@ -155,7 +150,20 @@ class PreprocessPlugin(PluginBase):
         @click.pass_context
         def preprocess_command(  # noqa: PLR0913 - many CLI options by design
             ctx: click.Context,
-            input_path: str,
+            input_path: str | None,
+            file1: Path | None,
+            file1_pcapid: int | None,
+            file2: Path | None,
+            file2_pcapid: int | None,
+            file3: Path | None,
+            file3_pcapid: int | None,
+            file4: Path | None,
+            file4_pcapid: int | None,
+            file5: Path | None,
+            file5_pcapid: int | None,
+            file6: Path | None,
+            file6_pcapid: int | None,
+            silent_exit: bool,
             output_dir: Path | None,
             config_path: Path | None,
             steps: Sequence[str],
@@ -222,6 +230,13 @@ class PreprocessPlugin(PluginBase):
 
             exit_code = self.execute(
                 input_path=input_path,
+                file1=file1,
+                file2=file2,
+                file3=file3,
+                file4=file4,
+                file5=file5,
+                file6=file6,
+                silent_exit=silent_exit,
                 output_dir=output_dir,
                 config_path=config_path,
                 steps=list(steps),
@@ -247,7 +262,14 @@ class PreprocessPlugin(PluginBase):
 
     def execute(  # type: ignore[override]
         self,
-        input_path: str | Path,
+        input_path: str | None = None,
+        file1: Path | None = None,
+        file2: Path | None = None,
+        file3: Path | None = None,
+        file4: Path | None = None,
+        file5: Path | None = None,
+        file6: Path | None = None,
+        silent_exit: bool = False,
         output_dir: Path | None = None,
         config_path: Path | None = None,
         steps: Sequence[str] | None = None,
@@ -282,6 +304,17 @@ class PreprocessPlugin(PluginBase):
             plugin_logger.setLevel(logging.ERROR)
 
         try:
+            # Resolve inputs
+            file_args = {
+                1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6
+            }
+            input_files = InputManager.resolve_inputs(input_path, file_args)
+            
+            # Validate for PreprocessPlugin (needs at least 1 file)
+            InputManager.validate_file_count(input_files, min_files=1, silent_exit=silent_exit)
+            
+            pcap_files = [f.path for f in input_files]
+
             # Validate flag pairs
             _check_flag_pair(enable_dedup, disable_dedup, "dedup")
             _check_flag_pair(enable_oneway, disable_oneway, "oneway")
@@ -315,24 +348,20 @@ class PreprocessPlugin(PluginBase):
                         "Use either --step for explicit steps or flags for automatic mode.",
                     )
 
-            # Discover PCAP files
-            input_str = str(input_path)
-            input_paths = PcapScanner.parse_input(input_str)
-            preserve_order = "," in input_str
-            pcap_files = PcapScanner.scan(input_paths, recursive=False, preserve_order=preserve_order)
-
-            if not pcap_files:
-                raise NoPcapFilesError(Path(input_paths[0]))
-
             if output_dir is None:
                 # Default: write outputs next to the original input PCAPs
-                base = Path(input_paths[0])
-                if base.is_dir():
-                    # Input is a directory: keep outputs in the same directory
-                    output_dir = base
+                if input_path:
+                    # If input_path is a directory, use it.
+                    p = Path(input_path.split(',')[0].strip())
+                    if p.is_dir():
+                        output_dir = p
+                    else:
+                        output_dir = p.parent
+                elif pcap_files:
+                    output_dir = pcap_files[0].parent
                 else:
-                    # Input is a file or comma-separated list: use the parent directory
-                    output_dir = base.parent
+                    # Should be caught by validate_file_count, but safe fallback
+                    output_dir = Path.cwd()
 
             # Build CLI overrides for configuration
             cli_overrides: dict[str, Any] = {}

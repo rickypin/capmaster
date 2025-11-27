@@ -10,7 +10,7 @@ from typing import Any
 
 import click
 
-from capmaster.utils.cli_options import dual_file_input_options, validate_database_params
+from capmaster.utils.cli_options import unified_input_options, validate_database_params
 
 
 
@@ -24,7 +24,7 @@ def register_match_command(plugin: Any, cli_group: click.Group) -> None:
     """
 
     @cli_group.command(name=plugin.name)
-    @dual_file_input_options
+    @unified_input_options
     @click.option(
         "-o",
         "--output",
@@ -168,6 +168,15 @@ def register_match_command(plugin: Any, cli_group: click.Group) -> None:
         file1_pcapid: int | None,
         file2: Path | None,
         file2_pcapid: int | None,
+        file3: Path | None,
+        file3_pcapid: int | None,
+        file4: Path | None,
+        file4_pcapid: int | None,
+        file5: Path | None,
+        file5_pcapid: int | None,
+        file6: Path | None,
+        file6_pcapid: int | None,
+        silent_exit: bool,
         output_file: Path | None,
         mode: str,
         bucket: str,
@@ -323,7 +332,7 @@ def register_comparative_analysis_command(plugin: Any, cli_group: click.Group) -
     """
 
     @cli_group.command(name="comparative-analysis")
-    @dual_file_input_options
+    @unified_input_options
     @click.option(
         "--service",
         is_flag=True,
@@ -361,6 +370,15 @@ def register_comparative_analysis_command(plugin: Any, cli_group: click.Group) -
         file1_pcapid: int | None,
         file2: Path | None,
         file2_pcapid: int | None,
+        file3: Path | None,
+        file3_pcapid: int | None,
+        file4: Path | None,
+        file4_pcapid: int | None,
+        file5: Path | None,
+        file5_pcapid: int | None,
+        file6: Path | None,
+        file6_pcapid: int | None,
+        silent_exit: bool,
         service: bool,
         matched_connections: Path | None,
         top_n: int | None,
@@ -430,6 +448,11 @@ def register_comparative_analysis_command(plugin: Any, cli_group: click.Group) -
             input_path=input_path,
             file1=file1,
             file2=file2,
+            file3=file3,
+            file4=file4,
+            file5=file5,
+            file6=file6,
+            silent_exit=silent_exit,
             analysis_type=analysis_type,
             topology_file=topology,
             matched_connections_file=matched_connections,

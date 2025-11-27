@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+import click
 
 from capmaster.plugins.analyze.plugin import AnalyzePlugin
 
@@ -36,7 +37,6 @@ class TestAnalyzeIntegration:
         exit_code = plugin.execute(
             input_path=test_pcap,
             output_dir=output_dir,
-            recursive=False,
         )
         
         # Check that execution succeeded
@@ -71,7 +71,6 @@ class TestAnalyzeIntegration:
         exit_code = plugin.execute(
             input_path=input_dir,
             output_dir=output_dir,
-            recursive=False,
         )
         
         # Check that execution succeeded
@@ -88,38 +87,35 @@ class TestAnalyzeIntegration:
         """Test executing analyze with invalid input."""
         # Test with non-existent file
         non_existent = tmp_path / "non_existent.pcap"
-        exit_code = plugin.execute(
-            input_path=non_existent,
-            output_dir=tmp_path / "output",
-            recursive=False,
-        )
         
-        # Should fail gracefully
-        assert exit_code != 0, "Should fail with non-existent input"
+        # Should raise FileNotFoundError
+        with pytest.raises(FileNotFoundError):
+            plugin.execute(
+                input_path=non_existent,
+                output_dir=tmp_path / "output",
+            )
 
     def test_execute_with_empty_directory(self, plugin: AnalyzePlugin, tmp_path: Path):
         """Test executing analyze on an empty directory."""
         empty_dir = tmp_path / "empty"
         empty_dir.mkdir()
         
-        exit_code = plugin.execute(
-            input_path=empty_dir,
-            output_dir=tmp_path / "output",
-            recursive=False,
-        )
-        
-        # Should fail gracefully (no PCAP files found)
-        assert exit_code != 0, "Should fail with empty directory"
+        # Should raise BadParameter due to no files found
+        with pytest.raises(click.BadParameter):
+            plugin.execute(
+                input_path=empty_dir,
+                output_dir=tmp_path / "output",
+                recursive=False,
+            )
 
     def test_execute_without_input_path(self, plugin: AnalyzePlugin, tmp_path: Path):
         """Test executing analyze without input_path."""
-        exit_code = plugin.execute(
-            output_dir=tmp_path / "output",
-            recursive=False,
-        )
-        
-        # Should fail gracefully
-        assert exit_code != 0, "Should fail without input_path"
+        # Should raise BadParameter due to missing input
+        with pytest.raises(click.BadParameter):
+            plugin.execute(
+                output_dir=tmp_path / "output",
+                recursive=False,
+            )
 
     def test_execute_with_invalid_output_dir_type(self, plugin: AnalyzePlugin, test_pcap: Path):
         """Test executing analyze with invalid output_dir type."""

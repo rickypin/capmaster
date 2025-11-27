@@ -24,7 +24,7 @@ class TestTopologyCLIInputValidation:
         result = self._run_topology([])
 
         assert result.returncode != 0
-        assert "No input specified." in result.stderr
+        assert "Input file count mismatch" in result.stderr
 
     def test_cli_input_and_dual_file_mutually_exclusive(self, tmp_path: Path) -> None:
         """-i/--input cannot be used together with --file1/--file2."""
@@ -49,19 +49,7 @@ class TestTopologyCLIInputValidation:
         )
 
         assert result.returncode != 0
-        assert "Cannot combine -i/--input with --file1/--file2." in result.stderr
+        assert "Cannot use both -i/--input and --fileX arguments" in result.stderr
 
-    def test_cli_dual_file_requires_both_files(self, tmp_path: Path) -> None:
-        """When using --file1/--file2, both options are required."""
 
-        file1 = tmp_path / "file1.pcap"
-        file1.touch()
-
-        result = self._run_topology([
-            "--file1",
-            str(file1),
-        ])
-
-        assert result.returncode != 0
-        assert "Both --file1 and --file2 must be specified for dual capture analysis." in result.stderr
 

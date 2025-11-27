@@ -40,8 +40,8 @@ capmaster analyze -i sample.pcap
 # Directory (non-recursive)
 capmaster analyze -i /path/to/pcaps/
 
-# Directory (recursive)
-capmaster analyze -i /path/to/pcaps/ -r
+# Specific files
+capmaster analyze --file1 sample1.pcap --file2 sample2.pcap
 
 # Custom output directory
 capmaster analyze -i sample.pcap -o /custom/output/
@@ -54,8 +54,11 @@ capmaster -vv analyze -i sample.pcap  # Debug mode
 ### Match TCP Connections
 
 ```bash
-# Basic matching
+# Basic matching (directory with 2 files)
 capmaster match -i /path/to/pcaps/
+
+# Explicit file inputs
+capmaster match --file1 client.pcap --file2 server.pcap
 
 # Save to file
 capmaster match -i /path/to/pcaps/ -o matches.txt
@@ -327,7 +330,7 @@ chmod 644 file.pcap
 
 1. **Use filtering first** for large files
 2. **Enable bucketing** for match operations
-3. **Use recursive mode** for batch analysis
+3. **Use concurrent workers** for batch analysis (`-w`)
 4. **Adjust thresholds** based on needs
 5. **Use SSD storage** for better I/O
 

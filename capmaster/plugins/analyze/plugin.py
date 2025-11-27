@@ -10,6 +10,7 @@ import click
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
 from capmaster.core.file_scanner import PcapScanner
+from capmaster.core.input_manager import InputManager
 from capmaster.core.output_manager import OutputManager
 from capmaster.core.protocol_detector import ProtocolDetector
 from capmaster.core.tshark_wrapper import TsharkWrapper
@@ -17,6 +18,7 @@ from capmaster.plugins.analyze.executor import AnalysisExecutor
 from capmaster.plugins.analyze.modules import discover_modules, get_all_modules
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
+from capmaster.utils.cli_options import unified_input_options
 from capmaster.utils.errors import (
     NoPcapFilesError,
     OutputDirectoryError,
@@ -106,27 +108,13 @@ class AnalyzePlugin(PluginBase):
         """
 
         @cli_group.command(name=self.name)
-        @click.option(
-            "-i",
-            "--input",
-            "input_path",
-            required=True,
-            type=str,
-            help="Input PCAP file, directory, or comma-separated file list",
-        )
+        @unified_input_options
         @click.option(
             "-o",
             "--output",
             "output_dir",
             type=click.Path(path_type=Path),
             help="Output directory (default: <input_dir>/statistics/)",
-        )
-        @click.option(
-            "-r",
-            "--no-recursive",
-            "no_recursive",
-            is_flag=True,
-            help="Do NOT recursively scan directories (default: recursive)",
         )
         @click.option(
             "-w",
@@ -160,9 +148,21 @@ class AnalyzePlugin(PluginBase):
         @click.pass_context
         def analyze_command(
             ctx: click.Context,
-            input_path: str,
+            input_path: str | None,
+            file1: Path | None,
+            file1_pcapid: int | None,
+            file2: Path | None,
+            file2_pcapid: int | None,
+            file3: Path | None,
+            file3_pcapid: int | None,
+            file4: Path | None,
+            file4_pcapid: int | None,
+            file5: Path | None,
+            file5_pcapid: int | None,
+            file6: Path | None,
+            file6_pcapid: int | None,
+            silent_exit: bool,
             output_dir: Path | None,
-            no_recursive: bool,
             workers: int,
             output_format: str,
             selected_modules: tuple[str, ...],
@@ -183,14 +183,11 @@ class AnalyzePlugin(PluginBase):
               # Analyze a single PCAP file
               capmaster analyze -i capture.pcap
 
-              # Analyze all PCAP files in a directory (recursive by default)
+              # Analyze all PCAP files in a directory (non-recursive)
               capmaster analyze -i captures/
 
               # Analyze comma-separated file list
               capmaster analyze -i "file1.pcap,file2.pcap,file3.pcap"
-
-              # Analyze only top-level directory (no recursion)
-              capmaster analyze -i captures/ -r -o results/
 
               # Analyze with verbose output
               capmaster -v analyze -i capture.pcap
@@ -222,69 +219,57 @@ class AnalyzePlugin(PluginBase):
               Each statistic is saved in a separate file with the specified format.
               Supported formats: txt (default), md (Markdown)
             """
-            # Default is recursive (matching original script behavior)
-            recursive = not no_recursive
             exit_code = self.execute(
                 input_path=input_path,
+                file1=file1,
+                file2=file2,
+                file3=file3,
+                file4=file4,
+                file5=file5,
+                file6=file6,
+                silent_exit=silent_exit,
                 output_dir=output_dir,
-                recursive=recursive,
                 workers=workers,
                 output_format=output_format,
-                selected_modules=selected_modules if selected_modules else None,
+                selected_modules=selected_modules,
                 generate_sidecar=generate_sidecar,
             )
             ctx.exit(exit_code)
 
-    def execute(self, **kwargs: Any) -> int:
+    def execute(
+        self,
+        input_path: str | None = None,
+        file1: Path | None = None,
+        file2: Path | None = None,
+        file3: Path | None = None,
+        file4: Path | None = None,
+        file5: Path | None = None,
+        file6: Path | None = None,
+        silent_exit: bool = False,
+        output_dir: Path | None = None,
+        workers: int = 1,
+        output_format: str = "txt",
+        selected_modules: tuple[str, ...] | None = None,
+        generate_sidecar: bool = False,
+        **kwargs: Any,
+    ) -> int:
         """
         Execute analyze plugin logic.
-
-        Args:
-            **kwargs: Keyword arguments including:
-                - input_path: String path to input PCAP file, directory, or comma-separated file list
-                - output_dir: Optional custom output directory
-                - recursive: Whether to recursively scan directories (default: True)
-                - workers: Number of worker processes for concurrent processing
-                - output_format: Output format ("txt" or "md", default: "txt")
-                - selected_modules: Optional tuple of module names to run
-                - generate_sidecar: Whether to emit metadata sidecar files
-
-        Returns:
-            Exit code (0 for success, non-zero for failure)
         """
-        # Extract arguments from kwargs
-        input_path_raw = kwargs.get("input_path")
-        output_dir = kwargs.get("output_dir")
-        recursive = kwargs.get("recursive", True)  # Default to True (matching original script)
-        workers = kwargs.get("workers", 1)
-        output_format = kwargs.get("output_format", "txt")
-        selected_modules_raw = kwargs.get("selected_modules")
-        generate_sidecar = bool(kwargs.get("generate_sidecar", False))
-
-        # Type narrowing for selected_modules
-        selected_modules: tuple[str, ...] | None = None
-        if selected_modules_raw is not None and isinstance(selected_modules_raw, tuple):
-            selected_modules = selected_modules_raw
-
-        # Validate and parse input_path
-        if input_path_raw is None:
-            logger.error("Input path is required and must be a string")
-            return 1
-
-        if isinstance(input_path_raw, Path):
-            input_path = str(input_path_raw)
-        elif isinstance(input_path_raw, str):
-            input_path = input_path_raw
-        else:
-            logger.error("Input path is required and must be a string")
-            return 1
+        # Resolve inputs
+        file_args = {
+            1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6
+        }
+        input_files = InputManager.resolve_inputs(input_path, file_args)
+        
+        # Validate for AnalyzePlugin (needs at least 1 file)
+        InputManager.validate_file_count(input_files, min_files=1, silent_exit=silent_exit)
+        
+        pcap_files = [f.path for f in input_files]
 
         if output_dir is not None and not isinstance(output_dir, Path):
             logger.error("Output directory must be a Path object")
             return 1
-
-        if not isinstance(recursive, bool):
-            recursive = False
 
         if not isinstance(workers, int) or workers < 1:
             workers = 1
@@ -325,15 +310,6 @@ class AnalyzePlugin(PluginBase):
                 logger.info(f"Running {len(modules)} selected module(s): {', '.join(sorted(selected_modules))}")
             else:
                 logger.info(f"Loaded {len(modules)} analysis modules")
-
-            # Parse input path (supports comma-separated file list)
-            input_paths = PcapScanner.parse_input(input_path)
-
-            # Scan for PCAP files
-            pcap_files = PcapScanner.scan(input_paths, recursive=recursive)
-
-            if not pcap_files:
-                raise NoPcapFilesError(Path(input_path))
 
             logger.info(f"Found {len(pcap_files)} PCAP file(s)")
 

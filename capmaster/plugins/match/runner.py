@@ -40,8 +40,8 @@ from capmaster.plugins.match.stats_pipeline import (
     write_to_database,
     write_to_json,
 )
+from capmaster.core.input_manager import InputManager
 from capmaster.utils.errors import CapMasterError, InsufficientFilesError, handle_error
-from capmaster.utils.input_parser import DualFileInputParser
 
 logger = logging.getLogger(__name__)
 
@@ -420,28 +420,34 @@ def _parse_dual_input(
     file1_pcapid: int | None,
     file2_pcapid: int | None,
 ) -> tuple[Path, Path, dict[str, int] | None]:
-    """Parse dual file input using DualFileInputParser.
+    """Parse dual file input using InputManager.
 
     This mirrors the parsing logic in MatchPlugin.execute.
     """
 
     scan_task = progress.add_task("[cyan]Scanning for PCAP files...", total=1)
 
-    dual_input = DualFileInputParser.parse(input_path, file1, file2, file1_pcapid, file2_pcapid)
+    file_args = {1: file1, 2: file2}
+    input_files = InputManager.resolve_inputs(input_path, file_args)
+    InputManager.validate_file_count(input_files, min_files=2, max_files=2)
+    
     progress.update(scan_task, advance=1)
 
-    match_file1 = dual_input.file1
-    match_file2 = dual_input.file2
-    pcap_id_mapping = dual_input.pcap_id_mapping
+    match_file1 = input_files[0].path
+    match_file2 = input_files[1].path
+    
+    pcap_id_mapping = {
+        str(match_file1): input_files[0].pcapid,
+        str(match_file2): input_files[1].pcapid
+    }
 
     logger.info(f"File 1: {match_file1.name}")
     logger.info(f"File 2: {match_file2.name}")
     if pcap_id_mapping:
         logger.info(
-            f"PCAP ID mapping: {match_file1.name} -> {pcap_id_mapping[str(match_file1)]}, "
-            f"{match_file2.name} -> {pcap_id_mapping[str(match_file2)]}"
+            f"PCAP ID mapping: {match_file1.name}->{pcap_id_mapping[str(match_file1)]}, "
+            f"{match_file2.name}->{pcap_id_mapping[str(match_file2)]}"
         )
-    logger.info(f"Matching: {match_file1.name} <-> {match_file2.name}")
 
     return match_file1, match_file2, pcap_id_mapping
 

@@ -22,8 +22,8 @@ def test_execute_requires_stream_selection(tmp_path: Path) -> None:
     # CapMasterError which is converted into a non-zero exit code.
     file1 = tmp_path / "a.pcap"
     file2 = tmp_path / "b.pcap"
-    file1.touch()
-    file2.touch()
+    file1.write_bytes(b"dummy")
+    file2.write_bytes(b"dummy")
 
     exit_code = plugin.execute(
         input_path=None,

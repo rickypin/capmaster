@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 import click
 
-from capmaster.utils.cli_options import dual_file_input_options, validate_database_params
+from capmaster.utils.cli_options import unified_input_options, validate_database_params
 
 
 def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) -> None:
@@ -20,7 +20,7 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
     """
 
     @cli_group.command(name=plugin.name)
-    @dual_file_input_options
+    @unified_input_options
     @click.option(
         "-o",
         "--output",
@@ -107,6 +107,15 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
         file1_pcapid: int | None,
         file2: Path | None,
         file2_pcapid: int | None,
+        file3: Path | None,
+        file3_pcapid: int | None,
+        file4: Path | None,
+        file4_pcapid: int | None,
+        file5: Path | None,
+        file5_pcapid: int | None,
+        file6: Path | None,
+        file6_pcapid: int | None,
+        silent_exit: bool,
         output_file: Path | None,
         threshold: float,
         bucket: str,
@@ -161,15 +170,15 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
             --db-connection "postgresql://postgres:password@172.16.200.156:5433/r2" \
             --kase-id 133
 
-          # Use file1/file2 with pcap_id mapping
-          capmaster compare --file1 a.pcap --file1-pcapid 0 --file2 b.pcap --file2-pcapid 1 \
+          # Use file1/file2
+          capmaster compare --file1 a.pcap --file2 b.pcap \
             --show-flow-hash --db-connection "postgresql://..." --kase-id 133
 
         \b
         Input:
           The input can be a directory containing exactly 2 PCAP files,
           or a comma-separated list of exactly 2 PCAP files,
-          or specified using --file1 and --file2 with their corresponding pcap IDs.
+          or specified using --file1 and --file2.
 
         \b
         Output:
@@ -190,9 +199,12 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
         exit_code = plugin.execute(
             input_path=input_path,
             file1=file1,
-            file1_pcapid=file1_pcapid,
             file2=file2,
-            file2_pcapid=file2_pcapid,
+            file3=file3,
+            file4=file4,
+            file5=file5,
+            file6=file6,
+            silent_exit=silent_exit,
             output_file=output_file,
             score_threshold=threshold,
             bucket_strategy=bucket,

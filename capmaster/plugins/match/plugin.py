@@ -8,6 +8,7 @@ from pathlib import Path
 import click
 
 from capmaster.core.connection.connection_extractor import extract_connections_from_pcap
+from capmaster.core.input_manager import InputManager
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
 from capmaster.plugins.match.cli_commands import (
@@ -56,11 +57,14 @@ class MatchPlugin(PluginBase):
 
     def execute(  # type: ignore[override]
         self,
-        input_path: str | Path | None = None,
+        input_path: str | None = None,
         file1: Path | None = None,
-        file1_pcapid: int | None = None,
         file2: Path | None = None,
-        file2_pcapid: int | None = None,
+        file3: Path | None = None,
+        file4: Path | None = None,
+        file5: Path | None = None,
+        file6: Path | None = None,
+        silent_exit: bool = False,
         output_file: Path | None = None,
         mode: str = "auto",
         bucket_strategy: str = "auto",
@@ -83,18 +87,34 @@ class MatchPlugin(PluginBase):
         service_group_mapping: Path | None = None,
         match_json: Path | None = None,
         service_list: Path | None = None,
+        # Legacy args to ignore if passed
+        file1_pcapid: int | None = None,
+        file2_pcapid: int | None = None,
     ) -> int:
         """Match TCP connections between PCAP files.
 
         This is a thin wrapper around capmaster.plugins.match.runner.run_match_pipeline.
         See run_match_pipeline for full parameter semantics and behaviour.
         """
+        # Resolve inputs
+        file_args = {
+            1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6
+        }
+        input_files = InputManager.resolve_inputs(input_path, file_args)
+        
+        # Validate for MatchPlugin (needs exactly 2 files)
+        InputManager.validate_file_count(input_files, min_files=2, max_files=2, silent_exit=silent_exit)
+        
+        # Extract files
+        f1 = input_files[0]
+        f2 = input_files[1]
+
         return run_match_pipeline(
-            input_path=input_path,
-            file1=file1,
-            file1_pcapid=file1_pcapid,
-            file2=file2,
-            file2_pcapid=file2_pcapid,
+            input_path=None,
+            file1=f1.path,
+            file1_pcapid=f1.pcapid,
+            file2=f2.path,
+            file2_pcapid=f2.pcapid,
             output_file=output_file,
             mode=mode,
             bucket_strategy=bucket_strategy,
@@ -253,9 +273,14 @@ class MatchPlugin(PluginBase):
 
     def execute_comparative_analysis(
         self,
-        input_path: str | Path | None = None,
+        input_path: str | None = None,
         file1: Path | None = None,
         file2: Path | None = None,
+        file3: Path | None = None,
+        file4: Path | None = None,
+        file5: Path | None = None,
+        file6: Path | None = None,
+        silent_exit: bool = False,
         analysis_type: str = "service",
         topology_file: Path | None = None,
         matched_connections_file: Path | None = None,
@@ -269,22 +294,38 @@ class MatchPlugin(PluginBase):
             input_path: Directory or comma-separated list of PCAP files
             file1: Path to first PCAP file (alternative to input_path)
             file2: Path to second PCAP file (alternative to input_path)
-            analysis_type: Type of analysis to perform ("service", "connections", or "both")
-            topology_file: Path to topology file (for service analysis)
-            matched_connections_file: Path to matched connections file (for connection pair analysis)
-            top_n: Show top N worst performing connection pairs (only for connection analysis)
-            output_file: Optional output file path (None for stdout)
+            file3-file6: Additional files (ignored for this command)
+            silent_exit: Exit silently if file count mismatch
+            analysis_type: Type of analysis ("service", "connections", or "both")
+            topology_file: Path to topology file (required for service analysis)
+            matched_connections_file: Path to matched connections file
+            top_n: Number of top worst connections to show
+            output_file: Path to output file
 
         Returns:
-            Exit code (0 for success, non-zero for failure)
+            Exit code (0 for success)
         """
+        # Resolve inputs
+        file_args = {
+            1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6
+        }
+        input_files = InputManager.resolve_inputs(input_path, file_args)
+        
+        # Validate for Comparative Analysis (needs exactly 2 files)
+        InputManager.validate_file_count(input_files, min_files=2, max_files=2, silent_exit=silent_exit)
+        
+        # Extract files
+        f1 = input_files[0]
+        f2 = input_files[1]
+
         return run_comparative_analysis(
-            input_path=input_path,
-            file1=file1,
-            file2=file2,
+            input_path=None,
+            file1=f1.path,
+            file2=f2.path,
             analysis_type=analysis_type,
             topology_file=topology_file,
             matched_connections_file=matched_connections_file,
             top_n=top_n,
             output_file=output_file,
         )
+

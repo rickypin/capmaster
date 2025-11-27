@@ -61,11 +61,11 @@ The `analyze` command generates comprehensive statistics from PCAP files.
 # Analyze a single file
 capmaster analyze -i capture.pcap
 
-# Analyze all files in a directory
+# Analyze all files in a directory (non-recursive)
 capmaster analyze -i /path/to/captures/
 
-# Recursive analysis
-capmaster analyze -i /path/to/captures/ -r
+# Analyze specific files
+capmaster analyze --file1 capture1.pcap --file2 capture2.pcap
 ```
 
 ### Output Structure
@@ -203,8 +203,11 @@ The `match` command identifies matching TCP connections across multiple PCAP fil
 ### Basic Usage
 
 ```bash
-# Match connections in a directory
+# Match connections in a directory (containing exactly 2 files)
 capmaster match -i /path/to/captures/
+
+# Match specific files
+capmaster match --file1 client.pcap --file2 server.pcap
 
 # Save results to file
 capmaster match -i /path/to/captures/ -o matches.txt
@@ -212,13 +215,11 @@ capmaster match -i /path/to/captures/ -o matches.txt
 
 ### Input Requirements
 
-The input directory must contain **exactly 2 PCAP files**:
+You must provide **exactly 2 PCAP files** using either:
+- `-i /path/to/dir/` (directory containing 2 files)
+- `-i file1.pcap,file2.pcap` (comma-separated list)
+- `--file1 file1.pcap --file2 file2.pcap` (explicit arguments)
 
-```
-captures/
-├── client.pcap
-└── server.pcap
-```
 
 ### Matching Algorithm
 
@@ -365,8 +366,11 @@ The `compare` command performs detailed packet-level comparison of matched TCP c
 ### Basic Usage
 
 ```bash
-# Compare two PCAP files
+# Compare two PCAP files in a directory
 capmaster compare -i /path/to/captures/
+
+# Compare specific files
+capmaster compare --file1 client.pcap --file2 server.pcap
 
 # Save results to file
 capmaster compare -i /path/to/captures/ -o comparison.txt
@@ -377,13 +381,11 @@ capmaster compare -i /path/to/captures/ --show-flow-hash
 
 ### Input Requirements
 
-The input directory must contain **exactly 2 PCAP files**:
+You must provide **exactly 2 PCAP files** using either:
+- `-i /path/to/dir/` (directory containing 2 files)
+- `-i file1.pcap,file2.pcap` (comma-separated list)
+- `--file1 file1.pcap --file2 file2.pcap` (explicit arguments)
 
-```
-captures/
-├── client.pcap
-└── server.pcap
-```
 
 ### Comparison Process
 
