@@ -54,8 +54,6 @@ class InputManager:
             
             # Use PcapScanner to parse and scan
             raw_paths = PcapScanner.parse_input(input_path)
-            # We need to handle directories here if PcapScanner.parse_input doesn't fully expand them
-            # PcapScanner.scan does the expansion
             try:
                 resolved_paths = PcapScanner.scan(raw_paths, recursive=False, preserve_order=True)
             except FileNotFoundError as e:
@@ -63,6 +61,11 @@ class InputManager:
 
         # Case 2: --fileX arguments provided
         elif file_args:
+            # Check for single file constraint: if only 1 file is provided, it must be file1
+            active_files = {k: v for k, v in file_args.items() if v is not None}
+            if len(active_files) == 1 and 1 not in active_files:
+                raise click.BadParameter("When providing only one file via --fileX arguments, you must use --file1.")
+
             # Extract files in order 1..6
             for i in range(1, cls.MAX_FILES + 1):
                 path = file_args.get(i)
@@ -113,7 +116,10 @@ class InputManager:
         error_msg = None
 
         if count < min_files:
-            error_msg = f"Input file count mismatch: Expected at least {min_files}, got {count}."
+            if count == 0:
+                error_msg = "No valid input files found."
+            else:
+                error_msg = f"Input file count mismatch: Expected at least {min_files}, got {count}."
         elif max_files is not None and count > max_files:
             error_msg = f"Input file count mismatch: Expected at most {max_files}, got {count}."
 

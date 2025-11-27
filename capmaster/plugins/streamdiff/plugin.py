@@ -168,9 +168,6 @@ class StreamDiffPlugin(PluginBase):
         file2_stream_id: int | None = None,
         output_file: Path | None = None,
         silent: bool = False,
-        # Legacy args
-        file1_pcapid: int | None = None,
-        file2_pcapid: int | None = None,
     ) -> int:
         """Execute the streamdiff plugin.
 

@@ -5,7 +5,7 @@ import logging
 import re
 import types
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Any, Dict, Union, List
 
 import yaml
 
@@ -188,27 +188,43 @@ class PipelineRunner:
             param = sig.parameters[k]
             annotation = param.annotation
 
-            # Check if target type is Path or Optional[Path]
-            is_path = False
-            # logger.info(f"Checking param {k}, annotation: {annotation}, type: {type(annotation)}")
-            if annotation is Path:
-                is_path = True
-            # Handle Optional[Path] / Union[Path, None] / Path | None
-            elif hasattr(annotation, "__origin__") and annotation.__origin__ in (
-                Union,
-                types.UnionType,
-            ):
-                args_types = annotation.__args__
-                if Path in args_types:
-                    is_path = True
+            # Helper to check if a type is Path or Optional[Path]
+            def is_path_type(tp):
+                if tp is Path:
+                    return True
+                # Handle Optional[Path] / Union[Path, None]
+                origin = getattr(tp, "__origin__", None)
+                if origin in (Union, types.UnionType):
+                    return any(is_path_type(arg) for arg in getattr(tp, "__args__", []))
+                # Handle string annotations
+                if isinstance(tp, str) and "Path" in tp:
+                    return True
+                return False
 
-            # Handle string annotations (from __future__ import annotations)
-            elif isinstance(annotation, str):
-                if "Path" in annotation:
-                    is_path = True
+            # Helper to check if a type is List[Path]
+            def is_list_path_type(tp):
+                origin = getattr(tp, "__origin__", None)
+                if origin is list or origin is List:
+                    args = getattr(tp, "__args__", [])
+                    if args and is_path_type(args[0]):
+                        return True
+                if isinstance(tp, str) and ("List[Path]" in tp or "list[Path]" in tp):
+                    return True
+                return False
 
-            if is_path and isinstance(v, str):
-                converted[k] = Path(v)
+            if is_path_type(annotation):
+                if isinstance(v, str):
+                    converted[k] = Path(v)
+                else:
+                    converted[k] = v
+            elif is_list_path_type(annotation):
+                if isinstance(v, list):
+                    converted[k] = [Path(item) if isinstance(item, str) else item for item in v]
+                elif isinstance(v, str):
+                    # If a single string is passed for a list argument, wrap it
+                    converted[k] = [Path(v)]
+                else:
+                    converted[k] = v
             else:
                 converted[k] = v
 

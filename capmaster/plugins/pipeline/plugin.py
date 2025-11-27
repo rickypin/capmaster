@@ -86,10 +86,8 @@ class PipelinePlugin(PluginBase):
         **kwargs,
     ) -> int:
         """Execute the pipeline."""
-        if silent:
-            # Reconfigure logger to suppress info/warning logs
-            import logging
-            logging.getLogger("capmaster").setLevel(logging.ERROR)
+        # Note: We do not modify global logger level here to avoid side effects.
+        # The silent flag is passed to the runner and individual plugins.
 
         runner = PipelineRunner(
             config_path=config_path,

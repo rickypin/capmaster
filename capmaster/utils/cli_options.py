@@ -84,11 +84,6 @@ def unified_input_options(func: Callable) -> Callable:
     # Add --file6 down to --file1
     for i in range(6, 0, -1):
         func = click.option(
-            f"--file{i}-pcapid",
-            type=int,
-            help=f"PCAP ID for file {i}",
-        )(func)
-        func = click.option(
             f"--file{i}",
             type=click.Path(exists=True, path_type=Path),
             help=f"Input PCAP file {i}",

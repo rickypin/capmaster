@@ -89,13 +89,6 @@ class MatchPlugin(PluginBase):
         match_json: Path | None = None,
         service_list: Path | None = None,
         silent: bool = False,
-        # Legacy args to ignore if passed
-        file1_pcapid: int | None = None,
-        file2_pcapid: int | None = None,
-        file3_pcapid: int | None = None,
-        file4_pcapid: int | None = None,
-        file5_pcapid: int | None = None,
-        file6_pcapid: int | None = None,
     ) -> int:
         """Match TCP connections between PCAP files.
 
