@@ -152,17 +152,11 @@ class PreprocessPlugin(PluginBase):
             ctx: click.Context,
             input_path: str | None,
             file1: Path | None,
-            file1_pcapid: int | None,
             file2: Path | None,
-            file2_pcapid: int | None,
             file3: Path | None,
-            file3_pcapid: int | None,
             file4: Path | None,
-            file4_pcapid: int | None,
             file5: Path | None,
-            file5_pcapid: int | None,
             file6: Path | None,
-            file6_pcapid: int | None,
             silent_exit: bool,
             output_dir: Path | None,
             config_path: Path | None,
@@ -290,6 +284,7 @@ class PreprocessPlugin(PluginBase):
         no_report: bool = False,
         report_path: Path | None = None,
         silent: bool = False,
+        **kwargs: Any,
     ) -> int:
         """Execute the preprocess pipeline with merged configuration.
 

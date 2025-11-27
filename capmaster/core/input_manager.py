@@ -126,7 +126,7 @@ class InputManager:
         if error_msg:
             if silent_exit:
                 logger.info(f"{error_msg} Exiting silently as requested.")
-                sys.exit(0)
+                raise click.exceptions.Exit(0)
             else:
                 raise click.BadParameter(error_msg)
 
