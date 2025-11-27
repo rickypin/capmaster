@@ -6,6 +6,9 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from capmaster.core.connection.models import TcpConnection
+from capmaster.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -127,15 +130,29 @@ class ServerDetector:
     def _load_service_list(self, path: Path) -> None:
         """Load service list from file."""
         try:
-            content = path.read_text()
-            for line in content.splitlines():
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
+            content = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            logger.error(f"Service list file not found: {path}")
+            return
+        except PermissionError:
+            logger.error(f"Permission denied reading service list: {path}")
+            return
+        except Exception as e:
+            logger.error(f"Failed to read service list {path}: {e}")
+            return
+
+        for line_num, line in enumerate(content.splitlines(), 1):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            
+            if ":" not in line:
+                logger.warning(
+                    f"Invalid format in service list {path}:{line_num}: '{line}' (expected 'ip:port')"
+                )
+                continue
                 
-                if ":" not in line:
-                    continue
-                    
+            try:
                 ip, port_str = line.split(":", 1)
                 ip = ip.strip()
                 port_str = port_str.strip()
@@ -143,14 +160,16 @@ class ServerDetector:
                 if port_str == "*":
                     self._service_list_ips.add(ip)
                 else:
-                    try:
-                        port = int(port_str)
-                        self._service_list_endpoints.add((ip, port))
-                    except ValueError:
-                        pass
-        except Exception:
-            # Silently ignore errors during loading to avoid breaking the pipeline
-            pass
+                    port = int(port_str)
+                    self._service_list_endpoints.add((ip, port))
+            except ValueError:
+                logger.warning(
+                    f"Invalid port number in service list {path}:{line_num}: '{port_str}'"
+                )
+                continue
+            except Exception as e:
+                logger.warning(f"Error parsing service list {path}:{line_num}: {e}")
+                continue
 
     def collect_connection(self, connection: TcpConnection) -> None:
         """
