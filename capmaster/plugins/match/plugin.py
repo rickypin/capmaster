@@ -20,11 +20,6 @@ from capmaster.plugins.match.comparative_runner import run_comparative_analysis
 from capmaster.plugins.match.runner import (
     match_connections_in_memory as run_match_in_memory,
     run_match_pipeline,
-    _improve_server_detection as runner_improve_server_detection,
-)
-from capmaster.plugins.match.stats_pipeline import (
-    write_to_database as stats_write_to_database,
-    write_to_json as stats_write_to_json,
 )
 
 logger = logging.getLogger(__name__)
@@ -167,109 +162,7 @@ class MatchPlugin(PluginBase):
             match_mode=match_mode,
         )
 
-    def _extract_connections(self, pcap_file: Path, merge_by_5tuple: bool = False) -> list:
-        """
-        Extract TCP connections from a PCAP file.
 
-        Args:
-            pcap_file: Path to PCAP file
-            merge_by_5tuple: If True, merge connections by direction-independent 5-tuple
-
-        Returns:
-            List of TcpConnection objects
-        """
-        return extract_connections_from_pcap(pcap_file, merge_by_5tuple=merge_by_5tuple)
-
-
-    def _output_results(self, matches: list, stats: dict, output_file: Path | None) -> None:
-        """Delegated to capmaster.plugins.match.output_formatter.output_match_results."""
-        from capmaster.plugins.match.output_formatter import output_match_results
-
-        output_match_results(matches, stats, output_file)
-
-    def _save_matches_json(
-        self,
-        matches: list,
-        output_file: Path,
-        file1: Path,
-        file2: Path,
-        stats: dict,
-    ) -> None:
-        """Delegated to capmaster.plugins.match.output_formatter.save_matches_json."""
-        from capmaster.plugins.match.output_formatter import save_matches_json
-
-        save_matches_json(matches, output_file, file1, file2, stats)
-
-
-
-
-
-    def _improve_server_detection(
-        self,
-        connections: list,
-        detector,
-    ) -> list:
-        """Improve server/client detection using ServerDetector.
-
-        This thin wrapper delegates to runner_improve_server_detection in
-        capmaster.plugins.match.runner to keep the core logic in a dedicated
-        module while preserving the legacy private API used by scripts.
-        """
-        return runner_improve_server_detection(connections, detector)
-
-    def _write_to_database(
-        self,
-        db_connection: str,
-        kase_id: int,
-        endpoint_stats: list,
-        file1: Path,
-        file2: Path,
-        pcap_id_mapping: dict[str, int] | None = None,
-        service_stats_list: list | None = None,
-        service_group_mapping_file: Path | None = None,
-    ) -> None:
-        """Thin wrapper for writing statistics to the database.
-
-        The real implementation lives in capmaster.plugins.match.stats_pipeline.
-        This method is kept only to preserve the historical private API used
-        by tests and external scripts.
-        """
-        stats_write_to_database(
-            db_connection=db_connection,
-            kase_id=kase_id,
-            endpoint_stats=endpoint_stats,
-            file1=file1,
-            file2=file2,
-            pcap_id_mapping=pcap_id_mapping,
-            service_stats_list=service_stats_list,
-            service_group_mapping_file=service_group_mapping_file,
-        )
-
-    def _write_to_json(
-        self,
-        output_file: Path,
-        endpoint_stats: list,
-        file1: Path,
-        file2: Path,
-        pcap_id_mapping: dict[str, int] | None = None,
-        service_stats_list: list | None = None,
-        service_group_mapping_file: Path | None = None,
-    ) -> None:
-        """Thin wrapper for writing statistics to a JSON file.
-
-        The real implementation lives in capmaster.plugins.match.stats_pipeline.
-        This method is kept only to preserve the historical private API used
-        by tests and external scripts.
-        """
-        stats_write_to_json(
-            output_file=output_file,
-            endpoint_stats=endpoint_stats,
-            file1=file1,
-            file2=file2,
-            pcap_id_mapping=pcap_id_mapping,
-            service_stats_list=service_stats_list,
-            service_group_mapping_file=service_group_mapping_file,
-        )
 
     def execute_comparative_analysis(
         self,

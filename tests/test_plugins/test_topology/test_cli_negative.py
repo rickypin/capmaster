@@ -14,8 +14,8 @@ class TestTopologyCLIInputValidation:
 
     def _run_topology(self, extra_args: list[str]) -> subprocess.CompletedProcess:
         """Helper to run `python -m capmaster topology` with given arguments."""
-
-        cmd = ["python", "-m", "capmaster", "topology"] + extra_args
+        import sys
+        cmd = [sys.executable, "-m", "capmaster", "topology"] + extra_args
         return subprocess.run(cmd, capture_output=True, text=True)
 
     def test_cli_requires_some_input(self) -> None:

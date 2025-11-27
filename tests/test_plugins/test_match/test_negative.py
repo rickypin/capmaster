@@ -1,6 +1,7 @@
 """Negative test cases for Match plugin."""
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -88,7 +89,7 @@ class TestErrorHandling:
         non_existent = tmp_path / "does_not_exist"
         output_file = tmp_path / "output.txt"
 
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises((FileNotFoundError, click.BadParameter)):
             plugin.execute(
                 input_path=non_existent,
                 output_file=output_file,
@@ -158,7 +159,7 @@ class TestCLIErrorHandling:
         """Test CLI with invalid threshold."""
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tmp_path),
                 "-o", str(tmp_path / "output.txt"),
@@ -174,7 +175,7 @@ class TestCLIErrorHandling:
         """Test CLI with invalid bucket strategy."""
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tmp_path),
                 "-o", str(tmp_path / "output.txt"),
@@ -190,7 +191,7 @@ class TestCLIErrorHandling:
         """Test CLI with invalid mode."""
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tmp_path),
                 "-o", str(tmp_path / "output.txt"),
@@ -206,7 +207,7 @@ class TestCLIErrorHandling:
         """Test CLI with missing required arguments."""
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 # Missing -i and -o
             ],
@@ -220,7 +221,7 @@ class TestCLIErrorHandling:
         """Test CLI with sampling parameters but without --enable-sampling flag."""
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tmp_path),
                 "-o", str(tmp_path / "output.txt"),

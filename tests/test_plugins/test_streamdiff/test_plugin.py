@@ -40,9 +40,10 @@ def test_execute_requires_stream_selection(tmp_path: Path) -> None:
 def test_cli_help_invocation() -> None:
     """Basic smoke test that the CLI command is wired and --help works."""
 
+    import sys
     result = subprocess.run(
         [
-            "python",
+            sys.executable,
             "-m",
             "capmaster",
             "streamdiff",

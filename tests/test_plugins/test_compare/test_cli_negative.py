@@ -14,7 +14,8 @@ class TestCompareCLIInputValidation:
 
     def _run_compare(self, extra_args: list[str]) -> subprocess.CompletedProcess:
         """Helper to run `python -m capmaster compare` with given arguments."""
-        cmd = ["python", "-m", "capmaster", "compare"] + extra_args
+        import sys
+        cmd = [sys.executable, "-m", "capmaster", "compare"] + extra_args
         return subprocess.run(cmd, capture_output=True, text=True)
 
     def test_cli_missing_input(self):
@@ -22,7 +23,7 @@ class TestCompareCLIInputValidation:
         result = self._run_compare([])
 
         assert result.returncode != 0
-        assert "Input file count mismatch" in result.stderr or "Missing option" in result.stderr or "Error" in result.stderr
+        assert "Input file count mismatch" in result.stderr or "Missing option" in result.stderr or "Error" in result.stderr or "No valid input files found" in result.stderr
 
     def test_cli_input_and_file_args_mutually_exclusive(self, tmp_path: Path):
         """-i/--input cannot be used together with --fileX."""

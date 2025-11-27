@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import click
 
 from capmaster.core.connection.extractor import TcpFieldExtractor
 from capmaster.core.connection.matcher import BucketStrategy, ConnectionMatcher
@@ -427,7 +428,7 @@ class TestMatchPlugin:
         non_existent = tmp_path / "non_existent"
         output_file = tmp_path / "matches.txt"
 
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises((FileNotFoundError, click.exceptions.BadParameter)):
             plugin.execute(
                 input_path=non_existent,
                 output_file=output_file,

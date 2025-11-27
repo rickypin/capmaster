@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch, call
 import pytest
 
 from capmaster.plugins.match.plugin import MatchPlugin
+from capmaster.plugins.match.stats_pipeline import write_to_database, write_to_json
 
 
 @pytest.mark.unit
@@ -31,8 +32,8 @@ class TestMatchPluginWriteToDatabase:
     ):
         """Test that empty endpoint_stats skips database operations."""
         with patch('capmaster.plugins.match.db_writer.MatchDatabaseWriter') as mock_writer_class:
-            # Call _write_to_database with empty list
-            plugin._write_to_database(
+            # Call write_to_database with empty list
+            write_to_database(
                 db_connection="postgresql://user:pass@localhost:5432/testdb",
                 kase_id=137,
                 endpoint_stats=[],  # Empty list
@@ -56,7 +57,7 @@ class TestMatchPluginWriteToDatabase:
         mock_stats = [MagicMock()]  # Non-empty list
 
         with patch('capmaster.plugins.match.db_writer.MatchDatabaseWriter', return_value=mock_db_writer):
-            plugin._write_to_database(
+            write_to_database(
                 db_connection="postgresql://user:pass@localhost:5432/testdb",
                 kase_id=137,
                 endpoint_stats=mock_stats,
@@ -77,7 +78,7 @@ class TestMatchPluginWriteToDatabase:
         """Test that empty stats preserves existing database data."""
         with patch('capmaster.plugins.match.db_writer.MatchDatabaseWriter', return_value=mock_db_writer):
             # Call with empty stats
-            plugin._write_to_database(
+            write_to_database(
                 db_connection="postgresql://user:pass@localhost:5432/testdb",
                 kase_id=137,
                 endpoint_stats=[],
@@ -98,7 +99,7 @@ class TestMatchPluginWriteToDatabase:
         pcap_id_mapping = {"file1.pcap": 0, "file2.pcap": 1}
 
         with patch('capmaster.plugins.match.db_writer.MatchDatabaseWriter', return_value=mock_db_writer):
-            plugin._write_to_database(
+            write_to_database(
                 db_connection="postgresql://user:pass@localhost:5432/testdb",
                 kase_id=137,
                 endpoint_stats=mock_stats,
@@ -128,8 +129,8 @@ class TestMatchPluginWriteToJSON:
         output_file = tmp_path / "output.json"
 
         with patch('capmaster.plugins.match.db_writer.MatchDatabaseWriter') as mock_writer_class:
-            # Call _write_to_json with empty list
-            plugin._write_to_json(
+            # Call write_to_json with empty list
+            write_to_json(
                 output_file=output_file,
                 endpoint_stats=[],  # Empty list
                 file1=Path("file1.pcap"),
@@ -158,7 +159,7 @@ class TestMatchPluginWriteToJSON:
             # Mock the static method to return success
             mock_writer_class.write_endpoint_stats_to_json.return_value = 10
 
-            plugin._write_to_json(
+            write_to_json(
                 output_file=output_file,
                 endpoint_stats=mock_stats,
                 file1=Path("file1.pcap"),
@@ -180,7 +181,7 @@ class TestMatchPluginWriteToJSON:
         with patch('capmaster.plugins.match.db_writer.MatchDatabaseWriter') as mock_writer_class:
             mock_writer_class.write_endpoint_stats_to_json.return_value = 10
 
-            plugin._write_to_json(
+            write_to_json(
                 output_file=output_file,
                 endpoint_stats=mock_stats,
                 file1=Path("file1.pcap"),
@@ -205,7 +206,7 @@ class TestMatchPluginWriteToJSON:
 
             # Should raise the exception
             with pytest.raises(Exception, match="Write failed"):
-                plugin._write_to_json(
+                write_to_json(
                     output_file=output_file,
                     endpoint_stats=mock_stats,
                     file1=Path("file1.pcap"),
@@ -247,7 +248,7 @@ class TestMatchPluginEmptyStatsScenarios:
             # Simulate the scenario where _output_endpoint_stats returns empty list
             empty_stats = []
 
-            plugin._write_to_database(
+            write_to_database(
                 db_connection="postgresql://user:pass@localhost:5432/testdb",
                 kase_id=137,
                 endpoint_stats=empty_stats,
@@ -272,7 +273,7 @@ class TestMatchPluginEmptyStatsScenarios:
             # Simulate the scenario where _output_endpoint_stats returns empty list
             empty_stats = []
 
-            plugin._write_to_json(
+            write_to_json(
                 output_file=output_file,
                 endpoint_stats=empty_stats,
                 file1=Path("file1.pcap"),
@@ -314,7 +315,7 @@ class TestMatchPluginServiceAggregation:
         mock_service_stats = [MagicMock()]
 
         with patch('capmaster.plugins.match.db_writer.MatchDatabaseWriter', return_value=mock_db_writer):
-            plugin._write_to_database(
+            write_to_database(
                 db_connection="postgresql://user:pass@localhost:5432/testdb",
                 kase_id=137,
                 endpoint_stats=[],
@@ -343,7 +344,7 @@ class TestMatchPluginServiceAggregation:
         mapping_file.write_text('{"8000": 1, "8080": 1, "443": 2}')
 
         with patch('capmaster.plugins.match.db_writer.MatchDatabaseWriter', return_value=mock_db_writer):
-            plugin._write_to_database(
+            write_to_database(
                 db_connection="postgresql://user:pass@localhost:5432/testdb",
                 kase_id=137,
                 endpoint_stats=[],
@@ -376,7 +377,7 @@ class TestMatchPluginServiceAggregation:
         with patch('capmaster.plugins.match.db_writer.MatchDatabaseWriter') as mock_writer_class:
             mock_writer_class.write_service_stats_to_json.return_value = 8
 
-            plugin._write_to_json(
+            write_to_json(
                 output_file=output_file,
                 endpoint_stats=[],
                 service_stats_list=mock_service_stats,
@@ -396,7 +397,7 @@ class TestMatchPluginServiceAggregation:
         mock_service_stats = [MagicMock()]
 
         with patch('capmaster.plugins.match.db_writer.MatchDatabaseWriter', return_value=mock_db_writer):
-            plugin._write_to_database(
+            write_to_database(
                 db_connection="postgresql://user:pass@localhost:5432/testdb",
                 kase_id=137,
                 endpoint_stats=mock_endpoint_stats,
@@ -421,7 +422,7 @@ class TestMatchPluginServiceAggregation:
         with patch('capmaster.plugins.match.db_writer.MatchDatabaseWriter') as mock_writer_class:
             mock_writer_class.write_service_stats_to_json.return_value = 8
 
-            plugin._write_to_json(
+            write_to_json(
                 output_file=output_file,
                 endpoint_stats=mock_endpoint_stats,
                 service_stats_list=mock_service_stats,
@@ -439,7 +440,7 @@ class TestMatchPluginServiceAggregation:
     ):
         """Test that empty service stats skips database write."""
         with patch('capmaster.plugins.match.db_writer.MatchDatabaseWriter') as mock_writer_class:
-            plugin._write_to_database(
+            write_to_database(
                 db_connection="postgresql://user:pass@localhost:5432/testdb",
                 kase_id=137,
                 endpoint_stats=[],

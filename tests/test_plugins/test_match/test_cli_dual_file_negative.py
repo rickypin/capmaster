@@ -14,7 +14,8 @@ class TestMatchCLIInputValidation:
 
     def _run_match(self, extra_args: list[str]) -> subprocess.CompletedProcess:
         """Helper to run `python -m capmaster match` with given arguments."""
-        cmd = ["python", "-m", "capmaster", "match"] + extra_args
+        import sys
+        cmd = [sys.executable, "-m", "capmaster", "match"] + extra_args
         return subprocess.run(cmd, capture_output=True, text=True)
 
     def test_cli_missing_input(self):

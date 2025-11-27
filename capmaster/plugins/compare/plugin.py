@@ -85,9 +85,6 @@ class ComparePlugin(PluginBase):
         silent: bool = False,
         match_mode: str = "one-to-one",
         match_file: Path | None = None,
-        # Legacy args
-        file1_pcapid: int | None = None,
-        file2_pcapid: int | None = None,
     ) -> int:
         """
         Execute the compare plugin.
@@ -497,14 +494,15 @@ class ComparePlugin(PluginBase):
                 db.ensure_table_exists()
 
                 # Determine pcap_id to use (from file1/baseline)
+                # Determine pcap_id to use (from file1/baseline)
                 if pcap_id_mapping:
                     # Use the pcap_id from file1 (baseline_file)
                     pcap_id = pcap_id_mapping[str(baseline_file)]
                     logger.info(f"Using pcap_id={pcap_id} from file1 ({baseline_file.name})")
                 else:
-                    # Legacy mode: default to 0
+                    # Should not happen with current InputManager logic
                     pcap_id = 0
-                    logger.info(f"Using default pcap_id=0 (legacy mode)")
+                    logger.warning(f"No pcap_id_mapping provided, defaulting to pcap_id=0")
 
                 # Group results by baseline stream_id to merge multiple matches
                 # Key: (baseline_stream_id, flow_hash)

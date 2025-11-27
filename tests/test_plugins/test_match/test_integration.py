@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 from typing import List
 
@@ -61,7 +62,7 @@ class TestMatchIntegration:
         # Run the match command
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tc_001_1),
                 "-o", str(output_file),
@@ -98,7 +99,7 @@ class TestMatchIntegration:
         # Run the match command - should fail or skip
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tc_001_5),
                 "-o", str(output_file),
@@ -124,7 +125,7 @@ class TestMatchIntegration:
         # Run with header mode
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tc_001_1),
                 "-o", str(output_file),
@@ -151,7 +152,7 @@ class TestMatchIntegration:
         # Run with server bucket
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tc_001_1),
                 "-o", str(output_file),
@@ -178,7 +179,7 @@ class TestMatchIntegration:
         # Run with port bucket
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tc_001_1),
                 "-o", str(output_file),
@@ -205,7 +206,7 @@ class TestMatchIntegration:
         # Run with verbose flag
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "-v",
                 "match",
                 "-i", str(tc_001_1),
@@ -239,7 +240,7 @@ class TestMatchIntegration:
         # Run without --enable-sampling flag (default: no sampling)
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tc_001_1),
                 "-o", str(output_file),
@@ -268,7 +269,7 @@ class TestMatchIntegration:
         # Run with custom sampling threshold
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tc_001_1),
                 "-o", str(output_file),
@@ -295,7 +296,7 @@ class TestMatchIntegration:
         # Run with custom sampling rate
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tc_001_1),
                 "-o", str(output_file),
@@ -322,7 +323,7 @@ class TestMatchIntegration:
         # Run with both custom threshold and rate
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tc_001_1),
                 "-o", str(output_file),
@@ -350,7 +351,7 @@ class TestMatchIntegration:
         # Run with --match-mode one-to-many
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tc_001_1),
                 "-o", str(output_file),
@@ -384,7 +385,7 @@ class TestMatchIntegration:
         # Run with --endpoint-stats
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tc_001_1),
                 "-o", str(output_file),
@@ -420,7 +421,7 @@ class TestMatchIntegration:
         # Run with --endpoint-stats and --endpoint-stats-json
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tc_001_1),
                 "-o", str(output_file),
@@ -499,7 +500,7 @@ class TestMatchIntegration:
         # Run with --endpoint-stats and --endpoint-stats-json
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tc_001_1),
                 "-o", str(output_file),
@@ -534,7 +535,7 @@ class TestMatchIntegration:
         # Run with default behavior (service aggregation)
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tc_001_1),
                 "-o", str(output_file),
@@ -567,7 +568,7 @@ class TestMatchIntegration:
         # Run with default behavior (service aggregation) and --endpoint-stats-json
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tc_001_1),
                 "-o", str(output_file),
@@ -620,7 +621,7 @@ class TestMatchIntegration:
         # Run with --service-group-mapping (service aggregation is default)
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tc_001_1),
                 "-o", str(output_file),
@@ -655,7 +656,7 @@ class TestMatchIntegration:
         # Run with default behavior (service aggregation)
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tc_001_1),
                 "--endpoint-stats",
@@ -715,7 +716,7 @@ class TestMatchIntegration:
         # Run with --endpoint-pair-mode to disable service aggregation
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tc_001_1),
                 "-o", str(output_file),
