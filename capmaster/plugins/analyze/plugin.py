@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+from contextlib import contextmanager, nullcontext
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -29,6 +31,21 @@ from capmaster.utils.errors import (
 from capmaster.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+@contextmanager
+def _silence_analyze_logger(enabled: bool):
+    """Temporarily elevate logger level to suppress info/warn output."""
+    if not enabled:
+        yield
+        return
+
+    previous_level = logger.level
+    logger.setLevel(logging.ERROR)
+    try:
+        yield
+    finally:
+        logger.setLevel(previous_level)
 
 
 def _process_single_file(
@@ -255,9 +272,44 @@ class AnalyzePlugin(PluginBase):
         silent: bool = False,
         **kwargs: Any,
     ) -> int:
-        """
-        Execute analyze plugin logic.
-        """
+        """Execute analyze plugin logic."""
+        with _silence_analyze_logger(silent):
+            return self._execute_impl(
+                input_path=input_path,
+                file1=file1,
+                file2=file2,
+                file3=file3,
+                file4=file4,
+                file5=file5,
+                file6=file6,
+                silent_exit=silent_exit,
+                output_dir=output_dir,
+                workers=workers,
+                output_format=output_format,
+                selected_modules=selected_modules,
+                generate_sidecar=generate_sidecar,
+                silent=silent,
+                **kwargs,
+            )
+
+    def _execute_impl(
+        self,
+        input_path: str | None = None,
+        file1: Path | None = None,
+        file2: Path | None = None,
+        file3: Path | None = None,
+        file4: Path | None = None,
+        file5: Path | None = None,
+        file6: Path | None = None,
+        silent_exit: bool = False,
+        output_dir: Path | None = None,
+        workers: int = 1,
+        output_format: str = "txt",
+        selected_modules: tuple[str, ...] | None = None,
+        generate_sidecar: bool = False,
+        silent: bool = False,
+        **kwargs: Any,
+    ) -> int:
         # Resolve inputs
         file_args = {
             1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6
@@ -319,7 +371,6 @@ class AnalyzePlugin(PluginBase):
             total_outputs = 0
             failed_files = 0
 
-            from contextlib import nullcontext
             progress_ctx = nullcontext() if silent else Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
@@ -435,5 +486,4 @@ class AnalyzePlugin(PluginBase):
             return handle_error(error, show_traceback=logger.level <= 10)
         except Exception as e:
             # Unexpected errors - show traceback in debug mode
-            import logging
             return handle_error(e, show_traceback=logger.level <= logging.DEBUG)

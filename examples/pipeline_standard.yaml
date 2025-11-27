@@ -2,7 +2,7 @@ name: standard_analysis
 description: "Standard full-link analysis flow: Match -> Topology -> Quality Analysis"
 
 # Input variables available:
-# - ${INPUT} or ${FILE1}: First input file (for backward compatibility)
+# - ${INPUT}: Original -i/--input value (falls back to FILE1 when unspecified)
 # - ${FILE1}, ${FILE2}, ..., ${FILE6}: Individual input files
 # - ${OUTPUT}: Output directory
 # - ${STEP.step_id.output}: Output from previous steps

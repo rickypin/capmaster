@@ -7,6 +7,7 @@ import types
 from pathlib import Path
 from typing import Any, Dict, Union, List
 
+import click
 import yaml
 
 from capmaster.plugins import get_all_plugins
@@ -23,12 +24,14 @@ class PipelineRunner:
     def __init__(
         self,
         config_path: Path,
+        original_input: str | None,
         input_files: list[InputFile],
         output_dir: Path,
         dry_run: bool = False,
         silent: bool = False,
     ):
         self.config_path = config_path
+        self.original_input = original_input
         self.input_files = input_files
         self.output_dir = output_dir
         self.output_dir = output_dir
@@ -121,6 +124,20 @@ class PipelineRunner:
                 if exit_code != 0:
                     logger.error(f"Step {step_id} failed with exit code {exit_code}")
                     return exit_code
+            except click.exceptions.Exit as exc:
+                if exc.exit_code == 0:
+                    logger.info(
+                        "Step %s exited silently (requested by --silent-exit). Skipping step.",
+                        step_id,
+                    )
+                    continue
+                logger.error(
+                    "Step %s raised click.Exit with code %s: %s",
+                    step_id,
+                    exc.exit_code,
+                    exc,
+                )
+                return exc.exit_code or 1
             except Exception as e:
                 logger.error(f"Step {step_id} raised exception: {e}")
                 return 1
@@ -145,8 +162,10 @@ class PipelineRunner:
 
     def _resolve_string(self, value: str) -> str:
         """Resolve variables in a single string."""
-        # Replace ${INPUT} (backward compatibility, use first file)
-        if self.input_files:
+        # Replace ${INPUT} (backward compatibility)
+        if self.original_input:
+            value = value.replace("${INPUT}", self.original_input)
+        elif self.input_files:
             value = value.replace("${INPUT}", str(self.input_files[0].path))
 
         # Replace ${FILE1}, ${FILE2}, etc.

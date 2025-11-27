@@ -407,6 +407,9 @@ class PreprocessPlugin(PluginBase):
             logger.info("Preprocess completed, %d file(s) produced", len(result_files))
             return 0
 
+        except click.exceptions.Exit as exc:
+            # Allow Click's silent-exit (exit code 0) or other explicit exits to propagate cleanly
+            return exc.exit_code
         except (OSError, PermissionError) as e:
             error = CapMasterError(
                 f"File system error: {e}",

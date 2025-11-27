@@ -114,6 +114,7 @@ class PipelinePlugin(PluginBase):
 
         runner = PipelineRunner(
             config_path=config_path,
+            original_input=input_path,
             input_files=input_files,
             output_dir=output_dir,
             dry_run=dry_run,

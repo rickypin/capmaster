@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -18,6 +19,20 @@ from capmaster.utils.cli_options import unified_input_options
 from capmaster.utils.errors import CapMasterError, InsufficientFilesError, handle_error
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _silence_streamdiff_logger(enabled: bool):
+    if not enabled:
+        yield
+        return
+
+    previous_level = logger.level
+    logger.setLevel(logging.ERROR)
+    try:
+        yield
+    finally:
+        logger.setLevel(previous_level)
 
 
 def _select_pair_by_index(pairs: list[ConnectionPair], pair_index: int) -> ConnectionPair:
@@ -163,15 +178,41 @@ class StreamDiffPlugin(PluginBase):
         output_file: Path | None = None,
         silent: bool = False,
     ) -> int:
-        """Execute the streamdiff plugin.
+        """Execute the streamdiff plugin."""
+        with _silence_streamdiff_logger(silent):
+            return self._execute_impl(
+                input_path=input_path,
+                file1=file1,
+                file2=file2,
+                file3=file3,
+                file4=file4,
+                file5=file5,
+                file6=file6,
+                silent_exit=silent_exit,
+                matched_connections=matched_connections,
+                pair_index=pair_index,
+                file1_stream_id=file1_stream_id,
+                file2_stream_id=file2_stream_id,
+                output_file=output_file,
+            )
 
-        Focus on human-readable reporting of packets that exist in capture A but
-        are missing in capture B for a single TCP connection. Also reports
-        packets that exist in capture B but are missing in capture A.
-        """
-        if silent:
-            logging.getLogger("capmaster").setLevel(logging.ERROR)
-
+    def _execute_impl(
+        self,
+        input_path: str | None = None,
+        file1: Path | None = None,
+        file2: Path | None = None,
+        file3: Path | None = None,
+        file4: Path | None = None,
+        file5: Path | None = None,
+        file6: Path | None = None,
+        silent_exit: bool = False,
+        matched_connections: Path | None = None,
+        pair_index: int | None = None,
+        file1_stream_id: int | None = None,
+        file2_stream_id: int | None = None,
+        output_file: Path | None = None,
+    ) -> int:
+        """Internal implementation for streamdiff execution."""
         # Resolve inputs
         file_args = {
             1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6
