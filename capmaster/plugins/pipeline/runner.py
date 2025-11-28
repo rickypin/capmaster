@@ -29,6 +29,8 @@ class PipelineRunner:
         output_dir: Path,
         dry_run: bool = False,
         quiet: bool = False,
+        allow_no_input: bool = False,
+        strict: bool = False,
     ):
         self.config_path = config_path
         self.original_input = original_input
@@ -37,8 +39,12 @@ class PipelineRunner:
         self.output_dir = output_dir
         self.dry_run = dry_run
         self.quiet = quiet
+        self.allow_no_input = allow_no_input
+        self.strict = strict
         self.step_outputs: Dict[str, Dict[str, Any]] = {}
         self.plugins: Dict[str, PluginBase] = {}
+        self.shared_input_defaults = self._build_input_defaults()
+        self.shared_file_defaults = self._build_file_defaults()
         self._discover_plugins()
 
     def _discover_plugins(self) -> None:
@@ -52,6 +58,19 @@ class PipelineRunner:
                     self.plugins[command] = plugin
             except Exception as e:
                 logger.warning(f"Failed to instantiate plugin {plugin_cls}: {e}")
+
+    def _build_input_defaults(self) -> Dict[str, Any]:
+        """Return shared defaults for commands that expect -i/--input."""
+        if not self.original_input:
+            return {}
+        return {"input": self.original_input}
+
+    def _build_file_defaults(self) -> Dict[str, Any]:
+        """Return shared defaults for commands that expect --fileX inputs."""
+        shared: Dict[str, Any] = {}
+        for idx, input_file in enumerate(self.input_files, start=1):
+            shared[f"file{idx}"] = str(input_file.path)
+        return shared
 
     def run(self) -> int:
         """Execute the pipeline."""
@@ -77,10 +96,22 @@ class PipelineRunner:
             step_id = step.get("id")
             command = step.get("command")
             raw_args = step.get("args", {})
+            when_clause = step.get("when")
 
             if not step_id or not command:
                 logger.error(f"Invalid step definition: {step}")
                 return 1
+
+            if when_clause:
+                try:
+                    should_run = self._should_run_step(step_id, when_clause)
+                except ValueError as exc:
+                    logger.error("Invalid 'when' clause for step %s: %s", step_id, exc)
+                    return 1
+
+                if not should_run:
+                    logger.info("Skipping step %s due to 'when' conditions.", step_id)
+                    continue
 
             logger.info(f"Preparing step: {step_id} ({command})")
 
@@ -91,6 +122,9 @@ class PipelineRunner:
                 logger.error(f"Variable resolution failed for step {step_id}: {e}")
                 return 1
 
+            # Inject shared input defaults and clean unresolved placeholders
+            resolved_args = self._inject_shared_inputs(resolved_args, step_id)
+
             # 2. Find plugin
             plugin = self.plugins.get(command)
             if not plugin:
@@ -100,13 +134,13 @@ class PipelineRunner:
             # 3. Resolve arguments (CLI -> Python)
             python_args = plugin.resolve_args(command, resolved_args)
 
-            # Inject quiet flag if enabled
-            if self.quiet:
-                python_args["quiet"] = True
-
-            # 4. Type conversion
             method_name = plugin.get_command_map()[command]
             method = getattr(plugin, method_name)
+
+            # Inject global flags (quiet/strict/allow_no_input) when supported
+            python_args = self._inject_global_flags(method, python_args)
+
+            # 4. Type conversion
             final_args = self._convert_types(method, python_args)
 
             # 5. Execute
@@ -138,6 +172,19 @@ class PipelineRunner:
                     exc,
                 )
                 return exc.exit_code or 1
+            except SystemExit as exc:
+                if exc.code == 0:
+                    logger.info(
+                        "Step %s exited quietly via SystemExit(0); assuming allow-no-input skip.",
+                        step_id,
+                    )
+                    continue
+                logger.error(
+                    "Step %s raised SystemExit with code %s",
+                    step_id,
+                    exc.code,
+                )
+                return exc.code or 1
             except Exception as e:
                 logger.error(f"Step {step_id} raised exception: {e}")
                 return 1
@@ -256,3 +303,165 @@ class PipelineRunner:
                 converted[k] = v
 
         return converted
+
+    def _inject_shared_inputs(self, args: Dict[str, Any], step_id: str) -> Dict[str, Any]:
+        """Merge shared input arguments into step args and drop unresolved placeholders."""
+        updated = dict(args)
+        step_style = self._detect_step_input_style(updated)
+
+        if step_style == "input":
+            self._apply_input_defaults(updated)
+        elif step_style == "files":
+            self._apply_file_defaults(updated)
+        elif step_style == "mixed":
+            logger.debug(
+                "Step %s already mixes input and file arguments; skipping defaults",
+                step_id,
+            )
+        else:
+            if self.shared_input_defaults:
+                self._apply_input_defaults(updated)
+            else:
+                self._apply_file_defaults(updated)
+
+        placeholder_tokens = ("${FILE", "${INPUT}")
+        for key in list(updated.keys()):
+            value = updated[key]
+            if isinstance(value, str) and any(token in value for token in placeholder_tokens):
+                logger.debug(
+                    "Removing unresolved placeholder for %s in step %s (value=%s)",
+                    key,
+                    step_id,
+                    value,
+                )
+                updated.pop(key)
+
+        return updated
+
+    @staticmethod
+    def _detect_step_input_style(args: Dict[str, Any]) -> str:
+        """Determine whether a step explicitly set -i or --fileX style arguments."""
+        has_input = any(key in args for key in ("input", "input_path"))
+        has_files = any(
+            key.startswith("file") and key[4:].isdigit()
+            for key in args
+        )
+
+        if has_input and has_files:
+            return "mixed"
+        if has_input:
+            return "input"
+        if has_files:
+            return "files"
+        return "none"
+
+    def _apply_input_defaults(self, args: Dict[str, Any]) -> None:
+        """Inject -i/--input defaults when the user selected that mode."""
+        if not self.shared_input_defaults:
+            return
+        for key, value in self.shared_input_defaults.items():
+            args.setdefault(key, value)
+
+    def _apply_file_defaults(self, args: Dict[str, Any]) -> None:
+        """Inject --fileX defaults when the user selected that mode."""
+        if not self.shared_file_defaults:
+            return
+        for key, value in self.shared_file_defaults.items():
+            args.setdefault(key, value)
+
+    def _should_run_step(self, step_id: str, when_clause: Dict[str, Any]) -> bool:
+        """Evaluate conditional execution rules for a step."""
+        if not isinstance(when_clause, dict):
+            raise ValueError("when clause must be a mapping of conditions")
+
+        input_count = len(self.input_files)
+
+        min_files = when_clause.get("min_input_files")
+        if min_files is not None:
+            if not isinstance(min_files, int) or min_files < 0:
+                raise ValueError("min_input_files must be a non-negative integer")
+            if input_count < min_files:
+                logger.debug(
+                    "Step %s skipped: requires at least %s input files (have %s)",
+                    step_id,
+                    min_files,
+                    input_count,
+                )
+                return False
+
+        max_files = when_clause.get("max_input_files")
+        if max_files is not None:
+            if not isinstance(max_files, int) or max_files < 0:
+                raise ValueError("max_input_files must be a non-negative integer")
+            if input_count > max_files:
+                logger.debug(
+                    "Step %s skipped: allows at most %s input files (have %s)",
+                    step_id,
+                    max_files,
+                    input_count,
+                )
+                return False
+
+        required_steps = when_clause.get("require_steps")
+        if required_steps is not None:
+            if isinstance(required_steps, str):
+                required_set = {required_steps}
+            elif isinstance(required_steps, list):
+                required_set = set(required_steps)
+            else:
+                raise ValueError("require_steps must be a string or list of step ids")
+
+            missing = [sid for sid in required_set if sid not in self.step_outputs]
+            if missing:
+                logger.debug(
+                    "Step %s skipped: required steps missing (%s)",
+                    step_id,
+                    ", ".join(missing),
+                )
+                return False
+
+        return True
+
+    def _inject_global_flags(self, method, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Inject run-pipeline flags into step arguments when supported."""
+        injections: list[tuple[str, bool]] = []
+        if self.quiet:
+            injections.append(("quiet", True))
+        if self.strict:
+            injections.append(("strict", True))
+        if self.allow_no_input:
+            injections.append(("allow_no_input", True))
+
+        if not injections:
+            return args
+
+        updated = dict(args)
+        for name, value in injections:
+            if not self._method_accepts_flag(method, name):
+                logger.debug(
+                    "Skipping injection of %s for method %s (not supported)",
+                    name,
+                    method.__qualname__,
+                )
+                continue
+
+            if name in updated:
+                logger.debug(
+                    "Step override detected for %s on method %s; keeping explicit value",
+                    name,
+                    method.__qualname__,
+                )
+                continue
+
+            updated[name] = value
+        return updated
+
+    @staticmethod
+    def _method_accepts_flag(method, flag_name: str) -> bool:
+        """Check whether a method accepts a given flag argument."""
+        sig = inspect.signature(method)
+        if flag_name in sig.parameters:
+            return True
+        return any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
