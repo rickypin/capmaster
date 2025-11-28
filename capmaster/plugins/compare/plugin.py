@@ -74,7 +74,9 @@ class ComparePlugin(PluginBase):
         file4: Path | None = None,
         file5: Path | None = None,
         file6: Path | None = None,
-        silent_exit: bool = False,
+        allow_no_input: bool = False,
+        strict: bool = False,
+        quiet: bool = False,
         output_file: Path | None = None,
         score_threshold: float = 0.60,
         bucket_strategy: str = "auto",
@@ -97,7 +99,9 @@ class ComparePlugin(PluginBase):
             file1: First PCAP file (baseline) (optional)
             file2: Second PCAP file (compare) (optional)
             file3-file6: Additional files (ignored)
-            silent_exit: Exit silently if file count mismatch
+            allow_no_input: Exit with code 0 if file count mismatch
+            strict: Fail on warnings
+            quiet: Suppress output
             output_file: Output file for results (None for stdout)
             score_threshold: Minimum score threshold for matching
             bucket_strategy: Bucketing strategy for matching
@@ -119,7 +123,7 @@ class ComparePlugin(PluginBase):
             input_files = InputManager.resolve_inputs(input_path, file_args)
             
             # Validate for ComparePlugin (needs exactly 2 files)
-            InputManager.validate_file_count(input_files, min_files=2, max_files=2, silent_exit=silent_exit)
+            InputManager.validate_file_count(input_files, min_files=2, max_files=2, allow_no_input=allow_no_input)
             
             # Extract files
             baseline_file = input_files[0].path

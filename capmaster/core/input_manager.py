@@ -101,7 +101,7 @@ class InputManager:
         input_files: list[InputFile], 
         min_files: int = 1, 
         max_files: int | None = None,
-        silent_exit: bool = False
+        allow_no_input: bool = False
     ) -> None:
         """
         Validate the number of input files against requirements.
@@ -110,7 +110,7 @@ class InputManager:
             input_files: List of resolved input files
             min_files: Minimum required files
             max_files: Maximum allowed files (None for no limit)
-            silent_exit: If True, exit with 0 instead of error on count mismatch
+            allow_no_input: If True, exit with 0 instead of error on count mismatch
         """
         count = len(input_files)
         error_msg = None
@@ -124,9 +124,9 @@ class InputManager:
             error_msg = f"Input file count mismatch: Expected at most {max_files}, got {count}."
 
         if error_msg:
-            if silent_exit:
+            if allow_no_input:
                 logger.info(f"{error_msg} Exiting silently as requested.")
-                raise click.exceptions.Exit(0)
+                sys.exit(0)
             else:
                 raise click.BadParameter(error_msg)
 

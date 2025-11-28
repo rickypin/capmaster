@@ -15,6 +15,22 @@ from capmaster.utils.cli_options import unified_input_options
 
 logger = logging.getLogger(__name__)
 
+from contextlib import contextmanager
+
+@contextmanager
+def _silence_topology_logger(enabled: bool):
+    """Temporarily elevate logger level to suppress info/warn output."""
+    if not enabled:
+        yield
+        return
+
+    previous_level = logger.level
+    logger.setLevel(logging.ERROR)
+    try:
+        yield
+    finally:
+        logger.setLevel(previous_level)
+
 
 @register_plugin
 class TopologyPlugin(PluginBase):
@@ -28,7 +44,7 @@ class TopologyPlugin(PluginBase):
     def setup_cli(self, cli_group: click.Group) -> None:
         """Register the topology CLI."""
 
-        @cli_group.command(name=self.name)
+        @cli_group.command(name=self.name, context_settings=dict(help_option_names=["-h", "--help"]))
         @unified_input_options
         @click.option(
             "--matched-connections",
@@ -74,7 +90,9 @@ class TopologyPlugin(PluginBase):
             file4: Path | None,
             file5: Path | None,
             file6: Path | None,
-            silent_exit: bool,
+            allow_no_input: bool,
+            strict: bool,
+            quiet: bool,
             matched_connections: Path | None,
             empty_match_behavior: str,
             output_file: Path | None,
@@ -102,12 +120,15 @@ class TopologyPlugin(PluginBase):
                 file4=file4,
                 file5=file5,
                 file6=file6,
-                silent_exit=silent_exit,
+
+                silent=silent,
                 matched_connections=matched_connections,
                 empty_match_behavior=empty_match_behavior,
                 output_file=output_file,
                 service_list=service_list,
-                silent=silent,
+                allow_no_input=allow_no_input,
+                strict=strict,
+                quiet=quiet,
             )
             ctx.exit(exit_code)
 
@@ -120,14 +141,51 @@ class TopologyPlugin(PluginBase):
         file4: Path | None = None,
         file5: Path | None = None,
         file6: Path | None = None,
-        silent_exit: bool = False,
+        allow_no_input: bool = False,
+        strict: bool = False,
+        quiet: bool = False,
         matched_connections: Path | None = None,
         empty_match_behavior: str = "error",
         output_file: Path | None = None,
         service_list: Path | None = None,
         silent: bool = False,
-        # Legacy
-        single_file: Path | None = None,
+    ) -> int:
+        """Execute the topology plugin."""
+        with _silence_topology_logger(silent or quiet):
+            return self._execute_impl(
+                input_path=input_path,
+                file1=file1,
+                file2=file2,
+                file3=file3,
+                file4=file4,
+                file5=file5,
+                file6=file6,
+                allow_no_input=allow_no_input,
+                strict=strict,
+                quiet=quiet,
+                matched_connections=matched_connections,
+                empty_match_behavior=empty_match_behavior,
+                output_file=output_file,
+                service_list=service_list,
+            )
+
+    def _execute_impl(
+        self,
+        input_path: str | None = None,
+        file1: Path | None = None,
+        file2: Path | None = None,
+        file3: Path | None = None,
+        file4: Path | None = None,
+        file5: Path | None = None,
+        file6: Path | None = None,
+        allow_no_input: bool = False,
+        strict: bool = False,
+        quiet: bool = False,
+        matched_connections: Path | None = None,
+        empty_match_behavior: str = "error",
+        output_file: Path | None = None,
+        service_list: Path | None = None,
+        silent: bool = False,
     ) -> int:
         """Delegate to the topology runner."""
         # Resolve inputs
@@ -137,7 +195,7 @@ class TopologyPlugin(PluginBase):
         input_files = InputManager.resolve_inputs(input_path, file_args)
         
         # Validate for TopologyPlugin (needs 1 or 2 files)
-        InputManager.validate_file_count(input_files, min_files=1, max_files=2, silent_exit=silent_exit)
+        InputManager.validate_file_count(input_files, min_files=1, max_files=2, allow_no_input=allow_no_input)
         
         # Map to legacy args
         single_file_path = None

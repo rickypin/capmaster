@@ -14,7 +14,7 @@ __version__ = "1.0.0"
 _PLUGINS_REGISTERED = False
 
 
-@click.group()
+@click.group(context_settings=dict(help_option_names=["-h", "--help"]))
 @click.version_option(version=__version__, prog_name="capmaster")
 @click.option(
     "-v",

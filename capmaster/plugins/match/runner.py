@@ -41,6 +41,7 @@ from capmaster.plugins.match.stats_pipeline import (
     write_to_json,
 )
 from capmaster.core.input_manager import InputManager
+from capmaster.utils.context import ExecutionContext
 from capmaster.utils.errors import CapMasterError, InsufficientFilesError, handle_error
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,9 @@ def run_match_pipeline(
     match_json: Path | None = None,
     service_list: Path | None = None,
     silent: bool = False,
+    strict: bool = False,
+    allow_no_input: bool = False,
+    quiet: bool = False,
 ) -> int:
     """Run the main match pipeline.
 
@@ -96,6 +100,10 @@ def run_match_pipeline(
     if sample_threshold <= 0:
         logger.error(f"Invalid sample threshold: {sample_threshold}. Must be positive")
         return 1
+
+    # Initialize execution context
+    ExecutionContext.set_strict(strict)
+    ExecutionContext.set_quiet(quiet)
 
     try:
         return _run_match_pipeline_core(
@@ -127,6 +135,7 @@ def run_match_pipeline(
             match_json=match_json,
             service_list=service_list,
             silent=silent,
+            allow_no_input=allow_no_input,
         )
 
     except InsufficientFilesError as e:
@@ -326,6 +335,7 @@ def _run_match_pipeline_core(
     match_json: Path | None,
     service_list: Path | None,
     silent: bool = False,
+    allow_no_input: bool = False,
 ) -> int:
     """Core implementation of the match pipeline.
 
@@ -351,6 +361,7 @@ def _run_match_pipeline_core(
             file1_pcapid=file1_pcapid,
             file2_pcapid=file2_pcapid,
             silent=silent,
+            allow_no_input=allow_no_input,
         )
 
         (
@@ -430,7 +441,9 @@ def _parse_dual_input(
     file2: Path | None,
     file1_pcapid: int | None,
     file2_pcapid: int | None,
+
     silent: bool = False,
+    allow_no_input: bool = False,
 ) -> tuple[Path, Path, dict[str, int] | None]:
     """Parse dual file input using InputManager.
 
@@ -443,7 +456,7 @@ def _parse_dual_input(
 
     file_args = {1: file1, 2: file2}
     input_files = InputManager.resolve_inputs(input_path, file_args)
-    InputManager.validate_file_count(input_files, min_files=2, max_files=2)
+    InputManager.validate_file_count(input_files, min_files=2, max_files=2, allow_no_input=allow_no_input)
     
     if not silent and progress and scan_task:
         progress.update(scan_task, advance=1)
@@ -696,6 +709,7 @@ def _match_connections_with_strategy(
     behavioral_weight_bytes: float,
     service_list: Path | None = None,
     silent: bool = False,
+    allow_no_input: bool = False,
 ) -> tuple[ConnectionMatcher | BehavioralMatcher, list]:
     """Perform matching using F5, TLS, behavioral or feature-based strategy.
 

@@ -19,7 +19,7 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
     the provided plugin instance to execute the logic.
     """
 
-    @cli_group.command(name=plugin.name)
+    @cli_group.command(name=plugin.name, context_settings=dict(help_option_names=["-h", "--help"]))
     @unified_input_options
     @click.option(
         "-o",
@@ -109,7 +109,10 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
         file4: Path | None,
         file5: Path | None,
         file6: Path | None,
-        silent_exit: bool,
+
+        allow_no_input: bool,
+        strict: bool,
+        quiet: bool,
         output_file: Path | None,
         threshold: float,
         bucket: str,
@@ -198,7 +201,9 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
             file4=file4,
             file5=file5,
             file6=file6,
-            silent_exit=silent_exit,
+            allow_no_input=allow_no_input,
+            strict=strict,
+            quiet=quiet,
             output_file=output_file,
             score_threshold=threshold,
             bucket_strategy=bucket,

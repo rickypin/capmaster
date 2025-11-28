@@ -25,6 +25,22 @@ from capmaster.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+from contextlib import contextmanager
+
+@contextmanager
+def _silence_preprocess_logger(enabled: bool):
+    """Temporarily elevate logger level to suppress info/warn output."""
+    if not enabled:
+        yield
+        return
+
+    previous_level = logger.level
+    logger.setLevel(logging.ERROR)
+    try:
+        yield
+    finally:
+        logger.setLevel(previous_level)
+
 VALID_STEPS: Sequence[str] = (
     STEP_TIME_ALIGN,
     STEP_DEDUP,
@@ -53,7 +69,7 @@ class PreprocessPlugin(PluginBase):
     def setup_cli(self, cli_group: click.Group) -> None:
         """Register the preprocess command."""
 
-        @cli_group.command(name="preprocess")
+        @cli_group.command(name="preprocess", context_settings=dict(help_option_names=["-h", "--help"]))
         @unified_input_options
         @click.option(
             "-o",
@@ -157,23 +173,25 @@ class PreprocessPlugin(PluginBase):
             file4: Path | None,
             file5: Path | None,
             file6: Path | None,
-            silent_exit: bool,
+            allow_no_input: bool,
+            strict: bool,
+            quiet: bool,
             output_dir: Path | None,
             config_path: Path | None,
-            steps: Sequence[str],
-            enable_dedup: bool,
-            disable_dedup: bool,
-            enable_oneway: bool,
-            disable_oneway: bool,
-            enable_time_align: bool,
-            disable_time_align: bool,
+            steps: tuple[str, ...],
+            enable_dedup: bool | None,
+            disable_dedup: bool | None,
+            enable_oneway: bool | None,
+            disable_oneway: bool | None,
+            enable_time_align: bool | None,
+            disable_time_align: bool | None,
             dedup_window_packets: int | None,
             dedup_ignore_bytes: int | None,
             oneway_ack_threshold: int | None,
-            enable_time_align_allow_empty: bool,
-            disable_time_align_allow_empty: bool,
-            archive_original_files: bool,
-            no_archive_original_files: bool,
+            enable_time_align_allow_empty: bool | None,
+            disable_time_align_allow_empty: bool | None,
+            archive_original_files: bool | None,
+            no_archive_original_files: bool | None,
             workers: int | None,
             no_report: bool,
             report_path: Path | None,
@@ -221,6 +239,36 @@ class PreprocessPlugin(PluginBase):
               ``--dedup-window-packets`` and ``--oneway-ack-threshold``
               override the configuration file values.
             """
+            # Handle boolean flags that come in pairs
+            dedup_enabled = None
+            if enable_dedup:
+                dedup_enabled = True
+            elif disable_dedup:
+                dedup_enabled = False
+
+            oneway_enabled = None
+            if enable_oneway:
+                oneway_enabled = True
+            elif disable_oneway:
+                oneway_enabled = False
+
+            time_align_enabled = None
+            if enable_time_align:
+                time_align_enabled = True
+            elif disable_time_align:
+                time_align_enabled = False
+
+            time_align_allow_empty = None
+            if enable_time_align_allow_empty:
+                time_align_allow_empty = True
+            elif disable_time_align_allow_empty:
+                time_align_allow_empty = False
+
+            should_archive = None
+            if archive_original_files:
+                should_archive = True
+            elif no_archive_original_files:
+                should_archive = False
 
             exit_code = self.execute(
                 input_path=input_path,
@@ -230,23 +278,20 @@ class PreprocessPlugin(PluginBase):
                 file4=file4,
                 file5=file5,
                 file6=file6,
-                silent_exit=silent_exit,
+                allow_no_input=allow_no_input,
+                strict=strict,
+                quiet=quiet,
                 output_dir=output_dir,
                 config_path=config_path,
-                steps=list(steps),
-                enable_dedup=enable_dedup,
-                disable_dedup=disable_dedup,
-                enable_oneway=enable_oneway,
-                disable_oneway=disable_oneway,
-                enable_time_align=enable_time_align,
-                disable_time_align=disable_time_align,
+                steps=steps if steps else None,
+                dedup_enabled=dedup_enabled,
+                oneway_enabled=oneway_enabled,
+                time_align_enabled=time_align_enabled,
                 dedup_window_packets=dedup_window_packets,
                 dedup_ignore_bytes=dedup_ignore_bytes,
                 oneway_ack_threshold=oneway_ack_threshold,
-                enable_time_align_allow_empty=enable_time_align_allow_empty,
-                disable_time_align_allow_empty=disable_time_align_allow_empty,
-                archive_original_files=archive_original_files,
-                no_archive_original_files=no_archive_original_files,
+                time_align_allow_empty=time_align_allow_empty,
+                archive_original_files=should_archive,
                 workers=workers,
                 no_report=no_report,
                 report_path=report_path,
@@ -254,7 +299,7 @@ class PreprocessPlugin(PluginBase):
             )
             ctx.exit(exit_code)
 
-    def execute(  # type: ignore[override]
+    def execute(
         self,
         input_path: str | None = None,
         file1: Path | None = None,
@@ -263,35 +308,87 @@ class PreprocessPlugin(PluginBase):
         file4: Path | None = None,
         file5: Path | None = None,
         file6: Path | None = None,
-        silent_exit: bool = False,
+        allow_no_input: bool = False,
+        strict: bool = False,
+        quiet: bool = False,
         output_dir: Path | None = None,
         config_path: Path | None = None,
-        steps: Sequence[str] | None = None,
-        enable_dedup: bool = False,
-        disable_dedup: bool = False,
-        enable_oneway: bool = False,
-        disable_oneway: bool = False,
-        enable_time_align: bool = False,
-        disable_time_align: bool = False,
+        steps: tuple[str, ...] | None = None,
+        dedup_enabled: bool | None = None,
+        oneway_enabled: bool | None = None,
+        time_align_enabled: bool | None = None,
         dedup_window_packets: int | None = None,
         dedup_ignore_bytes: int | None = None,
         oneway_ack_threshold: int | None = None,
-        enable_time_align_allow_empty: bool = False,
-        disable_time_align_allow_empty: bool = False,
-        archive_original_files: bool = False,
-        no_archive_original_files: bool = False,
+        time_align_allow_empty: bool | None = None,
+        archive_original_files: bool | None = None,
         workers: int | None = None,
         no_report: bool = False,
         report_path: Path | None = None,
         silent: bool = False,
         **kwargs: Any,
     ) -> int:
-        """Execute the preprocess pipeline with merged configuration.
+        """Execute the preprocess plugin."""
+        with _silence_preprocess_logger(silent or quiet):
+            return self._execute_impl(
+                input_path=input_path,
+                file1=file1,
+                file2=file2,
+                file3=file3,
+                file4=file4,
+                file5=file5,
+                file6=file6,
+                allow_no_input=allow_no_input,
+                strict=strict,
+                quiet=quiet,
+                output_dir=output_dir,
+                config_path=config_path,
+                steps=steps,
+                dedup_enabled=dedup_enabled,
+                oneway_enabled=oneway_enabled,
+                time_align_enabled=time_align_enabled,
+                dedup_window_packets=dedup_window_packets,
+                dedup_ignore_bytes=dedup_ignore_bytes,
+                oneway_ack_threshold=oneway_ack_threshold,
+                time_align_allow_empty=time_align_allow_empty,
+                archive_original_files=archive_original_files,
+                workers=workers,
+                no_report=no_report,
+                report_path=report_path,
+                silent=silent,
+                **kwargs,
+            )
 
-        The ``silent`` flag only affects this plugin's logger to avoid
-        changing the global ``capmaster`` logger level, which could
-        interfere with other commands running in the same process.
-        """
+    def _execute_impl(
+        self,
+        input_path: str | None = None,
+        file1: Path | None = None,
+        file2: Path | None = None,
+        file3: Path | None = None,
+        file4: Path | None = None,
+        file5: Path | None = None,
+        file6: Path | None = None,
+        allow_no_input: bool = False,
+        strict: bool = False,
+        quiet: bool = False,
+        output_dir: Path | None = None,
+        config_path: Path | None = None,
+        steps: tuple[str, ...] | None = None,
+        dedup_enabled: bool | None = None,
+        oneway_enabled: bool | None = None,
+        time_align_enabled: bool | None = None,
+        dedup_window_packets: int | None = None,
+        dedup_ignore_bytes: int | None = None,
+        oneway_ack_threshold: int | None = None,
+        time_align_allow_empty: bool | None = None,
+        archive_original_files: bool | None = None,
+        workers: int | None = None,
+        no_report: bool = False,
+        report_path: Path | None = None,
+        silent: bool = False,
+        **kwargs: Any,
+    ) -> int:
+        """Internal implementation for preprocess execution."""
         plugin_logger = logger
         previous_level = plugin_logger.level
 
@@ -306,42 +403,12 @@ class PreprocessPlugin(PluginBase):
             input_files = InputManager.resolve_inputs(input_path, file_args)
             
             # Validate for PreprocessPlugin (needs at least 1 file)
-            InputManager.validate_file_count(input_files, min_files=1, silent_exit=silent_exit)
+            InputManager.validate_file_count(input_files, min_files=1, allow_no_input=allow_no_input)
             
             pcap_files = [f.path for f in input_files]
 
             # Validate flag pairs
-            _check_flag_pair(enable_dedup, disable_dedup, "dedup")
-            _check_flag_pair(enable_oneway, disable_oneway, "oneway")
-            _check_flag_pair(enable_time_align, disable_time_align, "time-align")
-            _check_flag_pair(
-                enable_time_align_allow_empty,
-                disable_time_align_allow_empty,
-                "time-align-allow-empty",
-            )
-            _check_flag_pair(
-                archive_original_files,
-                no_archive_original_files,
-                "archive-original-files",
-            )
 
-            # Disallow mixing --step with enable/disable flags (for step-toggling flags only)
-            if steps:
-                flag_used = any(
-                    [
-                        enable_dedup,
-                        disable_dedup,
-                        enable_oneway,
-                        disable_oneway,
-                        enable_time_align,
-                        disable_time_align,
-                    ]
-                )
-                if flag_used:
-                    raise CapMasterError(
-                        "Cannot mix --step with enable/disable flags",
-                        "Use either --step for explicit steps or flags for automatic mode.",
-                    )
 
             if output_dir is None:
                 # Default: write outputs next to the original input PCAPs
@@ -361,30 +428,20 @@ class PreprocessPlugin(PluginBase):
             # Build CLI overrides for configuration
             cli_overrides: dict[str, Any] = {}
 
-            if enable_dedup:
-                cli_overrides["dedup_enabled"] = True
-            elif disable_dedup:
-                cli_overrides["dedup_enabled"] = False
+            if dedup_enabled is not None:
+                cli_overrides["dedup_enabled"] = dedup_enabled
 
-            if enable_oneway:
-                cli_overrides["oneway_enabled"] = True
-            elif disable_oneway:
-                cli_overrides["oneway_enabled"] = False
+            if oneway_enabled is not None:
+                cli_overrides["oneway_enabled"] = oneway_enabled
 
-            if enable_time_align:
-                cli_overrides["time_align_enabled"] = True
-            elif disable_time_align:
-                cli_overrides["time_align_enabled"] = False
+            if time_align_enabled is not None:
+                cli_overrides["time_align_enabled"] = time_align_enabled
 
-            if enable_time_align_allow_empty:
-                cli_overrides["time_align_allow_empty"] = True
-            elif disable_time_align_allow_empty:
-                cli_overrides["time_align_allow_empty"] = False
+            if time_align_allow_empty is not None:
+                cli_overrides["time_align_allow_empty"] = time_align_allow_empty
 
-            if archive_original_files:
-                cli_overrides["archive_original_files"] = True
-            elif no_archive_original_files:
-                cli_overrides["archive_original_files"] = False
+            if archive_original_files is not None:
+                cli_overrides["archive_original_files"] = archive_original_files
 
             if dedup_window_packets is not None:
                 cli_overrides["dedup_window_packets"] = dedup_window_packets

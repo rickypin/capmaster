@@ -23,7 +23,7 @@ def register_match_command(plugin: Any, cli_group: click.Group) -> None:
     to reduce file size and improve readability.
     """
 
-    @cli_group.command(name=plugin.name)
+    @cli_group.command(name=plugin.name, context_settings=dict(help_option_names=["-h", "--help"]))
     @unified_input_options
     @click.option(
         "-o",
@@ -170,7 +170,10 @@ def register_match_command(plugin: Any, cli_group: click.Group) -> None:
         file4: Path | None,
         file5: Path | None,
         file6: Path | None,
-        silent_exit: bool,
+
+        allow_no_input: bool,
+        strict: bool,
+        quiet: bool,
         output_file: Path | None,
         mode: str,
         bucket: str,
@@ -292,7 +295,10 @@ def register_match_command(plugin: Any, cli_group: click.Group) -> None:
             file4=file4,
             file5=file5,
             file6=file6,
-            silent_exit=silent_exit,
+
+            allow_no_input=allow_no_input,
+            strict=strict,
+            quiet=quiet,
             output_file=output_file,
             mode=mode,
             bucket_strategy=bucket,
@@ -328,7 +334,7 @@ def register_comparative_analysis_command(plugin: Any, cli_group: click.Group) -
     to reduce file size and improve readability.
     """
 
-    @cli_group.command(name="comparative-analysis")
+    @cli_group.command(name="comparative-analysis", context_settings=dict(help_option_names=["-h", "--help"]))
     @unified_input_options
     @click.option(
         "--service",

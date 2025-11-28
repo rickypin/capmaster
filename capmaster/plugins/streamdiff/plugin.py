@@ -59,7 +59,7 @@ class StreamDiffPlugin(PluginBase):
     def setup_cli(self, cli_group: click.Group) -> None:
         """Register the streamdiff CLI command."""
 
-        @cli_group.command(name=self.name)
+        @cli_group.command(name=self.name, context_settings=dict(help_option_names=["-h", "--help"]))
         @unified_input_options
         @click.option(
             "--matched-connections",
@@ -118,7 +118,9 @@ class StreamDiffPlugin(PluginBase):
             file4: Path | None,
             file5: Path | None,
             file6: Path | None,
-            silent_exit: bool,
+            allow_no_input: bool,
+            strict: bool,
+            quiet: bool,
             matched_connections: Path | None,
             pair_index: int | None,
             file1_stream_id: int | None,
@@ -151,7 +153,9 @@ class StreamDiffPlugin(PluginBase):
                 file4=file4,
                 file5=file5,
                 file6=file6,
-                silent_exit=silent_exit,
+                allow_no_input=allow_no_input,
+                strict=strict,
+                quiet=quiet,
                 matched_connections=matched_connections,
                 pair_index=pair_index,
                 file1_stream_id=file1_stream_id,
@@ -170,7 +174,9 @@ class StreamDiffPlugin(PluginBase):
         file4: Path | None = None,
         file5: Path | None = None,
         file6: Path | None = None,
-        silent_exit: bool = False,
+        allow_no_input: bool = False,
+        strict: bool = False,
+        quiet: bool = False,
         matched_connections: Path | None = None,
         pair_index: int | None = None,
         file1_stream_id: int | None = None,
@@ -179,7 +185,7 @@ class StreamDiffPlugin(PluginBase):
         silent: bool = False,
     ) -> int:
         """Execute the streamdiff plugin."""
-        with _silence_streamdiff_logger(silent):
+        with _silence_streamdiff_logger(silent or quiet):
             return self._execute_impl(
                 input_path=input_path,
                 file1=file1,
@@ -188,7 +194,9 @@ class StreamDiffPlugin(PluginBase):
                 file4=file4,
                 file5=file5,
                 file6=file6,
-                silent_exit=silent_exit,
+                allow_no_input=allow_no_input,
+                strict=strict,
+                quiet=quiet,
                 matched_connections=matched_connections,
                 pair_index=pair_index,
                 file1_stream_id=file1_stream_id,
@@ -205,7 +213,9 @@ class StreamDiffPlugin(PluginBase):
         file4: Path | None = None,
         file5: Path | None = None,
         file6: Path | None = None,
-        silent_exit: bool = False,
+        allow_no_input: bool = False,
+        strict: bool = False,
+        quiet: bool = False,
         matched_connections: Path | None = None,
         pair_index: int | None = None,
         file1_stream_id: int | None = None,
@@ -213,14 +223,17 @@ class StreamDiffPlugin(PluginBase):
         output_file: Path | None = None,
     ) -> int:
         """Internal implementation for streamdiff execution."""
-        # Resolve inputs
-        file_args = {
-            1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6
-        }
-        input_files = InputManager.resolve_inputs(input_path, file_args)
-        
-        # Validate for StreamDiffPlugin (needs exactly 2 files)
-        InputManager.validate_file_count(input_files, min_files=2, max_files=2, silent_exit=silent_exit)
+        try:
+            # Resolve inputs
+            file_args = {
+                1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6
+            }
+            input_files = InputManager.resolve_inputs(input_path, file_args)
+            
+            # Validate for StreamDiffPlugin (needs exactly 2 files)
+            InputManager.validate_file_count(input_files, min_files=2, max_files=2, allow_no_input=allow_no_input)
+        except CapMasterError as exc:
+            return handle_error(exc, show_traceback=False)
         
         # Extract files
         file_a = input_files[0].path

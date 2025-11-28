@@ -6,6 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from capmaster.core.connection.models import TcpConnection
+from capmaster.utils.context import ExecutionContext
 from capmaster.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -147,7 +148,8 @@ class ServerDetector:
                 continue
             
             if ":" not in line:
-                logger.warning(
+                ExecutionContext.warn_or_error(
+                    logger,
                     f"Invalid format in service list {path}:{line_num}: '{line}' (expected 'ip:port')"
                 )
                 continue
@@ -163,12 +165,13 @@ class ServerDetector:
                     port = int(port_str)
                     self._service_list_endpoints.add((ip, port))
             except ValueError:
-                logger.warning(
+                ExecutionContext.warn_or_error(
+                    logger,
                     f"Invalid port number in service list {path}:{line_num}: '{port_str}'"
                 )
                 continue
             except Exception as e:
-                logger.warning(f"Error parsing service list {path}:{line_num}: {e}")
+                ExecutionContext.warn_or_error(logger, f"Error parsing service list {path}:{line_num}: {e}")
                 continue
 
     def collect_connection(self, connection: TcpConnection) -> None:

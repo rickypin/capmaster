@@ -74,11 +74,29 @@ def unified_input_options(func: Callable) -> Callable:
     These options are designed to be processed by InputManager.resolve_inputs().
     """
     # Add --silent-exit
+    # Add --allow-no-input (formerly --silent-exit)
     func = click.option(
-        "--silent-exit",
+        "--allow-no-input",
         is_flag=True,
         default=False,
-        help="Exit silently (code 0) if input file count requirements are not met",
+        help="Exit with code 0 if input file count requirements are not met (formerly --silent-exit)",
+    )(func)
+
+    # Add --strict
+    func = click.option(
+        "--strict",
+        is_flag=True,
+        default=False,
+        help="Fail on warnings (e.g., missing config files, malformed data).",
+    )(func)
+
+    # Add -q / --quiet
+    func = click.option(
+        "-q",
+        "--quiet",
+        is_flag=True,
+        default=False,
+        help="Suppress output (only show errors).",
     )(func)
 
     # Add --file6 down to --file1
