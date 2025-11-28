@@ -10,7 +10,7 @@ from typing import Any
 
 import click
 
-from capmaster.utils.cli_options import dual_file_input_options, validate_database_params
+from capmaster.utils.cli_options import unified_input_options, validate_database_params
 
 
 
@@ -23,8 +23,8 @@ def register_match_command(plugin: Any, cli_group: click.Group) -> None:
     to reduce file size and improve readability.
     """
 
-    @cli_group.command(name=plugin.name)
-    @dual_file_input_options
+    @cli_group.command(name=plugin.name, context_settings=dict(help_option_names=["-h", "--help"]))
+    @unified_input_options
     @click.option(
         "-o",
         "--output",
@@ -165,9 +165,15 @@ def register_match_command(plugin: Any, cli_group: click.Group) -> None:
         ctx: click.Context,
         input_path: str | None,
         file1: Path | None,
-        file1_pcapid: int | None,
         file2: Path | None,
-        file2_pcapid: int | None,
+        file3: Path | None,
+        file4: Path | None,
+        file5: Path | None,
+        file6: Path | None,
+
+        allow_no_input: bool,
+        strict: bool,
+        quiet: bool,
         output_file: Path | None,
         mode: str,
         bucket: str,
@@ -284,9 +290,15 @@ def register_match_command(plugin: Any, cli_group: click.Group) -> None:
         exit_code = plugin.execute(
             input_path=input_path,
             file1=file1,
-            file1_pcapid=file1_pcapid,
             file2=file2,
-            file2_pcapid=file2_pcapid,
+            file3=file3,
+            file4=file4,
+            file5=file5,
+            file6=file6,
+
+            allow_no_input=allow_no_input,
+            strict=strict,
+            quiet=quiet,
             output_file=output_file,
             mode=mode,
             bucket_strategy=bucket,
@@ -322,8 +334,8 @@ def register_comparative_analysis_command(plugin: Any, cli_group: click.Group) -
     to reduce file size and improve readability.
     """
 
-    @cli_group.command(name="comparative-analysis")
-    @dual_file_input_options
+    @cli_group.command(name="comparative-analysis", context_settings=dict(help_option_names=["-h", "--help"]))
+    @unified_input_options
     @click.option(
         "--service",
         is_flag=True,
@@ -358,9 +370,14 @@ def register_comparative_analysis_command(plugin: Any, cli_group: click.Group) -
         ctx: click.Context,
         input_path: str | None,
         file1: Path | None,
-        file1_pcapid: int | None,
         file2: Path | None,
-        file2_pcapid: int | None,
+        file3: Path | None,
+        file4: Path | None,
+        file5: Path | None,
+        file6: Path | None,
+        allow_no_input: bool,
+        strict: bool,
+        quiet: bool,
         service: bool,
         matched_connections: Path | None,
         top_n: int | None,
@@ -430,6 +447,13 @@ def register_comparative_analysis_command(plugin: Any, cli_group: click.Group) -
             input_path=input_path,
             file1=file1,
             file2=file2,
+            file3=file3,
+            file4=file4,
+            file5=file5,
+            file6=file6,
+            allow_no_input=allow_no_input,
+            strict=strict,
+            quiet=quiet,
             analysis_type=analysis_type,
             topology_file=topology,
             matched_connections_file=matched_connections,

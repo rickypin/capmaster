@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -13,11 +14,25 @@ from capmaster.plugins.base import PluginBase
 from capmaster.plugins.compare.packet_comparator import ComparisonResult, DiffType, PacketComparator, PacketDiff
 from capmaster.plugins.compare.packet_extractor import PacketExtractor
 from capmaster.plugins.match.quality_analyzer import ConnectionPair, parse_matched_connections
-from capmaster.utils.cli_options import dual_file_input_options
-from capmaster.utils.input_parser import DualFileInputParser
+from capmaster.core.input_manager import InputManager
+from capmaster.utils.cli_options import unified_input_options
 from capmaster.utils.errors import CapMasterError, InsufficientFilesError, handle_error
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _silence_streamdiff_logger(enabled: bool):
+    if not enabled:
+        yield
+        return
+
+    previous_level = logger.level
+    logger.setLevel(logging.ERROR)
+    try:
+        yield
+    finally:
+        logger.setLevel(previous_level)
 
 
 def _select_pair_by_index(pairs: list[ConnectionPair], pair_index: int) -> ConnectionPair:
@@ -44,8 +59,8 @@ class StreamDiffPlugin(PluginBase):
     def setup_cli(self, cli_group: click.Group) -> None:
         """Register the streamdiff CLI command."""
 
-        @cli_group.command(name=self.name)
-        @dual_file_input_options
+        @cli_group.command(name=self.name, context_settings=dict(help_option_names=["-h", "--help"]))
+        @unified_input_options
         @click.option(
             "--matched-connections",
             type=click.Path(exists=True, dir_okay=False, path_type=Path),
@@ -91,16 +106,21 @@ class StreamDiffPlugin(PluginBase):
         @click.pass_context
         def streamdiff_command(
             ctx: click.Context,
-            input_path: Optional[str],
-            file1: Optional[Path],
-            file1_pcapid: Optional[int],
-            file2: Optional[Path],
-            file2_pcapid: Optional[int],
-            matched_connections: Optional[Path],
-            pair_index: Optional[int],
-            file1_stream_id: Optional[int],
-            file2_stream_id: Optional[int],
-            output_file: Optional[Path],
+            input_path: str | None,
+            file1: Path | None,
+            file2: Path | None,
+            file3: Path | None,
+            file4: Path | None,
+            file5: Path | None,
+            file6: Path | None,
+            allow_no_input: bool,
+            strict: bool,
+            quiet: bool,
+            matched_connections: Path | None,
+            pair_index: int | None,
+            file1_stream_id: int | None,
+            file2_stream_id: int | None,
+            output_file: Path | None,
         ) -> None:
             """Compare a single TCP connection between two captures and list
             packets that are present only in A or only in B.
@@ -122,9 +142,14 @@ class StreamDiffPlugin(PluginBase):
             exit_code = self.execute(
                 input_path=input_path,
                 file1=file1,
-                file1_pcapid=file1_pcapid,
                 file2=file2,
-                file2_pcapid=file2_pcapid,
+                file3=file3,
+                file4=file4,
+                file5=file5,
+                file6=file6,
+                allow_no_input=allow_no_input,
+                strict=strict,
+                quiet=quiet,
                 matched_connections=matched_connections,
                 pair_index=pair_index,
                 file1_stream_id=file1_stream_id,
@@ -135,37 +160,84 @@ class StreamDiffPlugin(PluginBase):
 
     def execute(  # type: ignore[override]
         self,
-        input_path: str | Path | None = None,
+        input_path: str | None = None,
         file1: Path | None = None,
-        file1_pcapid: int | None = None,
         file2: Path | None = None,
-        file2_pcapid: int | None = None,
+        file3: Path | None = None,
+        file4: Path | None = None,
+        file5: Path | None = None,
+        file6: Path | None = None,
+        allow_no_input: bool = False,
+        strict: bool = False,
+        quiet: bool = False,
         matched_connections: Path | None = None,
         pair_index: int | None = None,
         file1_stream_id: int | None = None,
         file2_stream_id: int | None = None,
         output_file: Path | None = None,
     ) -> int:
-        """Execute the streamdiff plugin.
+        """Execute the streamdiff plugin."""
+        effective_quiet = quiet
 
-        Focus on human-readable reporting of packets that exist in capture A but
-        are missing in capture B for a single TCP connection. Also reports
-        packets that exist in capture B but are missing in capture A.
-        """
-        try:
-            dual_input = DualFileInputParser.parse(
+        with _silence_streamdiff_logger(effective_quiet):
+            return self._execute_impl(
                 input_path=input_path,
                 file1=file1,
                 file2=file2,
-                file1_pcapid=file1_pcapid,
-                file2_pcapid=file2_pcapid,
+                file3=file3,
+                file4=file4,
+                file5=file5,
+                file6=file6,
+                allow_no_input=allow_no_input,
+                strict=strict,
+                quiet=quiet,
+                matched_connections=matched_connections,
+                pair_index=pair_index,
+                file1_stream_id=file1_stream_id,
+                file2_stream_id=file2_stream_id,
+                output_file=output_file,
             )
-        except InsufficientFilesError as exc:
-            return handle_error(exc, show_traceback=False)
 
-        file_a = dual_input.file1
-        file_b = dual_input.file2
-        pcap_id_mapping = dual_input.pcap_id_mapping
+    def _execute_impl(
+        self,
+        input_path: str | None = None,
+        file1: Path | None = None,
+        file2: Path | None = None,
+        file3: Path | None = None,
+        file4: Path | None = None,
+        file5: Path | None = None,
+        file6: Path | None = None,
+        allow_no_input: bool = False,
+        strict: bool = False,
+        quiet: bool = False,
+        matched_connections: Path | None = None,
+        pair_index: int | None = None,
+        file1_stream_id: int | None = None,
+        file2_stream_id: int | None = None,
+        output_file: Path | None = None,
+    ) -> int:
+        """Internal implementation for streamdiff execution."""
+        # Resolve inputs
+        file_args = {
+            1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6
+        }
+        input_files = InputManager.resolve_inputs(input_path, file_args)
+        
+        # Validate for StreamDiffPlugin (needs exactly 2 files)
+        InputManager.validate_file_count(
+            input_files,
+            min_files=2,
+            max_files=2,
+            allow_no_input=allow_no_input,
+        )
+        
+        # Extract files
+        file_a = input_files[0].path
+        file_b = input_files[1].path
+        pcap_id_mapping = {
+            str(file_a): input_files[0].pcapid,
+            str(file_b): input_files[1].pcapid
+        }
 
         try:
             stream_id_a, stream_id_b, conn_label = self._resolve_stream_ids(
@@ -198,21 +270,18 @@ class StreamDiffPlugin(PluginBase):
         connection_id = conn_label or f"stream {stream_id_a} vs {stream_id_b}"
         result = comparator.compare(packets_a, packets_b, connection_id, matched_only=False)
 
-        # Filter for A-only and B-only packet diffs (IP_ID diffs where frame of the
-        # other side is -1). We keep this symmetric so the plugin can report both
-        # directions explicitly.
+        # Filter for A-only and B-only packets
         a_only_diffs = [
-            diff
-            for diff in result.differences
-            if diff.diff_type == DiffType.IP_ID and diff.frame_b == -1
+            d for d in result.differences
+            if d.diff_type == DiffType.IP_ID and d.value_b == "MISSING"
         ]
         b_only_diffs = [
-            diff
-            for diff in result.differences
-            if diff.diff_type == DiffType.IP_ID and diff.frame_a == -1
+            d for d in result.differences
+            if d.diff_type == DiffType.IP_ID and d.value_a == "MISSING"
         ]
 
-        report = self._build_report(
+        # Generate streamdiff specific report
+        streamdiff_report = self._build_report(
             file_a=file_a,
             file_b=file_b,
             stream_id_a=stream_id_a,
@@ -222,10 +291,20 @@ class StreamDiffPlugin(PluginBase):
             b_only_diffs=b_only_diffs,
         )
 
+        # Generate flow comparison report
+        flow_report = comparator.format_flow_comparison(
+            packets_a=packets_a,
+            packets_b=packets_b,
+            result=result,
+        )
+
+        # Combine reports
+        full_report = f"{streamdiff_report}\n\n{flow_report}"
+
         if output_file:
-            output_file.write_text(report)
+            output_file.write_text(full_report)
         else:
-            click.echo(report)
+            click.echo(full_report)
 
         return 0
 

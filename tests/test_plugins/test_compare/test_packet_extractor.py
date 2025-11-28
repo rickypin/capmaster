@@ -122,14 +122,53 @@ class TestPacketExtractor:
     ):
         """Test that extract_packets correctly parses tshark output."""
         extractor.tshark = mock_tshark
-
-        # Mock tshark output (tab-separated fields)
-        # Note: IP ID is in hex format, will be parsed to decimal
+        
+        # Mock tshark output with 3 packets
+        # Format: frame_num, ip_id, flags, seq, ack, timestamp, src_ip, dst_ip, src_port, dst_port, info
         mock_output = (
-            "1\t64\t0x002\t1000000\t0\t1234567890.123456\n"
-            "2\t65\t0x012\t2000000\t1000001\t1234567890.234567\n"
-            "3\t66\t0x010\t1000001\t2000001\t1234567890.345678\n"
+            "1\t64\t0x002\t1000000\t0\t1234567890.123456\t192.168.1.100\t10.0.0.1\t54321\t80\tSYN\n"
+            "2\t65\t0x012\t2000000\t1000001\t1234567890.234567\t10.0.0.1\t192.168.1.100\t80\t54321\tSYN, ACK\n"
+            "3\t66\t0x010\t1000001\t2000001\t1234567890.345678\t192.168.1.100\t10.0.0.1\t54321\t80\tACK\n"
         )
+
+        mock_tshark.execute.return_value = TsharkResult(
+            returncode=0,
+            stdout=mock_output,
+            stderr=""
+        )
+
+        packets = extractor.extract_packets(
+            sample_pcap,
+            src_ip="192.168.1.100",
+            src_port=54321,
+            dst_ip="10.0.0.1",
+            dst_port=80
+        )
+
+        assert len(packets) == 3
+
+        # Check first packet
+        # IP ID "64" (hex) = 100 (decimal)
+        from decimal import Decimal
+        assert packets[0].frame_number == 1
+        assert packets[0].ip_id == 100
+        assert packets[0].tcp_flags == "0x002"
+        assert packets[0].seq == 1000000
+        assert packets[0].ack == 0
+        assert packets[0].timestamp == Decimal('1234567890.123456')
+        assert packets[0].src_ip == "192.168.1.100"
+        assert packets[0].dst_ip == "10.0.0.1"
+        assert packets[0].src_port == 54321
+        assert packets[0].dst_port == 80
+        assert packets[0].info == "SYN"
+
+        # Check second packet
+        # IP ID "65" (hex) = 101 (decimal)
+        assert packets[1].frame_number == 2
+        assert packets[1].ip_id == 101
+        assert packets[1].tcp_flags == "0x012"
+        assert packets[1].seq == 2000000
+        assert packets[1].ack == 1000001
 
         mock_tshark.execute.return_value = TsharkResult(
             returncode=0,
@@ -236,8 +275,8 @@ class TestPacketExtractor:
         extractor.tshark = mock_tshark
 
         mock_output = (
-            "1\t100\t0x002\t1000000\t0\t1234567890.123456\n"
-            "2\t101\t0x012\t2000000\t1000001\t1234567890.234567\n"
+            "1\t100\t0x002\t1000000\t0\t1234567890.123456\t192.168.1.100\t10.0.0.1\t54321\t80\tSYN\n"
+            "2\t101\t0x012\t2000000\t1000001\t1234567890.234567\t10.0.0.1\t192.168.1.100\t80\t54321\tSYN, ACK\n"
         )
 
         mock_tshark.execute.return_value = TsharkResult(
@@ -260,9 +299,9 @@ class TestPacketExtractor:
 
         # Include a malformed line (missing fields)
         mock_output = (
-            "1\t100\t0x002\t1000000\t0\t1234567890.123456\n"
+            "1\t100\t0x002\t1000000\t0\t1234567890.123456\t192.168.1.100\t10.0.0.1\t54321\t80\tSYN\n"
             "2\t101\t0x012\n"  # Malformed: missing fields
-            "3\t102\t0x010\t1000001\t2000001\t1234567890.345678\n"
+            "3\t102\t0x010\t1000001\t2000001\t1234567890.345678\t192.168.1.100\t10.0.0.1\t54321\t80\tACK\n"
         )
 
         mock_tshark.execute.return_value = TsharkResult(
@@ -291,7 +330,7 @@ class TestPacketExtractor:
         extractor.tshark = mock_tshark
 
         # Empty IPID and ACK fields - these are converted to 0, not None
-        mock_output = "1\t\t0x002\t1000000\t\t1234567890.123456\n"
+        mock_output = "1\t\t0x002\t1000000\t\t1234567890.123456\t192.168.1.100\t10.0.0.1\t54321\t80\tSYN\n"
 
         mock_tshark.execute.return_value = TsharkResult(
             returncode=0,
@@ -327,8 +366,8 @@ class TestPacketExtractor:
 
         # Mock output with tcp.stream field first
         mock_output = (
-            "0\t1\t0x0001\t0x002\t1000000\t0\t1234567890.123456\n"
-            "0\t2\t0x0002\t0x012\t2000000\t1000001\t1234567890.234567\n"
+            "0\t1\t0x0001\t0x002\t1000000\t0\t1234567890.123456\t192.168.1.100\t10.0.0.1\t54321\t80\tSYN\n"
+            "0\t2\t0x0002\t0x012\t2000000\t1000001\t1234567890.234567\t10.0.0.1\t192.168.1.100\t80\t54321\tSYN, ACK\n"
         )
 
         mock_tshark.execute.return_value = TsharkResult(
@@ -361,12 +400,88 @@ class TestPacketExtractor:
         """Test extract_multiple_streams with multiple streams."""
         extractor.tshark = mock_tshark
 
+        # Mock output with mixed streams
+        mock_output = (
+            "0\t1\t0x0001\t0x002\t1000000\t0\t1234567890.123456\t192.168.1.100\t10.0.0.1\t54321\t80\tSYN\n"
+            "1\t2\t0x0002\t0x012\t2000000\t1000001\t1234567890.234567\t10.0.0.1\t192.168.1.100\t80\t54321\tSYN, ACK\n"
+            "0\t3\t0x0003\t0x010\t1000001\t2000001\t1234567890.345678\t192.168.1.100\t10.0.0.1\t54321\t80\tACK\n"
+            "2\t4\t0x0004\t0x002\t3000000\t0\t1234567890.456789\t192.168.1.100\t10.0.0.1\t54321\t80\tSYN\n"
+        )
+
+        mock_tshark.execute.return_value = TsharkResult(
+            returncode=0,
+            stdout=mock_output,
+            stderr=""
+        )
+
+        result = extractor.extract_multiple_streams(sample_pcap, [0, 1])
+
+        # Verify filter includes both streams
+        args = mock_tshark.execute.call_args[0][0]
+        filter_idx = args.index("-Y") + 1
+        assert "tcp.stream==0" in args[filter_idx]
+        assert "tcp.stream==1" in args[filter_idx]
+
+        # Verify results
+        assert 0 in result
+        assert 1 in result
+        assert 2 not in result  # Stream 2 was not requested (though present in output)
+
+        assert len(result[0]) == 2
+        assert len(result[1]) == 1
+
+    def test_extract_multiple_streams_handles_tshark_error(
+        self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
+    ):
+        """Test extract_multiple_streams handles tshark errors."""
+        extractor.tshark = mock_tshark
+        mock_tshark.execute.side_effect = TsharkExecutionError(
+            "tshark", 1, "tshark: error message"
+        )
+
+        with pytest.raises(TsharkExecutionError):
+            extractor.extract_multiple_streams(sample_pcap, [0])
+
+    def test_extract_multiple_streams_skips_unknown_streams(
+        self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
+    ):
+        """Test extract_multiple_streams skips streams not in request list."""
+        extractor.tshark = mock_tshark
+
+        # Output contains stream 99 which was not requested
+        mock_output = (
+            "0\t1\t0x0001\t0x002\t1000000\t0\t1234567890.123456\t192.168.1.100\t10.0.0.1\t54321\t80\tSYN\n"
+            "99\t2\t0x0002\t0x012\t2000000\t1000001\t1234567890.234567\t10.0.0.1\t192.168.1.100\t80\t54321\tSYN, ACK\n"
+            "1\t3\t0x0003\t0x010\t1000001\t2000001\t1234567890.345678\t192.168.1.100\t10.0.0.1\t54321\t80\tACK\n"
+        )
+
+        mock_tshark.execute.return_value = TsharkResult(
+            returncode=0,
+            stdout=mock_output,
+            stderr=""
+        )
+
+        result = extractor.extract_multiple_streams(sample_pcap, [0, 1])
+
+        assert 0 in result
+        assert 1 in result
+        assert 99 not in result
+
+        assert len(result[0]) == 1
+        assert len(result[1]) == 1
+
+    def test_extract_multiple_streams_multiple_streams(
+        self, extractor: PacketExtractor, sample_pcap: Path, mock_tshark: MagicMock
+    ):
+        """Test extract_multiple_streams with multiple streams."""
+        extractor.tshark = mock_tshark
+
         # Mock output with packets from different streams
         mock_output = (
-            "0\t1\t0x0001\t0x002\t1000000\t0\t1234567890.123456\n"
-            "1\t2\t0x0002\t0x012\t2000000\t1000001\t1234567890.234567\n"
-            "0\t3\t0x0003\t0x010\t1000001\t2000001\t1234567890.345678\n"
-            "2\t4\t0x0004\t0x002\t3000000\t0\t1234567890.456789\n"
+            "0\t1\t0x0001\t0x002\t1000000\t0\t1234567890.123456\t192.168.1.100\t10.0.0.1\t54321\t80\tSYN\n"
+            "1\t2\t0x0002\t0x012\t2000000\t1000001\t1234567890.234567\t10.0.0.1\t192.168.1.100\t80\t54321\tSYN, ACK\n"
+            "0\t3\t0x0003\t0x010\t1000001\t2000001\t1234567890.345678\t192.168.1.100\t10.0.0.1\t54321\t80\tACK\n"
+            "2\t4\t0x0004\t0x002\t3000000\t0\t1234567890.456789\t192.168.1.100\t10.0.0.1\t54321\t80\tSYN\n"
         )
 
         mock_tshark.execute.return_value = TsharkResult(
@@ -426,9 +541,9 @@ class TestPacketExtractor:
 
         # Mock output includes stream 99 which is not requested
         mock_output = (
-            "0\t1\t0x0001\t0x002\t1000000\t0\t1234567890.123456\n"
-            "99\t2\t0x0002\t0x012\t2000000\t1000001\t1234567890.234567\n"
-            "1\t3\t0x0003\t0x010\t1000001\t2000001\t1234567890.345678\n"
+            "0\t1\t0x0001\t0x002\t1000000\t0\t1234567890.123456\t192.168.1.100\t10.0.0.1\t54321\t80\tSYN\n"
+            "99\t2\t0x0002\t0x012\t2000000\t1000001\t1234567890.234567\t10.0.0.1\t192.168.1.100\t80\t54321\tSYN, ACK\n"
+            "1\t3\t0x0003\t0x010\t1000001\t2000001\t1234567890.345678\t192.168.1.100\t10.0.0.1\t54321\t80\tACK\n"
         )
 
         mock_tshark.execute.return_value = TsharkResult(
@@ -453,9 +568,9 @@ class TestPacketExtractor:
 
         # Mock output for 3 streams
         mock_output = (
-            "0\t1\t0x0001\t0x002\t1000000\t0\t1234567890.123456\n"
-            "1\t2\t0x0002\t0x012\t2000000\t1000001\t1234567890.234567\n"
-            "2\t3\t0x0003\t0x010\t1000001\t2000001\t1234567890.345678\n"
+            "0\t1\t0x0001\t0x002\t1000000\t0\t1234567890.123456\t192.168.1.100\t10.0.0.1\t54321\t80\tSYN\n"
+            "1\t2\t0x0002\t0x012\t2000000\t1000001\t1234567890.234567\t10.0.0.1\t192.168.1.100\t80\t54321\tSYN, ACK\n"
+            "2\t3\t0x0003\t0x010\t1000001\t2000001\t1234567890.345678\t192.168.1.100\t10.0.0.1\t54321\t80\tACK\n"
         )
 
         mock_tshark.execute.return_value = TsharkResult(

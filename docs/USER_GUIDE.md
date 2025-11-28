@@ -13,10 +13,14 @@ This comprehensive guide covers all aspects of using CapMaster for PCAP analysis
 2. [Analyze Command](#analyze-command)
 3. [Match Command](#match-command)
 4. [Compare Command](#compare-command)
-5. [Clean Command](#clean-command)
-6. [Advanced Usage](#advanced-usage)
-7. [Troubleshooting](#troubleshooting)
-8. [Best Practices](#best-practices)
+5. [Preprocess Command](#preprocess-command)
+6. [Topology Command](#topology-command)
+7. [StreamDiff Command](#streamdiff-command)
+8. [Comparative Analysis Command](#comparative-analysis-command)
+9. [Clean Command](#clean-command)
+10. [Advanced Usage](#advanced-usage)
+11. [Troubleshooting](#troubleshooting)
+12. [Best Practices](#best-practices)
 
 ## Getting Started
 
@@ -57,11 +61,11 @@ The `analyze` command generates comprehensive statistics from PCAP files.
 # Analyze a single file
 capmaster analyze -i capture.pcap
 
-# Analyze all files in a directory
+# Analyze all files in a directory (non-recursive)
 capmaster analyze -i /path/to/captures/
 
-# Recursive analysis
-capmaster analyze -i /path/to/captures/ -r
+# Analyze specific files
+capmaster analyze --file1 capture1.pcap --file2 capture2.pcap
 ```
 
 ### Output Structure
@@ -199,8 +203,11 @@ The `match` command identifies matching TCP connections across multiple PCAP fil
 ### Basic Usage
 
 ```bash
-# Match connections in a directory
+# Match connections in a directory (containing exactly 2 files)
 capmaster match -i /path/to/captures/
+
+# Match specific files
+capmaster match --file1 client.pcap --file2 server.pcap
 
 # Save results to file
 capmaster match -i /path/to/captures/ -o matches.txt
@@ -208,13 +215,11 @@ capmaster match -i /path/to/captures/ -o matches.txt
 
 ### Input Requirements
 
-The input directory must contain **exactly 2 PCAP files**:
+You must provide **exactly 2 PCAP files** using either:
+- `-i /path/to/dir/` (directory containing 2 files)
+- `-i file1.pcap,file2.pcap` (comma-separated list)
+- `--file1 file1.pcap --file2 file2.pcap` (explicit arguments)
 
-```
-captures/
-├── client.pcap
-└── server.pcap
-```
 
 ### Matching Algorithm
 
@@ -361,8 +366,11 @@ The `compare` command performs detailed packet-level comparison of matched TCP c
 ### Basic Usage
 
 ```bash
-# Compare two PCAP files
+# Compare two PCAP files in a directory
 capmaster compare -i /path/to/captures/
+
+# Compare specific files
+capmaster compare --file1 client.pcap --file2 server.pcap
 
 # Save results to file
 capmaster compare -i /path/to/captures/ -o comparison.txt
@@ -373,13 +381,11 @@ capmaster compare -i /path/to/captures/ --show-flow-hash
 
 ### Input Requirements
 
-The input directory must contain **exactly 2 PCAP files**:
+You must provide **exactly 2 PCAP files** using either:
+- `-i /path/to/dir/` (directory containing 2 files)
+- `-i file1.pcap,file2.pcap` (comma-separated list)
+- `--file1 file1.pcap --file2 file2.pcap` (explicit arguments)
 
-```
-captures/
-├── client.pcap
-└── server.pcap
-```
 
 ### Comparison Process
 
@@ -418,7 +424,7 @@ capmaster compare -i captures/ --show-flow-hash
 - Group packets belonging to the same flow
 - Correlate connections in network analysis
 
-See [Flow Hash Feature Documentation](FLOW_HASH_FEATURE.md) for detailed information.
+For implementation details of the flow hash algorithm (bidirectional, 5-tuple based, normalized), see the code and tests around `capmaster.plugins.compare.flow_hash` and `tests/test_flow_hash.py`.
 
 ### Score Threshold
 
@@ -571,6 +577,153 @@ capmaster compare -i captures/ --bucket port --threshold 0.70
 ```
 
 
+
+## Preprocess Command
+
+The `preprocess` command cleans and standardises PCAP files before further analysis.
+
+### Basic Usage
+
+```bash
+# Preprocess a single file with default configuration
+capmaster preprocess -i capture.pcap
+
+# Preprocess multiple files (comma-separated list)
+capmaster preprocess -i "a.pcap,b.pcap,c.pcap"
+
+# Preprocess all files in a directory
+capmaster preprocess -i /path/to/pcaps/
+```
+
+### Typical Pipeline
+
+```bash
+# Preprocess then analyze
+capmaster preprocess -i noisy/ -o clean/
+capmaster analyze -i clean/
+```
+
+Key steps performed by preprocess:
+
+- **time-align**: compute a common time window and trim captures
+- **dedup**: remove duplicate packets within a sliding window
+- **oneway**: detect one-way TCP streams (using ACK threshold)
+
+Use `capmaster preprocess --help` 查看完整参数说明，包括：
+
+- `--step` 显式指定步骤（`time-align`、`dedup`、`oneway`）
+- `--enable/--disable-*` 控制各个步骤是否启用
+- `--dedup-window-packets` / `--dedup-ignore-bytes`
+- `--oneway-ack-threshold`
+- `--archive-original-files` / `--no-archive-original-files`
+- 报告控制：`--no-report`、`--report-path`
+
+## Pipeline Command
+
+`run-pipeline` 允许借助 YAML 描述多步骤流程，例如先 match、再 topology、再 quality analysis。示例配置见 `examples/pipeline_standard.yaml`。
+
+```bash
+capmaster run-pipeline --file1 A.pcap --file2 B.pcap \
+  -c tmp/topology_and_comparison.yaml -o tmp/output
+```
+
+全局 CLI 参数会自动传入每个步骤：
+
+- `-q/--quiet`：所有步骤以安静模式运行，不需要在 YAML 中逐一设置。
+- `--strict`：子命令共享同一严格模式，任何 warning 直接提升为错误。
+- `--allow-no-input`：当输入文件数量不足时，各子命令会按其内建逻辑静默退出（必要时会触发 `SystemExit(0)`，由 pipeline 捕获后跳过该步骤）。
+- `-i/--input` 与 `--file1`~`--file6`：默认继承到每个步骤，除非在 YAML 的该步骤 `args` 中显式覆盖。若步骤引用的 `${FILEn}` 未能替换（例如只提供了 file1），该参数会被自动移除，从而触发 `allow-no-input` 的验证。
+
+如果确实需要让某个步骤覆盖这些行为，仍可在 YAML 的对应 `args` 中显式设置 `quiet`/`strict`/`allow-no-input`，该值会覆盖从 CLI 继承的标志。
+
+### 条件执行（`when`）
+
+Pipeline 支持在每个步骤上添加 `when` 守卫来做条件执行，例如：
+
+```yaml
+- id: match_conn
+  command: match
+  when:
+    min_input_files: 2          # 至少需要双抓包
+  args:
+    output: "${OUTPUT}/matched_connections.txt"
+
+- id: topo_analysis
+  command: topology
+  when:
+    require_steps: [match_conn] # 依赖上一步已执行
+  args:
+    matched-connections: "${STEP.match_conn.output}"
+```
+
+可用条件：
+
+- `min_input_files` / `max_input_files`：以 run-pipeline 实际输入数量做上下限；不满足时跳过该步。
+- `require_steps`：字符串或字符串列表；只有在列出的步骤已经成功执行并产生输出时才运行当前步骤。适合处理“若 match 被跳过则 topology 也跳过”的场景。
+
+当某一步因 `when` 条件不满足而跳过时，后续引用其输出的步骤需要额外 `require_steps` 保护，否则变量解析会失败。
+
+## Topology Command
+
+The `topology` command renders network topology for one or two capture points.
+
+### Basic Usage
+
+```bash
+# Single capture point topology
+capmaster topology --single-file single_capture.pcap -o single_topology.txt
+
+# Directory containing exactly two captures + matched connections
+capmaster topology -i /path/to/2hops/ --matched-connections matched_connections.txt -o topology.txt
+
+# Explicit files
+capmaster topology --file1 a.pcap --file2 b.pcap --matched-connections matched_connections.txt -o topology.txt
+```
+
+Key options:
+
+- `-i/--input`: 目录或逗号分隔的 PCAP 文件列表（1 或 2 个文件）
+- `--single-file`: 单文件拓扑分析（单抓包点）
+- `--file1/--file2`: 显式指定两个 PCAP 文件
+- `--matched-connections`: 来自 `capmaster match` 的匹配连接结果
+- `--empty-match-behavior`: 无有效匹配时的行为（`error` / `fallback-single`）
+- `--service-list`: 可选服务列表文件，辅助服务端识别
+- `-o/--output`: 输出报告文件（默认 stdout）
+
+## StreamDiff Command
+
+The `streamdiff` command compares a single TCP connection between two captures and lists packets that are present only in A or only in B (by IP ID).
+
+### Basic Usage
+
+```bash
+# 使用 matched-connections 文件选择连接对
+capmaster streamdiff -i /path/to/2pcaps \
+  --matched-connections matched_connections.txt \
+  --pair-index 1 -o streamdiff_report.txt
+
+# 使用显式 tcp.stream ID 选择连接
+capmaster streamdiff -i /path/to/2pcaps \
+  --file1-stream-id 7 --file2-stream-id 33 -o streamdiff_report.txt
+```
+
+Key options:
+
+- `-i/--input` 或 `--file1/--file2`：指定两个 PCAP 文件
+- `--matched-connections` + `--pair-index`：从 `capmaster match` 输出中选择连接对
+- `--file1-stream-id` / `--file2-stream-id`：手动指定两个文件中的 `tcp.stream` ID
+- `-o/--output`：输出报告文件（默认 stdout）
+
+## Comparative Analysis Command
+
+The `comparative-analysis` command performs network quality analysis between two capture points.
+
+It is exposed as a top-level command by the match plugin and uses the same dual-file input options as `match` and `compare`.
+
+For详细说明（丢包、重传、ACK Lost、Real Loss 等指标，以及服务级别/连接对级别输出示例），参见:
+
+- `docs/COMPARATIVE_ANALYSIS_GUIDE.md`
+- `docs/ACK_LOST_SEGMENT_FEATURE.md`
 
 ## Clean Command
 
@@ -841,14 +994,15 @@ done
 Combine CapMaster commands:
 
 ```bash
-# Filter then analyze
-capmaster filter -i noisy.pcap -o clean.pcap
-capmaster analyze -i clean.pcap
+# Preprocess then analyze
+capmaster preprocess -i noisy.pcap -o clean/
+capmaster analyze -i clean/
 
-# Match then filter both files
+# Match, preprocess by capture point, then compare or analyze
 capmaster match -i captures/ -o matches.txt
-capmaster filter -i captures/client.pcap -o captures/client_clean.pcap
-capmaster filter -i captures/server.pcap -o captures/server_clean.pcap
+capmaster preprocess -i captures/client.pcap -o captures/client_clean/
+capmaster preprocess -i captures/server.pcap -o captures/server_clean/
+# Now you can run analyze/match/compare on the cleaned PCAPs
 ```
 
 ### Scripting with Python
@@ -994,7 +1148,7 @@ Document your analysis:
 
 ## Next Steps
 
-- Explore the [API Documentation](API.md) for programmatic usage
+- 如需以编程方式集成 CapMaster，当前推荐通过 CLI 封装（例如 Python 的 `subprocess.run(["capmaster", ...])`），或直接阅读 `capmaster/` 源码和对应 tests 了解调用方式（目前仓库中不再维护单独的 API.md 文档）。
 - Check the [CHANGELOG](../CHANGELOG.md) for version history
 - Report issues on [GitHub](https://github.com/yourusername/capmaster/issues)
 

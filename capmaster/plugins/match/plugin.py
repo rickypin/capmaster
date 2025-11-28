@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import click
 
 from capmaster.core.connection.connection_extractor import extract_connections_from_pcap
+from capmaster.core.input_manager import InputManager
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
 from capmaster.plugins.match.cli_commands import (
@@ -18,11 +20,6 @@ from capmaster.plugins.match.comparative_runner import run_comparative_analysis
 from capmaster.plugins.match.runner import (
     match_connections_in_memory as run_match_in_memory,
     run_match_pipeline,
-    _improve_server_detection as runner_improve_server_detection,
-)
-from capmaster.plugins.match.stats_pipeline import (
-    write_to_database as stats_write_to_database,
-    write_to_json as stats_write_to_json,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,11 +53,15 @@ class MatchPlugin(PluginBase):
 
     def execute(  # type: ignore[override]
         self,
-        input_path: str | Path | None = None,
+        input_path: str | None = None,
         file1: Path | None = None,
-        file1_pcapid: int | None = None,
         file2: Path | None = None,
-        file2_pcapid: int | None = None,
+        file3: Path | None = None,
+        file4: Path | None = None,
+        file5: Path | None = None,
+        file6: Path | None = None,
+
+        allow_no_input: bool = False,
         output_file: Path | None = None,
         mode: str = "auto",
         bucket_strategy: str = "auto",
@@ -83,18 +84,33 @@ class MatchPlugin(PluginBase):
         service_group_mapping: Path | None = None,
         match_json: Path | None = None,
         service_list: Path | None = None,
+        strict: bool = False,
+        quiet: bool = False,
     ) -> int:
         """Match TCP connections between PCAP files.
 
         This is a thin wrapper around capmaster.plugins.match.runner.run_match_pipeline.
         See run_match_pipeline for full parameter semantics and behaviour.
         """
+        # Resolve inputs
+        file_args = {
+            1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6
+        }
+        input_files = InputManager.resolve_inputs(input_path, file_args)
+        
+        # Validate for MatchPlugin (needs exactly 2 files)
+        InputManager.validate_file_count(input_files, min_files=2, max_files=2, allow_no_input=allow_no_input)
+        
+        # Extract files
+        f1 = input_files[0]
+        f2 = input_files[1]
+
         return run_match_pipeline(
-            input_path=input_path,
-            file1=file1,
-            file1_pcapid=file1_pcapid,
-            file2=file2,
-            file2_pcapid=file2_pcapid,
+            input_path=None,
+            file1=f1.path,
+            file1_pcapid=f1.pcapid,
+            file2=f2.path,
+            file2_pcapid=f2.pcapid,
             output_file=output_file,
             mode=mode,
             bucket_strategy=bucket_strategy,
@@ -117,6 +133,9 @@ class MatchPlugin(PluginBase):
             service_group_mapping=service_group_mapping,
             match_json=match_json,
             service_list=service_list,
+            strict=strict,
+            allow_no_input=allow_no_input,
+            quiet=quiet,
         )
         # Legacy implementation of execute() moved to runner.run_match_pipeline.
 
@@ -147,115 +166,20 @@ class MatchPlugin(PluginBase):
             match_mode=match_mode,
         )
 
-    def _extract_connections(self, pcap_file: Path, merge_by_5tuple: bool = False) -> list:
-        """
-        Extract TCP connections from a PCAP file.
 
-        Args:
-            pcap_file: Path to PCAP file
-            merge_by_5tuple: If True, merge connections by direction-independent 5-tuple
-
-        Returns:
-            List of TcpConnection objects
-        """
-        return extract_connections_from_pcap(pcap_file, merge_by_5tuple=merge_by_5tuple)
-
-
-    def _output_results(self, matches: list, stats: dict, output_file: Path | None) -> None:
-        """Delegated to capmaster.plugins.match.output_formatter.output_match_results."""
-        from capmaster.plugins.match.output_formatter import output_match_results
-
-        output_match_results(matches, stats, output_file)
-
-    def _save_matches_json(
-        self,
-        matches: list,
-        output_file: Path,
-        file1: Path,
-        file2: Path,
-        stats: dict,
-    ) -> None:
-        """Delegated to capmaster.plugins.match.output_formatter.save_matches_json."""
-        from capmaster.plugins.match.output_formatter import save_matches_json
-
-        save_matches_json(matches, output_file, file1, file2, stats)
-
-
-
-
-
-    def _improve_server_detection(
-        self,
-        connections: list,
-        detector,
-    ) -> list:
-        """Improve server/client detection using ServerDetector.
-
-        This thin wrapper delegates to runner_improve_server_detection in
-        capmaster.plugins.match.runner to keep the core logic in a dedicated
-        module while preserving the legacy private API used by scripts.
-        """
-        return runner_improve_server_detection(connections, detector)
-
-    def _write_to_database(
-        self,
-        db_connection: str,
-        kase_id: int,
-        endpoint_stats: list,
-        file1: Path,
-        file2: Path,
-        pcap_id_mapping: dict[str, int] | None = None,
-        service_stats_list: list | None = None,
-        service_group_mapping_file: Path | None = None,
-    ) -> None:
-        """Thin wrapper for writing statistics to the database.
-
-        The real implementation lives in capmaster.plugins.match.stats_pipeline.
-        This method is kept only to preserve the historical private API used
-        by tests and external scripts.
-        """
-        stats_write_to_database(
-            db_connection=db_connection,
-            kase_id=kase_id,
-            endpoint_stats=endpoint_stats,
-            file1=file1,
-            file2=file2,
-            pcap_id_mapping=pcap_id_mapping,
-            service_stats_list=service_stats_list,
-            service_group_mapping_file=service_group_mapping_file,
-        )
-
-    def _write_to_json(
-        self,
-        output_file: Path,
-        endpoint_stats: list,
-        file1: Path,
-        file2: Path,
-        pcap_id_mapping: dict[str, int] | None = None,
-        service_stats_list: list | None = None,
-        service_group_mapping_file: Path | None = None,
-    ) -> None:
-        """Thin wrapper for writing statistics to a JSON file.
-
-        The real implementation lives in capmaster.plugins.match.stats_pipeline.
-        This method is kept only to preserve the historical private API used
-        by tests and external scripts.
-        """
-        stats_write_to_json(
-            output_file=output_file,
-            endpoint_stats=endpoint_stats,
-            file1=file1,
-            file2=file2,
-            pcap_id_mapping=pcap_id_mapping,
-            service_stats_list=service_stats_list,
-            service_group_mapping_file=service_group_mapping_file,
-        )
 
     def execute_comparative_analysis(
         self,
-        input_path: str | Path | None = None,
+        input_path: str | None = None,
         file1: Path | None = None,
         file2: Path | None = None,
+        file3: Path | None = None,
+        file4: Path | None = None,
+        file5: Path | None = None,
+        file6: Path | None = None,
+        allow_no_input: bool = False,
+        strict: bool = False,
+        quiet: bool = False,
         analysis_type: str = "service",
         topology_file: Path | None = None,
         matched_connections_file: Path | None = None,
@@ -269,22 +193,85 @@ class MatchPlugin(PluginBase):
             input_path: Directory or comma-separated list of PCAP files
             file1: Path to first PCAP file (alternative to input_path)
             file2: Path to second PCAP file (alternative to input_path)
-            analysis_type: Type of analysis to perform ("service", "connections", or "both")
-            topology_file: Path to topology file (for service analysis)
-            matched_connections_file: Path to matched connections file (for connection pair analysis)
-            top_n: Show top N worst performing connection pairs (only for connection analysis)
-            output_file: Optional output file path (None for stdout)
+            file3-file6: Additional files (ignored for this command)
+            allow_no_input: Exit silently if file count mismatch
+            strict: Reserved for stricter validation modes
+            quiet: Reserved for quiet/low-noise execution
+            analysis_type: Type of analysis ("service", "connections", or "both")
+            topology_file: Path to topology file (required for service analysis)
+            matched_connections_file: Path to matched connections file
+            top_n: Number of top worst connections to show
+            output_file: Path to output file
 
         Returns:
-            Exit code (0 for success, non-zero for failure)
+            Exit code (0 for success)
         """
+        # Resolve inputs
+        file_args = {
+            1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6
+        }
+        input_files = InputManager.resolve_inputs(input_path, file_args)
+        
+        # Validate for Comparative Analysis (needs exactly 2 files)
+        InputManager.validate_file_count(
+            input_files,
+            min_files=2,
+            max_files=2,
+            allow_no_input=allow_no_input,
+        )
+        
+        # Extract files
+        f1 = input_files[0]
+        f2 = input_files[1]
+
         return run_comparative_analysis(
-            input_path=input_path,
-            file1=file1,
-            file2=file2,
+            input_path=None,
+            file1=f1.path,
+            file2=f2.path,
             analysis_type=analysis_type,
             topology_file=topology_file,
             matched_connections_file=matched_connections_file,
             top_n=top_n,
             output_file=output_file,
         )
+
+    def get_command_map(self) -> dict[str, str]:
+        """Return mapping for match and comparative-analysis commands."""
+        return {
+            "match": "execute",
+            "comparative-analysis": "execute_comparative_analysis",
+        }
+
+    def resolve_args(self, command: str, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Resolve arguments for match plugin commands."""
+        # 1. Default resolution (kebab-case -> snake_case)
+        args = super().resolve_args(command, kwargs)
+
+        # Map threshold -> score_threshold
+        if "threshold" in args and "score_threshold" not in args:
+            args["score_threshold"] = args.pop("threshold")
+
+        if command == "comparative-analysis":
+            # 2. Handle special logic for analysis_type
+            service = args.pop("service", False)
+            matched = args.get("matched_connections_file") or args.get(
+                "matched_connections"
+            )
+
+            # Ensure matched_connections_file is set if matched_connections was used
+            if "matched_connections" in args:
+                args["matched_connections_file"] = args.pop("matched_connections")
+
+            if service and matched:
+                args["analysis_type"] = "both"
+            elif service:
+                args["analysis_type"] = "service"
+            elif matched:
+                args["analysis_type"] = "connections"
+
+            # Map topology -> topology_file
+            if "topology" in args and "topology_file" not in args:
+                args["topology_file"] = args.pop("topology")
+
+        return args
+

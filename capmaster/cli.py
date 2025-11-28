@@ -14,7 +14,50 @@ __version__ = "1.0.0"
 _PLUGINS_REGISTERED = False
 
 
-@click.group()
+class CapMasterGroup(click.Group):
+    """Custom Click Group to enforce specific help output order and formatting."""
+
+    def format_help(self, ctx, formatter):
+        # 1. Description (Top, Left Aligned)
+        if self.help:
+            formatter.write(self.help + "\n\n")
+
+        # 2. Usage
+        self.format_usage(ctx, formatter)
+
+        # 3. Options and Commands
+        self.format_options(ctx, formatter)
+
+        # 4. Epilog (Examples), left-aligned
+        if self.epilog:
+            formatter.write("\n")
+            formatter.write(self.epilog + "\n")
+
+
+@click.group(
+    cls=CapMasterGroup,
+    context_settings=dict(help_option_names=["-h", "--help"]),
+    epilog="""Examples:
+
+  1. Preprocess PCAP files (time-align, deduplicate)
+     capmaster preprocess -i capture.pcap
+
+  2. Analyze PCAP files to get statistics
+     capmaster analyze -i capture.pcap
+
+  3. Match TCP connections between two PCAP files
+     capmaster match -i captures/
+
+  4. Compare connections at packet level
+     capmaster compare -i captures/
+
+  5. Render network topology
+     capmaster topology --single-file capture.pcap
+
+  For more information on a specific command:
+    capmaster <command> --help
+""",
+)
 @click.version_option(version=__version__, prog_name="capmaster")
 @click.option(
     "-v",
@@ -28,41 +71,6 @@ def cli(ctx: click.Context, verbose: int) -> None:
     CapMaster - Unified PCAP Analysis Tool.
 
     A Python CLI tool for PCAP analysis, preprocessing, TCP connection matching, and comparison.
-
-    \b
-    Available Commands:
-      analyze               Analyze PCAP files and generate statistics
-      match                 Match TCP connections between PCAP files
-      compare               Compare TCP connections at packet level between PCAP files
-      streamdiff           Compare TCP stream packets and report A-only/B-only packets
-
-      comparative-analysis  Perform comparative analysis between two PCAP files
-      preprocess            Preprocess PCAP files before further analysis
-      clean                 Remove statistics directories and their contents
-
-    \b
-    Examples:
-      # Analyze a single PCAP file
-      capmaster analyze -i capture.pcap
-
-      # Match connections between two PCAP files
-      capmaster match -i captures/
-
-      # Compare connections at packet level
-      capmaster compare -i captures/
-
-      # Preprocess PCAP files (time-align, deduplicate, one-way analysis)
-      capmaster preprocess -i capture.pcap
-
-      # Clean statistics directories
-      capmaster clean -i /path/to/data
-
-      # Run with verbose output
-      capmaster -v analyze -i capture.pcap
-
-    \b
-    For more information on a specific command:
-      capmaster <command> --help
     """
     # Ensure context object exists
     ctx.ensure_object(dict)

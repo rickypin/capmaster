@@ -10,7 +10,7 @@ Welcome to the CapMaster documentation! This directory contains comprehensive gu
 
 - **[USER_GUIDE.md](USER_GUIDE.md)** - Complete user guide covering all features
   - Installation and setup
-  - Command usage (analyze, match, compare, preprocess, clean)
+  - Command usage (analyze, match, compare, preprocess)
   - Advanced features (F5 matching, sampling, module selection)
   - Troubleshooting and best practices
 
@@ -28,14 +28,9 @@ Welcome to the CapMaster documentation! This directory contains comprehensive gu
   - Bucketing strategies
   - Match modes (one-to-one, one-to-many)
 
-- **Performance & implementation notes**
+- **Implementation & performance notes**
   - For up-to-date behavior and performance characteristics, inspect the code under `capmaster/core/` and `capmaster/plugins/` as well as relevant tests in `tests/`.
-  - Historical performance and optimization reports are archived under **[archive/](archive/)** (e.g. `PERFORMANCE_REPORT.md`, `MATCH_PLUGIN_PERFORMANCE_REVIEW.md`).
-
-- **[MATCH_PLUGIN_PERFORMANCE_REVIEW.md](MATCH_PLUGIN_PERFORMANCE_REVIEW.md)** - In-depth performance review
-  - Detailed performance analysis
-  - Optimization opportunities
-  - Implementation recommendations
+  - For historical changes or past experiments, prefer `git log` and pull request discussions instead of separate archived reports.
 
 ### Protocol & Feature Coverage
 
@@ -47,9 +42,6 @@ Welcome to the CapMaster documentation! This directory contains comprehensive gu
   - Clarifies difference between capture misses and real network loss
   - Defines derived fields and invariants for quality analysis
 
-- **Historical protocol coverage snapshot**
-  - See **[archive/PROTOCOL_COVERAGE_REPORT.md](archive/PROTOCOL_COVERAGE_REPORT.md)** for a past protocol coverage report; for current modules, inspect `capmaster/plugins/analyze/modules/` and corresponding tests.
-
 ### Development
 
 - **[AI_PLUGIN_EXTENSION_GUIDE.md](AI_PLUGIN_EXTENSION_GUIDE.md)** - Plugin development guide
@@ -57,19 +49,6 @@ Welcome to the CapMaster documentation! This directory contains comprehensive gu
   - Creating new plugins
   - Code sharing patterns
   - Best practices
-
-### Examples
-
-- **[examples/](examples/)** - Code examples and demonstrations
-  - `gil_demonstration.py` - Python GIL demonstration
-  - `match_parallelization_analysis.py` - Parallelization analysis
-
-### Analysis & Historical Reports
-
-- **[archive/](archive/)** - Historical analysis and design reports
-  - Matching strategy comparisons
-  - Behavioral matching tuning & validation
-  - Specific fix/design histories
 
 ## 🚀 Quick Start
 
@@ -93,29 +72,17 @@ Welcome to the CapMaster documentation! This directory contains comprehensive gu
 
 ## 📖 Documentation Organization
 
-```
+```text
 docs/
 ├── README.md                              # This file - Documentation index
 ├── USER_GUIDE.md                          # Complete user guide (primary reference)
 ├── QUICK_REFERENCE.md                     # Quick reference card
 ├── MATCH_LOGIC_COMPLETE.md                # Matching algorithm details
-├── PERFORMANCE_REPORT.md                  # Performance benchmarks
-├── MATCH_PLUGIN_PERFORMANCE_REVIEW.md     # Detailed performance analysis
-├── PROTOCOL_COVERAGE_REPORT.md            # Protocol support matrix
+├── ACK_LOST_SEGMENT_FEATURE.md            # ACK Lost Segment & Real Loss metrics
 ├── COMPARATIVE_ANALYSIS_GUIDE.md          # Comparative analysis feature
 ├── AI_PLUGIN_EXTENSION_GUIDE.md           # Plugin development guide
-├── archive/                               # Historical analysis & design reports
-│   ├── README.md                          # Archive index
-│   ├── BEHAVIORAL_MATCHING_TUNING.md      # Behavioral tuning report
-│   ├── BEHAVIORAL_PRECISION_ANALYSIS.md   # Behavioral precision analysis
-│   ├── BEHAVIORAL_VALIDATION_REPORT.md    # Behavioral validation report
-│   ├── MATCHING_STRATEGIES_COMPARISON.md  # Matching strategies comparison
-│   ├── MERGE_BY_5TUPLE_FIX.md             # --merge-by-5tuple fix notes
-│   └── STRATEGY_COMPARISON_SUMMARY.md     # Strategy comparison summary
-└── examples/                              # Code examples
-    ├── README.md                          # Examples index
-    ├── gil_demonstration.py               # GIL demonstration
-    └── match_parallelization_analysis.py  # Parallelization analysis
+├── DESIGN_preprocess_and_config.md        # Preprocess plugin & config design (internal)
+└── TOPOLOGY_UDP_AND_ICMP_DESIGN.md        # Topology UDP & ICMP design (internal)
 ```
 
 ## 🔍 Finding Information
@@ -142,10 +109,10 @@ docs/
 ## 📝 Documentation Maintenance
 
 This documentation was reorganized on 2025-11-13 to:
-- Remove obsolete development documents (31 files)
+
+- Remove obsolete development documents
 - Consolidate feature documentation into core guides
 - Improve navigation and discoverability
-- Archive historical documents for reference
 
 For the complete list of changes, see the git history.
 
@@ -159,4 +126,3 @@ For the complete list of changes, see the git history.
 ## 📄 License
 
 See the main repository LICENSE file for licensing information.
-

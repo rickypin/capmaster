@@ -1,9 +1,11 @@
 """Negative test cases for Match plugin."""
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+import click
 
 from capmaster.core.connection.matcher import BucketStrategy
 from capmaster.plugins.match.plugin import MatchPlugin
@@ -14,25 +16,37 @@ from capmaster.plugins.match.sampler import ConnectionSampler
 class TestInvalidParameters:
     """Test invalid parameter handling."""
 
-    def test_invalid_threshold_negative(self):
+    def test_invalid_threshold_negative(self, tmp_path: Path):
         """Test that negative threshold is rejected."""
         plugin = MatchPlugin()
+        
+        # Create valid input files
+        pcap1 = tmp_path / "1.pcap"
+        pcap2 = tmp_path / "2.pcap"
+        pcap1.write_bytes(b"dummy content")
+        pcap2.write_bytes(b"dummy content")
 
         exit_code = plugin.execute(
-            input_path=Path("dummy"),
-            output_file=Path("dummy.txt"),
+            input_path=tmp_path,
+            output_file=tmp_path / "output.txt",
             score_threshold=-0.5,
         )
 
         assert exit_code != 0, "Should fail with negative threshold"
 
-    def test_invalid_threshold_too_high(self):
+    def test_invalid_threshold_too_high(self, tmp_path: Path):
         """Test that threshold > 1.0 is rejected."""
         plugin = MatchPlugin()
 
+        # Create valid input files
+        pcap1 = tmp_path / "1.pcap"
+        pcap2 = tmp_path / "2.pcap"
+        pcap1.write_bytes(b"dummy content")
+        pcap2.write_bytes(b"dummy content")
+
         exit_code = plugin.execute(
-            input_path=Path("dummy"),
-            output_file=Path("dummy.txt"),
+            input_path=tmp_path,
+            output_file=tmp_path / "output.txt",
             score_threshold=1.5,
         )
 
@@ -75,12 +89,11 @@ class TestErrorHandling:
         non_existent = tmp_path / "does_not_exist"
         output_file = tmp_path / "output.txt"
 
-        exit_code = plugin.execute(
-            input_path=non_existent,
-            output_file=output_file,
-        )
-
-        assert exit_code != 0, "Should fail with non-existent directory"
+        with pytest.raises((FileNotFoundError, click.BadParameter)):
+            plugin.execute(
+                input_path=non_existent,
+                output_file=output_file,
+            )
 
     def test_empty_directory(self, tmp_path: Path):
         """Test handling of empty directory."""
@@ -89,12 +102,11 @@ class TestErrorHandling:
         empty_dir.mkdir()
         output_file = tmp_path / "output.txt"
 
-        exit_code = plugin.execute(
-            input_path=empty_dir,
-            output_file=output_file,
-        )
-
-        assert exit_code != 0, "Should fail with empty directory"
+        with pytest.raises(click.BadParameter):
+            plugin.execute(
+                input_path=empty_dir,
+                output_file=output_file,
+            )
 
     def test_single_file_directory(self, tmp_path: Path):
         """Test handling of directory with only one pcap file."""
@@ -103,16 +115,15 @@ class TestErrorHandling:
         single_file_dir.mkdir()
         
         # Create a dummy pcap file
-        (single_file_dir / "test.pcap").touch()
+        (single_file_dir / "test.pcap").write_bytes(b"dummy content")
         
         output_file = tmp_path / "output.txt"
 
-        exit_code = plugin.execute(
-            input_path=single_file_dir,
-            output_file=output_file,
-        )
-
-        assert exit_code != 0, "Should fail with only one file"
+        with pytest.raises(click.BadParameter):
+            plugin.execute(
+                input_path=single_file_dir,
+                output_file=output_file,
+            )
 
     def test_invalid_output_path(self, tmp_path: Path):
         """Test handling of invalid output path."""
@@ -122,11 +133,19 @@ class TestErrorHandling:
         invalid_output = tmp_path / "output"
         invalid_output.mkdir()
         
+        # Create valid input files to pass input validation
+        pcap1 = tmp_path / "1.pcap"
+        pcap2 = tmp_path / "2.pcap"
+        pcap1.write_bytes(b"dummy content")
+        pcap2.write_bytes(b"dummy content")
+        
         # Try to use directory as output file
         exit_code = plugin.execute(
             input_path=tmp_path,
             output_file=invalid_output,
         )
+        
+        assert exit_code != 0, "Should fail with directory as output file"
 
         # Should handle gracefully
         assert exit_code != 0, "Should fail with invalid output path"
@@ -140,7 +159,7 @@ class TestCLIErrorHandling:
         """Test CLI with invalid threshold."""
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tmp_path),
                 "-o", str(tmp_path / "output.txt"),
@@ -156,7 +175,7 @@ class TestCLIErrorHandling:
         """Test CLI with invalid bucket strategy."""
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tmp_path),
                 "-o", str(tmp_path / "output.txt"),
@@ -172,7 +191,7 @@ class TestCLIErrorHandling:
         """Test CLI with invalid mode."""
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tmp_path),
                 "-o", str(tmp_path / "output.txt"),
@@ -188,7 +207,7 @@ class TestCLIErrorHandling:
         """Test CLI with missing required arguments."""
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 # Missing -i and -o
             ],
@@ -202,7 +221,7 @@ class TestCLIErrorHandling:
         """Test CLI with sampling parameters but without --enable-sampling flag."""
         result = subprocess.run(
             [
-                "python", "-m", "capmaster",
+                sys.executable, "-m", "capmaster",
                 "match",
                 "-i", str(tmp_path),
                 "-o", str(tmp_path / "output.txt"),

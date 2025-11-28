@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import subprocess
+import sys
 
 import pytest
 
@@ -39,7 +40,7 @@ class TestStreamDiff2Hops:
         """
 
         cmd = [
-            "python",
+            sys.executable,
             "-m",
             "capmaster",
             "match",
@@ -62,7 +63,7 @@ class TestStreamDiff2Hops:
         """
 
         cmd = [
-            "python",
+            sys.executable,
             "-m",
             "capmaster",
             "streamdiff",

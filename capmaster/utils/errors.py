@@ -207,3 +207,20 @@ def handle_error(error: Exception, *, show_traceback: bool = False) -> int:
             console_err.print("[dim]Run with -vv for more details[/dim]")
         return 1
 
+
+class StrictModeError(CapMasterError):
+    """Error raised when a warning occurs in strict mode."""
+
+    def __init__(self, message: str):
+        """
+        Initialize strict mode error.
+
+        Args:
+            message: The warning message that triggered the error
+        """
+        super().__init__(
+            message=f"Strict mode violation: {message}",
+            suggestion="Fix the warning or run without --strict to ignore."
+        )
+
+

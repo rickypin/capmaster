@@ -1,0 +1,79 @@
+name: standard_analysis
+description: "Standard full-link analysis flow: Match -> Topology -> Quality Analysis"
+
+# Input variables available:
+# - ${INPUT}: Original -i/--input value (falls back to FILE1 when unspecified)
+# - ${FILE1}, ${FILE2}, ..., ${FILE6}: Individual input files
+# - ${OUTPUT}: Output directory
+# - ${STEP.step_id.output}: Output from previous steps
+#
+# Global CLI flags from `capmaster run-pipeline` (e.g. `-q`, `--strict`, `--allow-no-input`)
+# and PCAP inputs (`-i/--file1..6`) are automatically applied to every step unless
+# explicitly overridden below. Unresolved placeholders like `${FILE3}` are removed
+# so that allow-no-input can short-circuit missing inputs.
+
+steps:
+  # ========================================================================
+  # Step 0: Single-file Topology (only when 1 capture available)
+  # Command: capmaster topology --single-file ...
+  # ========================================================================
+  - id: single_topology
+    command: topology
+    when:
+      max_input_files: 1
+      min_input_files: 1
+    args:
+      service-list: "services.txt"
+      output: "${OUTPUT}/topology.txt"
+
+  # ========================================================================
+  # Step 1: TCP Connection Matching
+  # Command: capmaster match -i ... -o tmp/matched_connections.txt
+  # ========================================================================
+  - id: match_conn
+    command: match
+    when:
+      min_input_files: 2
+    args:
+      output: "${OUTPUT}/matched_connections.txt"
+      mode: "auto"
+      threshold: 0.6
+
+  # ========================================================================
+  # Step 2: Topology Analysis
+  # Command: capmaster topology ... --matched-connections ...
+  # ========================================================================
+  - id: topo_analysis
+    command: topology
+    when:
+      require_steps: [match_conn]
+    args:
+      matched-connections: "${STEP.match_conn.output}"
+      service-list: "services.txt"
+      output: "${OUTPUT}/topology.txt"
+
+  # ========================================================================
+  # Step 3: Service-based Quality Analysis
+  # Command: capmaster comparative-analysis --service ...
+  # ========================================================================
+  - id: service_quality
+    command: comparative-analysis
+    when:
+      require_steps: [topo_analysis]
+    args:
+      service: true
+      topology: "${STEP.topo_analysis.output}"
+      output: "${OUTPUT}/service-network-quality.txt"
+
+  # ========================================================================
+  # Step 4: Connection-based Quality Analysis
+  # Command: capmaster comparative-analysis --matched-connections ... --top-n 10
+  # ========================================================================
+  - id: conn_quality
+    command: comparative-analysis
+    when:
+      require_steps: [match_conn]
+    args:
+      matched-connections: "${STEP.match_conn.output}"
+      top-n: 10
+      output: "${OUTPUT}/poor-quality-connections.txt"

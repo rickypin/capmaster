@@ -26,6 +26,11 @@ class TestTcpPacket:
             seq=1000000,
             ack=0,
             timestamp=1234567890.123456,
+            src_ip="192.168.1.1",
+            dst_ip="10.0.0.1",
+            src_port=12345,
+            dst_port=80,
+            info="Test Packet",
         )
 
         assert packet.frame_number == 1
@@ -34,6 +39,11 @@ class TestTcpPacket:
         assert packet.seq == 1000000
         assert packet.ack == 0
         assert packet.timestamp == 1234567890.123456
+        assert packet.src_ip == "192.168.1.1"
+        assert packet.dst_ip == "10.0.0.1"
+        assert packet.src_port == 12345
+        assert packet.dst_port == 80
+        assert packet.info == "Test Packet"
 
     def test_tcp_packet_with_none_values(self):
         """Test TcpPacket with None values."""
@@ -44,6 +54,11 @@ class TestTcpPacket:
             seq=1000000,
             ack=None,
             timestamp=1234567890.0,
+            src_ip="192.168.1.1",
+            dst_ip="10.0.0.1",
+            src_port=12345,
+            dst_port=80,
+            info="Test Packet",
         )
 
         assert packet.ip_id is None
@@ -125,13 +140,13 @@ class TestPacketComparator:
     def test_compare_identical_packets(self, comparator: PacketComparator):
         """Test comparing identical packet sequences."""
         packets_a = [
-            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0),
-            TcpPacket(2, 101, "0x010", 1000001, 1000000, 1000.1),
+            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),
+            TcpPacket(2, 101, "0x010", 1000001, 1000000, 1000.1, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),
         ]
 
         packets_b = [
-            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0),
-            TcpPacket(2, 101, "0x010", 1000001, 1000000, 1000.1),
+            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),
+            TcpPacket(2, 101, "0x010", 1000001, 1000000, 1000.1, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),
         ]
 
         result = comparator.compare(packets_a, packets_b, "test_conn")
@@ -143,11 +158,11 @@ class TestPacketComparator:
     def test_compare_tcp_flags_difference(self, comparator: PacketComparator):
         """Test detecting TCP flags differences."""
         packets_a = [
-            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0),  # SYN
+            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),  # SYN
         ]
 
         packets_b = [
-            TcpPacket(1, 100, "0x012", 1000000, 0, 1000.0),  # SYN+ACK
+            TcpPacket(1, 100, "0x012", 1000000, 0, 1000.0, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),  # SYN+ACK
         ]
 
         result = comparator.compare(packets_a, packets_b, "test_conn")
@@ -160,11 +175,11 @@ class TestPacketComparator:
     def test_compare_seq_num_difference(self, comparator: PacketComparator):
         """Test detecting sequence number differences."""
         packets_a = [
-            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0),
+            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),
         ]
 
         packets_b = [
-            TcpPacket(1, 100, "0x002", 2000000, 0, 1000.0),  # Different seq
+            TcpPacket(1, 100, "0x002", 2000000, 0, 1000.0, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),  # Different seq
         ]
 
         result = comparator.compare(packets_a, packets_b, "test_conn")
@@ -177,11 +192,11 @@ class TestPacketComparator:
     def test_compare_ack_num_difference(self, comparator: PacketComparator):
         """Test detecting acknowledgment number differences."""
         packets_a = [
-            TcpPacket(1, 100, "0x010", 1000000, 500000, 1000.0),
+            TcpPacket(1, 100, "0x010", 1000000, 500000, 1000.0, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),
         ]
 
         packets_b = [
-            TcpPacket(1, 100, "0x010", 1000000, 600000, 1000.0),  # Different ack
+            TcpPacket(1, 100, "0x010", 1000000, 600000, 1000.0, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),  # Different ack
         ]
 
         result = comparator.compare(packets_a, packets_b, "test_conn")
@@ -194,11 +209,11 @@ class TestPacketComparator:
     def test_compare_multiple_differences(self, comparator: PacketComparator):
         """Test detecting multiple differences in same packet."""
         packets_a = [
-            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0),
+            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),
         ]
 
         packets_b = [
-            TcpPacket(1, 100, "0x012", 2000000, 500000, 1000.0),  # All different
+            TcpPacket(1, 100, "0x012", 2000000, 500000, 1000.0, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),  # All different
         ]
 
         result = comparator.compare(packets_a, packets_b, "test_conn")
@@ -213,12 +228,12 @@ class TestPacketComparator:
     def test_compare_different_packet_counts(self, comparator: PacketComparator):
         """Test comparing sequences with different packet counts."""
         packets_a = [
-            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0),
-            TcpPacket(2, 101, "0x010", 1000001, 1000000, 1000.1),
+            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),
+            TcpPacket(2, 101, "0x010", 1000001, 1000000, 1000.1, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),
         ]
 
         packets_b = [
-            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0),
+            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),
         ]
 
         result = comparator.compare(packets_a, packets_b, "test_conn")
@@ -242,7 +257,7 @@ class TestPacketComparator:
     def test_compare_one_empty_sequence(self, comparator: PacketComparator):
         """Test comparing when one sequence is empty."""
         packets_a = [
-            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0),
+            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),
         ]
 
         result = comparator.compare(packets_a, [], "test_conn")
@@ -254,15 +269,15 @@ class TestPacketComparator:
         """Test matched-only comparison mode."""
         # In matched-only mode, only packets with matching IPID are compared
         packets_a = [
-            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0),
-            TcpPacket(2, 101, "0x010", 1000001, 1000000, 1000.1),
-            TcpPacket(3, 102, "0x010", 1000002, 1000001, 1000.2),  # Only in A
+            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),
+            TcpPacket(2, 101, "0x010", 1000001, 1000000, 1000.1, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),
+            TcpPacket(3, 102, "0x010", 1000002, 1000001, 1000.2, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),  # Only in A
         ]
 
         packets_b = [
-            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0),
-            TcpPacket(2, 101, "0x010", 1000001, 1000000, 1000.1),
-            TcpPacket(4, 103, "0x010", 1000003, 1000002, 1000.3),  # Only in B
+            TcpPacket(1, 100, "0x002", 1000000, 0, 1000.0, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),
+            TcpPacket(2, 101, "0x010", 1000001, 1000000, 1000.1, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),
+            TcpPacket(4, 103, "0x010", 1000003, 1000002, 1000.3, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),  # Only in B
         ]
 
         result = comparator.compare(packets_a, packets_b, "test_conn", matched_only=True)
@@ -277,11 +292,11 @@ class TestPacketComparator:
     def test_compare_with_none_ipid(self, comparator: PacketComparator):
         """Test comparing packets with None IPID values."""
         packets_a = [
-            TcpPacket(1, None, "0x002", 1000000, 0, 1000.0),
+            TcpPacket(1, None, "0x002", 1000000, 0, 1000.0, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),
         ]
 
         packets_b = [
-            TcpPacket(1, None, "0x002", 1000000, 0, 1000.0),
+            TcpPacket(1, None, "0x002", 1000000, 0, 1000.0, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),
         ]
 
         # Should handle None IPID gracefully
@@ -293,11 +308,11 @@ class TestPacketComparator:
     def test_compare_preserves_frame_numbers(self, comparator: PacketComparator):
         """Test that frame numbers are preserved in differences."""
         packets_a = [
-            TcpPacket(10, 100, "0x002", 1000000, 0, 1000.0),
+            TcpPacket(10, 100, "0x002", 1000000, 0, 1000.0, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),
         ]
 
         packets_b = [
-            TcpPacket(20, 100, "0x012", 1000000, 0, 1000.0),
+            TcpPacket(20, 100, "0x012", 1000000, 0, 1000.0, "1.1.1.1", "2.2.2.2", 1000, 2000, "Info"),
         ]
 
         result = comparator.compare(packets_a, packets_b, "test_conn")

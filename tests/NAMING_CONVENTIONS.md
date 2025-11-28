@@ -26,7 +26,9 @@ tests/
 ├── test_plugins/           # Plugin tests
 │   ├── test_analyze/       # Analyze plugin tests
 │   ├── test_match/         # Match plugin tests
-│   ├── test_filter/        # Filter plugin tests
+│   ├── test_preprocess/    # Preprocess plugin tests
+│   ├── test_topology/      # Topology plugin tests
+│   ├── test_streamdiff/    # StreamDiff plugin tests
 │   ├── test_clean/         # Clean plugin tests
 │   └── test_compare/       # Compare plugin tests
 ├── fixtures/               # Test fixtures and builders

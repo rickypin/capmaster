@@ -10,8 +10,26 @@ import click
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
 from capmaster.plugins.topology.runner import run_topology_analysis
+from capmaster.core.input_manager import InputManager
+from capmaster.utils.cli_options import unified_input_options
 
 logger = logging.getLogger(__name__)
+
+from contextlib import contextmanager
+
+@contextmanager
+def _silence_topology_logger(enabled: bool):
+    """Temporarily elevate logger level to suppress info/warn output."""
+    if not enabled:
+        yield
+        return
+
+    previous_level = logger.level
+    logger.setLevel(logging.ERROR)
+    try:
+        yield
+    finally:
+        logger.setLevel(previous_level)
 
 
 @register_plugin
@@ -26,29 +44,8 @@ class TopologyPlugin(PluginBase):
     def setup_cli(self, cli_group: click.Group) -> None:
         """Register the topology CLI."""
 
-        @cli_group.command(name=self.name)
-        @click.option(
-            "-i",
-            "--input",
-            "input_path",
-            type=str,
-            help="Directory or comma-separated list containing 1 or 2 PCAP files.",
-        )
-        @click.option(
-            "--single-file",
-            type=click.Path(exists=True, dir_okay=False, path_type=Path),
-            help="Single PCAP file for single-point topology analysis.",
-        )
-        @click.option(
-            "--file1",
-            type=click.Path(exists=True, dir_okay=False, path_type=Path),
-            help="First PCAP file (Capture Point A) for dual-point analysis.",
-        )
-        @click.option(
-            "--file2",
-            type=click.Path(exists=True, dir_okay=False, path_type=Path),
-            help="Second PCAP file (Capture Point B) for dual-point analysis.",
-        )
+        @cli_group.command(name=self.name, context_settings=dict(help_option_names=["-h", "--help"]))
+        @unified_input_options
         @click.option(
             "--matched-connections",
             type=click.Path(exists=True, dir_okay=False, path_type=Path),
@@ -82,15 +79,21 @@ class TopologyPlugin(PluginBase):
         def topology_command(
             ctx: click.Context,
             input_path: str | None,
-            single_file: Path | None,
             file1: Path | None,
             file2: Path | None,
+            file3: Path | None,
+            file4: Path | None,
+            file5: Path | None,
+            file6: Path | None,
+            allow_no_input: bool,
+            strict: bool,
+            quiet: bool,
             matched_connections: Path | None,
             empty_match_behavior: str,
             output_file: Path | None,
             service_list: Path | None,
         ) -> None:
-            """Render network topology for one or two capture points.
+            """Render network topology for captures.
 
             Examples:
               # Single capture
@@ -105,36 +108,110 @@ class TopologyPlugin(PluginBase):
 
             exit_code = self.execute(
                 input_path=input_path,
-                single_file=single_file,
                 file1=file1,
                 file2=file2,
+                file3=file3,
+                file4=file4,
+                file5=file5,
+                file6=file6,
+
                 matched_connections=matched_connections,
                 empty_match_behavior=empty_match_behavior,
                 output_file=output_file,
                 service_list=service_list,
+                allow_no_input=allow_no_input,
+                strict=strict,
+                quiet=quiet,
             )
             ctx.exit(exit_code)
 
     def execute(  # type: ignore[override]
         self,
-        input_path: str | Path | None = None,
-        single_file: Path | None = None,
+        input_path: str | None = None,
         file1: Path | None = None,
         file2: Path | None = None,
+        file3: Path | None = None,
+        file4: Path | None = None,
+        file5: Path | None = None,
+        file6: Path | None = None,
+        allow_no_input: bool = False,
+        strict: bool = False,
+        quiet: bool = False,
+        matched_connections: Path | None = None,
+        empty_match_behavior: str = "error",
+        output_file: Path | None = None,
+        service_list: Path | None = None,
+    ) -> int:
+        """Execute the topology plugin."""
+        with _silence_topology_logger(quiet):
+            return self._execute_impl(
+                input_path=input_path,
+                file1=file1,
+                file2=file2,
+                file3=file3,
+                file4=file4,
+                file5=file5,
+                file6=file6,
+                allow_no_input=allow_no_input,
+                strict=strict,
+                quiet=quiet,
+                matched_connections=matched_connections,
+                empty_match_behavior=empty_match_behavior,
+                output_file=output_file,
+                service_list=service_list,
+            )
+
+    def _execute_impl(
+        self,
+        input_path: str | None = None,
+        file1: Path | None = None,
+        file2: Path | None = None,
+        file3: Path | None = None,
+        file4: Path | None = None,
+        file5: Path | None = None,
+        file6: Path | None = None,
+        allow_no_input: bool = False,
+        strict: bool = False,
+        quiet: bool = False,
         matched_connections: Path | None = None,
         empty_match_behavior: str = "error",
         output_file: Path | None = None,
         service_list: Path | None = None,
     ) -> int:
         """Delegate to the topology runner."""
+        # Resolve inputs
+        file_args = {
+            1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6
+        }
+        input_files = InputManager.resolve_inputs(input_path, file_args)
+        
+        # Validate for TopologyPlugin (needs 1 or 2 files)
+        InputManager.validate_file_count(input_files, min_files=1, max_files=2, allow_no_input=allow_no_input)
+        
+        # Map to legacy args
+        single_file_path = None
+        file1_path = None
+        file2_path = None
+        
+        if len(input_files) == 1:
+            single_file_path = input_files[0].path
+        elif len(input_files) == 2:
+            file1_path = input_files[0].path
+            file2_path = input_files[1].path
+
         return run_topology_analysis(
-            input_path=input_path,
-            single_file=single_file,
-            file1=file1,
-            file2=file2,
+            input_path=None,
+            single_file=single_file_path,
+            file1=file1_path,
+            file2=file2_path,
             matched_connections_file=matched_connections,
             empty_match_behavior=empty_match_behavior,
             output_file=output_file,
             service_list=service_list,
+            quiet=quiet,
         )
+
+    def get_command_map(self) -> dict[str, str]:
+        """Return mapping for topology command."""
+        return {self.name: "execute"}
 

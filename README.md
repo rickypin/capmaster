@@ -11,7 +11,6 @@ A unified Python CLI tool for PCAP analysis and TCP connection matching. CapMast
 - 📊 **Comprehensive PCAP Analysis** - 28 statistical analysis modules for protocol hierarchy, TCP/UDP conversations, DNS, HTTP, TLS, VoIP (SIP/RTP/RTCP/MGCP), SSH, and more
 - 🔗 **Intelligent TCP Connection Matching** - Advanced 8-feature scoring algorithm to match TCP connections across multiple PCAP files
 - 🔍 **One-Way Connection Analysis** - Detect one-way TCP connections in PCAP files
-- 🧹 **Statistics Cleanup** - Easily remove statistics directories to reclaim disk space
 - 🚀 **High Performance** - Achieves ≥90% of original shell script performance with better accuracy
 - 🎨 **Beautiful CLI** - Rich terminal output with colors and formatting
 - 🧪 **Well Tested** - 87% test coverage with comprehensive unit and integration tests
@@ -138,28 +137,6 @@ capmaster match -i /path/to/pcaps/ \
 
 **Output:** Matched connection pairs with similarity scores.
 
-
-
-### 4. Clean Statistics Directories
-
-Remove statistics directories to reclaim disk space:
-
-```bash
-# Preview what will be deleted (dry run)
-capmaster clean -i /path/to/data --dry-run
-
-# Clean with confirmation prompt
-capmaster clean -i /path/to/data
-
-# Clean without confirmation
-capmaster clean -i /path/to/data -y
-
-# Clean only top-level statistics directory (non-recursive)
-capmaster clean -i /path/to/data -r
-```
-
-**Output:** Removes all `statistics` directories and shows freed disk space.
-
 ## Command Reference
 
 ### Global Options
@@ -264,30 +241,6 @@ Options:
 - Length Signature (8% weight)
 - IP ID Sequence (16% weight)
 
-
-
-### `clean` - Remove Statistics Directories
-
-Remove statistics directories and their contents to reclaim disk space.
-
-```bash
-capmaster clean [OPTIONS]
-
-Options:
-  -i, --input PATH     Input directory to search for statistics folders [required]
-  -r, --no-recursive   Do NOT recursively search directories (default: recursive)
-  --dry-run            Show what would be deleted without actually deleting
-  -y, --yes            Skip confirmation prompt and delete immediately
-  --help               Show this message and exit
-```
-
-**Safety Features:**
-- Confirmation prompt by default (use `-y` to skip)
-- Dry run mode to preview deletions
-- Only deletes directories named `statistics`
-- Shows total size before deletion
-- Progress tracking during deletion
-
 ## Examples
 
 ### Example 1: Complete PCAP Analysis Workflow
@@ -321,17 +274,7 @@ capmaster match -i captures/ -o matches.txt
 cat matches.txt
 ```
 
-### Example 3: Clean Statistics Directories
-
-```bash
-# Remove all statistics directories under captures/
-capmaster clean -i captures/
-
-# Preview deletions without removing anything
-capmaster clean -i captures/ --dry-run
-```
-
-### Example 4: Analyze with Sidecar Metadata and Markdown Format
+### Example 3: Analyze with Sidecar Metadata and Markdown Format
 
 ```bash
 # Analyze with metadata sidecar files in Markdown format
@@ -352,36 +295,7 @@ This generates both analysis output and metadata for each module, useful for:
 - Building pipelines that consume analysis results
 - Auditing and reproducibility
 
-### Example 5: Clean Up Statistics Directories
-
-```bash
-# Preview what will be deleted
-capmaster clean -i /path/to/data --dry-run
-
-# Clean with confirmation
-capmaster clean -i /path/to/data
-
-# Clean without confirmation (use with caution)
-capmaster clean -i /path/to/data -y
-
-# Clean only top-level statistics directory
-capmaster clean -i /path/to/data -r -y
-```
-
-### Example 6: Complete Workflow with Cleanup
-
-```bash
-# 1. Analyze PCAP files
-capmaster analyze -i captures/
-
-# 2. Review statistics
-ls captures/statistics/
-
-# 3. Clean up when done
-capmaster clean -i captures/ -y
-```
-
-### Example 7: Verbose Output for Debugging
+### Example 4: Verbose Output for Debugging
 
 ```bash
 # Use -v for INFO level logging

@@ -1,0 +1,13 @@
+
+===================================================================
+Protocol Hierarchy Statistics
+Filter: 
+
+frame                                    frames:59641 bytes:24117169
+  eth                                    frames:59641 bytes:24117169
+    vlan                                 frames:59641 bytes:24117169
+      ip                                 frames:59641 bytes:24117169
+        tcp                              frames:59641 bytes:24117169
+          http                           frames:9136 bytes:6853033
+            data                         frames:6670 bytes:5931648
+===================================================================

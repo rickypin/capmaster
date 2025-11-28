@@ -10,13 +10,14 @@ console = Console()
 console_err = Console(stderr=True, style="red")
 
 
-def setup_logger(name: str, verbosity: int = 0) -> logging.Logger:
+def setup_logger(name: str, verbosity: int = 0, log_file: str | None = None) -> logging.Logger:
     """
-    Set up a logger with rich formatting.
+    Set up a logger with rich formatting and optional file rotation.
 
     Args:
         name: Logger name
         verbosity: Verbosity level (0=WARNING, 1=INFO, 2=DEBUG)
+        log_file: Optional path to log file. If provided, enables file logging with rotation.
 
     Returns:
         Configured logger instance
@@ -50,6 +51,28 @@ def setup_logger(name: str, verbosity: int = 0) -> logging.Logger:
     handler.setFormatter(formatter)
 
     logger.addHandler(handler)
+
+    # Add file handler if log_file is provided
+    if log_file:
+        from logging.handlers import RotatingFileHandler
+        from pathlib import Path
+
+        # Ensure directory exists
+        log_path = Path(log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+
+        file_handler = RotatingFileHandler(
+            log_file,
+            maxBytes=10 * 1024 * 1024,  # 10 MB
+            backupCount=5,
+            encoding="utf-8",
+        )
+        file_handler.setLevel(level)
+        file_formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
+        file_handler.setFormatter(file_formatter)
+        logger.addHandler(file_handler)
 
     return logger
 

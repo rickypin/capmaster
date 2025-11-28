@@ -222,6 +222,5 @@ tshark --version
 ## 更多信息
 
 - 完整文档: `tests/README.md`
-- 清理报告: `docs/TEST_CLEANUP_REPORT.md`
-- 过时测试: `tests/legacy/README.md`
+- 过时测试说明: `tests/legacy/` 目录下的测试不会参与默认收集，可用于临时或历史用例。
 

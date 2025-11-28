@@ -1,0 +1,25 @@
+Status,Flags,Count,Severity
+Complete, WITH_DATA_CLOSED,RFDASS,5025,Low
+Complete, WITH_DATA_CLOSED,R·DASS,444,Low
+Complete, WITH_DATA,··DASS,12,Low
+Unknown, WITH_DATA_CLOSED,RFDA··,7,High
+Complete, WITH_DATA_CLOSED,·FDASS,4,Low
+Unknown, NO_DATA_CLOSED,RF·A··,4,High
+Unknown, NO_DATA_CLOSED,R··A··,3,High
+Unknown, WITH_DATA_CLOSED,R·DA··,2,High
+
+Highlighted TCP Streams (sampled)
+Unknown, WITH_DATA_CLOSED [High] flags=RFDA·· total=7
+  sample: 100.10.30.1:33256 -> 100.30.0.1:8080
+  sample: 100.30.0.1:8080 -> 100.10.30.1:39783
+  sample: 100.10.30.1:45202 -> 100.30.0.1:8080
+  ... 4 more
+Unknown, NO_DATA_CLOSED [High] flags=RF·A·· total=4
+  sample: 100.30.0.1:8080 -> 100.10.30.1:40508
+  sample: 100.10.30.1:35800 -> 100.30.0.1:8080
+  sample: 100.30.0.1:8080 -> 100.10.30.1:38303
+  ... 1 more
+Unknown, NO_DATA_CLOSED [High] flags=R··A·· total=3
+  sample: 100.10.30.1:33254 -> 100.30.0.1:8080
+  sample: 100.10.30.1:35104 -> 100.30.0.1:8080
+  sample: 100.10.30.1:40915 -> 100.30.0.1:8080

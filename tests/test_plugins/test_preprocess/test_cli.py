@@ -39,7 +39,7 @@ class TestPreprocessPluginCLI:
         assert "--enable-oneway" in result.output
         assert "--enable-time-align" in result.output
         assert "--archive-original-files" in result.output
-        assert "--silent" in result.output
+        assert "--quiet" in result.output
 
     def test_missing_input_is_error(self, runner) -> None:
         """Running without -i/--input should be rejected by Click."""
@@ -47,21 +47,28 @@ class TestPreprocessPluginCLI:
         result = runner.invoke(cli, ["preprocess"])
 
         assert result.exit_code != 0
-        assert "Missing option" in result.output
+        assert (
+            "Input file count mismatch" in result.output
+            or "No valid input files found" in result.output
+        )
 
     def test_conflicting_enable_disable_flags_error(self, runner) -> None:
         """Conflicting enable/disable flags should result in a user-friendly error."""
 
-        result = runner.invoke(
-            cli,
-            [
-                "preprocess",
-                "-i",
-                "dummy.pcap",
-                "--enable-dedup",
-                "--disable-dedup",
-            ],
-        )
+        with runner.isolated_filesystem():
+            with open("dummy.pcap", "wb") as f:
+                f.write(b"dummy")
+
+            result = runner.invoke(
+                cli,
+                [
+                    "preprocess",
+                    "-i",
+                    "dummy.pcap",
+                    "--enable-dedup",
+                    "--disable-dedup",
+                ],
+            )
 
         assert result.exit_code != 0
         assert "Cannot use both --enable-dedup and --disable-dedup" in result.output
@@ -69,17 +76,21 @@ class TestPreprocessPluginCLI:
     def test_step_and_flags_cannot_be_mixed(self, runner) -> None:
         """Using --step together with enable/disable flags is not allowed."""
 
-        result = runner.invoke(
-            cli,
-            [
-                "preprocess",
-                "-i",
-                "dummy.pcap",
-                "--step",
-                "dedup",
-                "--enable-dedup",
-            ],
-        )
+        with runner.isolated_filesystem():
+            with open("dummy.pcap", "wb") as f:
+                f.write(b"dummy")
+
+            result = runner.invoke(
+                cli,
+                [
+                    "preprocess",
+                    "-i",
+                    "dummy.pcap",
+                    "--step",
+                    "dedup",
+                    "--enable-dedup",
+                ],
+            )
 
         assert result.exit_code != 0
         assert "Cannot mix --step with enable/disable flags" in result.output
@@ -108,7 +119,7 @@ class TestPreprocessPluginCLI:
                     "report.md",
                     "--workers",
                     "4",
-                    "--silent",
+                    "--quiet",
                 ],
             )
 
@@ -121,7 +132,7 @@ class TestPreprocessPluginCLI:
         # report_path is created by Click as a Path object
         assert str(called_kwargs["report_path"]).endswith("report.md")
         assert called_kwargs["workers"] == 4
-        assert called_kwargs["silent"] is True
+        assert called_kwargs["quiet"] is True
 
 
 

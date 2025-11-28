@@ -40,8 +40,9 @@ from capmaster.plugins.match.stats_pipeline import (
     write_to_database,
     write_to_json,
 )
+from capmaster.core.input_manager import InputManager
+from capmaster.utils.context import ExecutionContext
 from capmaster.utils.errors import CapMasterError, InsufficientFilesError, handle_error
-from capmaster.utils.input_parser import DualFileInputParser
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,9 @@ def run_match_pipeline(
     service_group_mapping: Path | None = None,
     match_json: Path | None = None,
     service_list: Path | None = None,
+    strict: bool = False,
+    allow_no_input: bool = False,
+    quiet: bool = False,
 ) -> int:
     """Run the main match pipeline.
 
@@ -95,6 +99,10 @@ def run_match_pipeline(
     if sample_threshold <= 0:
         logger.error(f"Invalid sample threshold: {sample_threshold}. Must be positive")
         return 1
+
+    # Initialize execution context
+    ExecutionContext.set_strict(strict)
+    ExecutionContext.set_quiet(quiet)
 
     try:
         return _run_match_pipeline_core(
@@ -125,6 +133,8 @@ def run_match_pipeline(
             service_group_mapping=service_group_mapping,
             match_json=match_json,
             service_list=service_list,
+            allow_no_input=allow_no_input,
+            quiet=quiet,
         )
 
     except InsufficientFilesError as e:
@@ -323,6 +333,8 @@ def _run_match_pipeline_core(
     service_group_mapping: Path | None,
     match_json: Path | None,
     service_list: Path | None,
+    allow_no_input: bool = False,
+    quiet: bool = False,
 ) -> int:
     """Core implementation of the match pipeline.
 
@@ -330,13 +342,16 @@ def _run_match_pipeline_core(
     structured as a standalone helper so it can be called from
     :func:`run_match_pipeline`.
     """
+    from contextlib import nullcontext
 
-    with Progress(
+    progress_context = nullcontext() if quiet else Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         TaskProgressColumn(),
-    ) as progress:
+    )
+
+    with progress_context as progress:
         match_file1, match_file2, pcap_id_mapping = _parse_dual_input(
             progress,
             input_path=input_path,
@@ -344,19 +359,22 @@ def _run_match_pipeline_core(
             file2=file2,
             file1_pcapid=file1_pcapid,
             file2_pcapid=file2_pcapid,
+            quiet=quiet,
+            allow_no_input=allow_no_input,
         )
 
         (
             use_f5_matching,
             use_tls_matching,
             use_behavioral,
-        ) = _determine_matching_strategy(progress, match_file1, match_file2, mode)
+        ) = _determine_matching_strategy(progress, match_file1, match_file2, mode, quiet=quiet)
 
         connections1, connections2 = _extract_connections_for_files(
             progress,
             match_file1,
             match_file2,
             merge_by_5tuple=merge_by_5tuple,
+            quiet=quiet,
         )
 
         connections1, connections2 = _apply_sampling_if_enabled(
@@ -366,6 +384,7 @@ def _run_match_pipeline_core(
             enable_sampling=enable_sampling,
             sample_threshold=sample_threshold,
             sample_rate=sample_rate,
+            quiet=quiet,
         )
 
         matcher, matches = _match_connections_with_strategy(
@@ -385,6 +404,7 @@ def _run_match_pipeline_core(
             behavioral_weight_iat=behavioral_weight_iat,
             behavioral_weight_bytes=behavioral_weight_bytes,
             service_list=service_list,
+            quiet=quiet,
         )
 
         stats = matcher.get_match_stats(connections1, connections2, matches)
@@ -406,6 +426,7 @@ def _run_match_pipeline_core(
             endpoint_pair_mode=endpoint_pair_mode,
             service_group_mapping=service_group_mapping,
             service_list=service_list,
+            quiet=quiet,
         )
 
     logger.info("Matching complete")
@@ -413,44 +434,57 @@ def _run_match_pipeline_core(
 
 
 def _parse_dual_input(
-    progress: Progress,
+    progress: Progress | None,
     input_path: str | Path | None,
     file1: Path | None,
     file2: Path | None,
     file1_pcapid: int | None,
     file2_pcapid: int | None,
+
+    quiet: bool = False,
+    allow_no_input: bool = False,
 ) -> tuple[Path, Path, dict[str, int] | None]:
-    """Parse dual file input using DualFileInputParser.
+    """Parse dual file input using InputManager.
 
     This mirrors the parsing logic in MatchPlugin.execute.
     """
 
-    scan_task = progress.add_task("[cyan]Scanning for PCAP files...", total=1)
+    scan_task = None
+    if not quiet and progress:
+        scan_task = progress.add_task("[cyan]Scanning for PCAP files...", total=1)
 
-    dual_input = DualFileInputParser.parse(input_path, file1, file2, file1_pcapid, file2_pcapid)
-    progress.update(scan_task, advance=1)
+    file_args = {1: file1, 2: file2}
+    input_files = InputManager.resolve_inputs(input_path, file_args)
+    InputManager.validate_file_count(input_files, min_files=2, max_files=2, allow_no_input=allow_no_input)
+    
+    if not quiet and progress and scan_task:
+        progress.update(scan_task, advance=1)
 
-    match_file1 = dual_input.file1
-    match_file2 = dual_input.file2
-    pcap_id_mapping = dual_input.pcap_id_mapping
+    match_file1 = input_files[0].path
+    match_file2 = input_files[1].path
+    
+    pcap_id_mapping = {
+        str(match_file1): input_files[0].pcapid,
+        str(match_file2): input_files[1].pcapid
+    }
 
     logger.info(f"File 1: {match_file1.name}")
     logger.info(f"File 2: {match_file2.name}")
     if pcap_id_mapping:
         logger.info(
-            f"PCAP ID mapping: {match_file1.name} -> {pcap_id_mapping[str(match_file1)]}, "
-            f"{match_file2.name} -> {pcap_id_mapping[str(match_file2)]}"
+            f"PCAP ID mapping: {match_file1.name}->{pcap_id_mapping[str(match_file1)]}, "
+            f"{match_file2.name}->{pcap_id_mapping[str(match_file2)]}"
         )
-    logger.info(f"Matching: {match_file1.name} <-> {match_file2.name}")
 
     return match_file1, match_file2, pcap_id_mapping
 
 
 def _determine_matching_strategy(
-    progress: Progress,
+    progress: Progress | None,
     match_file1: Path,
     match_file2: Path,
     mode: str,
+    quiet: bool = False,
 ) -> tuple[bool, bool, bool]:
     """Determine whether to use F5, TLS, behavioral or feature-based matching.
 
@@ -467,16 +501,20 @@ def _determine_matching_strategy(
         logger.info("Behavioral-only mode selected - skipping F5/TLS detection")
     else:
         # Check for F5 Ethernet Trailer (highest priority stage)
-        detect_task = progress.add_task(
-            "[cyan]Detecting F5 Ethernet Trailer...", total=2
-        )
+        detect_task = None
+        if not quiet and progress:
+            detect_task = progress.add_task(
+                "[cyan]Detecting F5 Ethernet Trailer...", total=2
+            )
         f5_matcher = F5Matcher()
 
         has_f5_file1 = f5_matcher.detect_f5_trailer(match_file1)
-        progress.update(detect_task, advance=1)
+        if not quiet and progress and detect_task:
+            progress.update(detect_task, advance=1)
 
         has_f5_file2 = f5_matcher.detect_f5_trailer(match_file2)
-        progress.update(detect_task, advance=1)
+        if not quiet and progress and detect_task:
+            progress.update(detect_task, advance=1)
 
         use_f5_matching = has_f5_file1 and has_f5_file2
 
@@ -491,16 +529,20 @@ def _determine_matching_strategy(
             )
 
         # Check for TLS Client Hello independently of F5 so that both stages can run.
-        detect_task = progress.add_task(
-            "[cyan]Detecting TLS Client Hello...", total=2
-        )
+        detect_task = None
+        if not quiet and progress:
+            detect_task = progress.add_task(
+                "[cyan]Detecting TLS Client Hello...", total=2
+            )
         tls_matcher = TlsMatcher()
 
         has_tls_file1 = tls_matcher.detect_tls_client_hello(match_file1)
-        progress.update(detect_task, advance=1)
+        if not quiet and progress and detect_task:
+            progress.update(detect_task, advance=1)
 
         has_tls_file2 = tls_matcher.detect_tls_client_hello(match_file2)
-        progress.update(detect_task, advance=1)
+        if not quiet and progress and detect_task:
+            progress.update(detect_task, advance=1)
 
         use_tls_matching = has_tls_file1 and has_tls_file2
 
@@ -531,31 +573,37 @@ def _determine_matching_strategy(
 
 
 def _extract_connections_for_files(
-    progress: Progress,
+    progress: Progress | None,
     match_file1: Path,
     match_file2: Path,
     merge_by_5tuple: bool,
+    quiet: bool = False,
 ) -> tuple[list[TcpConnection], list[TcpConnection]]:
     """Extract TCP connections from both files.
 
     This mirrors the extraction logic in MatchPlugin.execute.
     """
 
-    extract_task = progress.add_task("[cyan]Extracting connections...", total=2)
+    extract_task = None
+    if not quiet and progress:
+        extract_task = progress.add_task("[cyan]Extracting connections...", total=2)
 
-    progress.update(
-        extract_task,
-        description=f"[cyan]Extracting from {match_file1.name}...",
-    )
+    if not quiet and progress and extract_task:
+        progress.update(
+            extract_task,
+            description=f"[cyan]Extracting from {match_file1.name}...",
+        )
     connections1 = extract_connections_from_pcap(
         match_file1, merge_by_5tuple=merge_by_5tuple
     )
     logger.info(f"Found {len(connections1)} connections in {match_file1.name}")
     if merge_by_5tuple:
         logger.info("  (merged by direction-independent 5-tuple)")
-    progress.update(extract_task, advance=1)
+    if not quiet and progress and extract_task:
+        progress.update(extract_task, advance=1)
 
-    progress.update(
+    if not quiet and progress and extract_task:
+        progress.update(
         extract_task,
         description=f"[cyan]Extracting from {match_file2.name}...",
     )
@@ -565,18 +613,20 @@ def _extract_connections_for_files(
     logger.info(f"Found {len(connections2)} connections in {match_file2.name}")
     if merge_by_5tuple:
         logger.info("  (merged by direction-independent 5-tuple)")
-    progress.update(extract_task, advance=1)
+    if not quiet and progress and extract_task:
+        progress.update(extract_task, advance=1)
 
     return connections1, connections2
 
 
 def _apply_sampling_if_enabled(
-    progress: Progress,
+    progress: Progress | None,
     connections1: list[TcpConnection],
     connections2: list[TcpConnection],
     enable_sampling: bool,
     sample_threshold: int,
     sample_rate: float,
+    quiet: bool = False,
 ) -> tuple[list[TcpConnection], list[TcpConnection]]:
     """Apply sampling to connections if enabled.
 
@@ -606,7 +656,9 @@ def _apply_sampling_if_enabled(
     )
 
     if sampler.should_sample(connections1):
-        sample_task = progress.add_task("[yellow]Sampling connections...", total=1)
+        sample_task = None
+        if not quiet and progress:
+            sample_task = progress.add_task("[yellow]Sampling connections...", total=1)
         logger.info(
             f"Applying sampling to first file (threshold={threshold}, rate={rate})..."
         )
@@ -616,10 +668,13 @@ def _apply_sampling_if_enabled(
             f"Sampled from {original_count1} to {len(connections1)} connections "
             f"({len(connections1)/original_count1:.1%} retained)"
         )
-        progress.update(sample_task, advance=1)
+        if not quiet and progress and sample_task:
+            progress.update(sample_task, advance=1)
 
     if sampler.should_sample(connections2):
-        sample_task = progress.add_task("[yellow]Sampling connections...", total=1)
+        sample_task = None
+        if not quiet and progress:
+            sample_task = progress.add_task("[yellow]Sampling connections...", total=1)
         logger.info(
             f"Applying sampling to second file (threshold={threshold}, rate={rate})..."
         )
@@ -629,13 +684,14 @@ def _apply_sampling_if_enabled(
             f"Sampled from {original_count2} to {len(connections2)} connections "
             f"({len(connections2)/original_count2:.1%} retained)"
         )
-        progress.update(sample_task, advance=1)
+        if not quiet and progress and sample_task:
+            progress.update(sample_task, advance=1)
 
     return connections1, connections2
 
 
 def _match_connections_with_strategy(
-    progress: Progress,
+    progress: Progress | None,
     match_file1: Path,
     match_file2: Path,
     connections1: list[TcpConnection],
@@ -651,6 +707,8 @@ def _match_connections_with_strategy(
     behavioral_weight_iat: float,
     behavioral_weight_bytes: float,
     service_list: Path | None = None,
+    quiet: bool = False,
+    allow_no_input: bool = False,
 ) -> tuple[ConnectionMatcher | BehavioralMatcher, list]:
     """Perform matching using F5, TLS, behavioral or feature-based strategy.
 
@@ -660,9 +718,11 @@ def _match_connections_with_strategy(
 
     # Behavioral-only matching keeps its own dedicated path.
     if use_behavioral:
-        detector_task = progress.add_task(
-            "[yellow]Analyzing server/client roles...", total=1
-        )
+        detector_task = None
+        if not quiet and progress:
+            detector_task = progress.add_task(
+                "[yellow]Analyzing server/client roles...", total=1
+            )
         logger.info(
             "Performing cardinality analysis for server detection (behavioral mode)..."
         )
@@ -671,11 +731,14 @@ def _match_connections_with_strategy(
         )
         connections1 = _improve_server_detection(connections1, detector)
         connections2 = _improve_server_detection(connections2, detector)
-        progress.update(detector_task, advance=1)
+        if not quiet and progress and detector_task:
+            progress.update(detector_task, advance=1)
 
-        match_task = progress.add_task(
-            "[green]Matching connections (behavioral)...", total=1
-        )
+        match_task = None
+        if not quiet and progress:
+            match_task = progress.add_task(
+                "[green]Matching connections (behavioral)...", total=1
+            )
         logger.info("Matching connections using behavioral features only...")
         bucket_enum = BucketStrategy(bucket_strategy)
         match_mode_enum = MatchMode(match_mode)
@@ -690,7 +753,8 @@ def _match_connections_with_strategy(
         )
         matches = matcher.match(connections1, connections2)
         logger.info(f"Found {len(matches)} matches (behavioral)")
-        progress.update(match_task, advance=1)
+        if not quiet and progress and match_task:
+            progress.update(match_task, advance=1)
         return matcher, matches
 
     # Helper to remove already matched connections from the candidate pools.
@@ -713,9 +777,11 @@ def _match_connections_with_strategy(
 
     # Stage 1: F5-based matching (if enabled).
     if use_f5_matching:
-        match_task = progress.add_task(
-            "[green]Matching connections using F5 trailers...", total=1
-        )
+        match_task = None
+        if not quiet and progress:
+            match_task = progress.add_task(
+                "[green]Matching connections using F5 trailers...", total=1
+            )
         logger.info("Matching connections using F5 Ethernet Trailer...")
 
         f5_matcher = F5Matcher()
@@ -725,7 +791,8 @@ def _match_connections_with_strategy(
         f5_conn_matches = convert_f5_matches_to_connection_matches(
             f5_matches, remaining1, remaining2
         )
-        progress.update(match_task, advance=1)
+        if not quiet and progress and match_task:
+            progress.update(match_task, advance=1)
 
         if f5_conn_matches:
             logger.info(
@@ -740,9 +807,11 @@ def _match_connections_with_strategy(
 
     # Stage 2: TLS-based matching on remaining connections (if enabled).
     if use_tls_matching:
-        match_task = progress.add_task(
-            "[green]Matching connections using TLS Client Hello...", total=1
-        )
+        match_task = None
+        if not quiet and progress:
+            match_task = progress.add_task(
+                "[green]Matching connections using TLS Client Hello...", total=1
+            )
         logger.info("Matching connections using TLS Client Hello...")
 
         tls_matcher = TlsMatcher()
@@ -752,7 +821,8 @@ def _match_connections_with_strategy(
         tls_conn_matches = convert_tls_matches_to_connection_matches(
             tls_matches, remaining1, remaining2
         )
-        progress.update(match_task, advance=1)
+        if not quiet and progress and match_task:
+            progress.update(match_task, advance=1)
 
         if not tls_conn_matches:
             logger.warning(
@@ -780,9 +850,11 @@ def _match_connections_with_strategy(
     # Stage 3: feature/IPID-based matching on remaining connections.
     if remaining1 and remaining2:
         if run_server_detection:
-            detector_task = progress.add_task(
-                "[yellow]Analyzing server/client roles...", total=1
-            )
+            detector_task = None
+            if not quiet and progress:
+                detector_task = progress.add_task(
+                    "[yellow]Analyzing server/client roles...", total=1
+                )
             logger.info("Performing cardinality analysis for server detection...")
 
             detector = _create_and_populate_detector(
@@ -791,17 +863,21 @@ def _match_connections_with_strategy(
             remaining1 = _improve_server_detection(remaining1, detector)
             remaining2 = _improve_server_detection(remaining2, detector)
             logger.info("Server detection improved using cardinality analysis")
-            progress.update(detector_task, advance=1)
+            if not quiet and progress and detector_task:
+                progress.update(detector_task, advance=1)
 
-        match_task = progress.add_task(
-            "[green]Matching connections (feature-based)...", total=1
-        )
+        match_task = None
+        if not quiet and progress:
+            match_task = progress.add_task(
+                "[green]Matching connections (feature-based)...", total=1
+            )
         logger.info("Matching connections using feature/IPID-based matcher...")
         feature_matches = matcher.match(remaining1, remaining2)
         logger.info(
             "Found %d matches using feature-based matcher", len(feature_matches)
         )
-        progress.update(match_task, advance=1)
+        if not quiet and progress and match_task:
+            progress.update(match_task, advance=1)
         all_matches.extend(feature_matches)
     else:
         logger.info(
@@ -812,7 +888,7 @@ def _match_connections_with_strategy(
 
 
 def _handle_outputs(
-    progress: Progress,
+    progress: Progress | None,
     matches: list,
     stats: dict,
     match_file1: Path,
@@ -828,6 +904,7 @@ def _handle_outputs(
     endpoint_pair_mode: bool,
     service_group_mapping: Path | None,
     service_list: Path | None,
+    quiet: bool = False,
 ) -> None:
     """Handle all output steps after matching.
 
@@ -836,13 +913,18 @@ def _handle_outputs(
     """
 
     # Output match results
-    output_task = progress.add_task("[green]Writing results...", total=1)
+    output_task = None
+    if not quiet and progress:
+        output_task = progress.add_task("[green]Writing results...", total=1)
     output_match_results(matches, stats, output_file)
-    progress.update(output_task, advance=1)
+    if not quiet and progress and output_task:
+        progress.update(output_task, advance=1)
 
     # Save matches to JSON if requested
     if match_json:
-        json_task = progress.add_task("[green]Saving matches to JSON...", total=1)
+        json_task = None
+        if not quiet and progress:
+            json_task = progress.add_task("[green]Saving matches to JSON...", total=1)
         save_matches_json(
             matches,
             match_json,
@@ -850,15 +932,18 @@ def _handle_outputs(
             match_file2,
             stats,
         )
-        progress.update(json_task, advance=1)
+        if not quiet and progress and json_task:
+            progress.update(json_task, advance=1)
 
     # Generate endpoint statistics if requested
     if not endpoint_stats:
         return
 
-    endpoint_task = progress.add_task(
-        "[green]Generating endpoint statistics...", total=1
-    )
+    endpoint_task = None
+    if not quiet and progress:
+        endpoint_task = progress.add_task(
+            "[green]Generating endpoint statistics...", total=1
+        )
     endpoint_stats_list = output_endpoint_stats(
         matches,
         match_file1,
@@ -866,23 +951,29 @@ def _handle_outputs(
         endpoint_stats_output,
         service_list=service_list,
     )
-    progress.update(endpoint_task, advance=1)
+    if not quiet and progress and endpoint_task:
+        progress.update(endpoint_task, advance=1)
 
     # Aggregate by service by default (unless endpoint_pair_mode is enabled)
     service_stats_list = None
     if not endpoint_pair_mode:
-        service_task = progress.add_task("[green]Aggregating by service...", total=1)
+        service_task = None
+        if not quiet and progress:
+            service_task = progress.add_task("[green]Aggregating by service...", total=1)
         service_stats_list = aggregate_and_output_service_stats(
             endpoint_stats_list,
             match_file1,
             match_file2,
             endpoint_stats_output,
         )
-        progress.update(service_task, advance=1)
+        if not quiet and progress and service_task:
+            progress.update(service_task, advance=1)
 
     # Write to database if connection parameters provided
     if db_connection and kase_id is not None:
-        db_task = progress.add_task("[green]Writing to database...", total=1)
+        db_task = None
+        if not quiet and progress:
+            db_task = progress.add_task("[green]Writing to database...", total=1)
         write_to_database(
             db_connection,
             kase_id,
@@ -893,11 +984,14 @@ def _handle_outputs(
             service_stats_list=service_stats_list,
             service_group_mapping_file=service_group_mapping,
         )
-        progress.update(db_task, advance=1)
+        if not quiet and progress and db_task:
+            progress.update(db_task, advance=1)
 
     # Write endpoint statistics to JSON file if requested
     if endpoint_stats_json:
-        json_task = progress.add_task("[green]Writing to JSON file...", total=1)
+        json_task = None
+        if not quiet and progress:
+            json_task = progress.add_task("[green]Writing to JSON file...", total=1)
         write_to_json(
             endpoint_stats_json,
             endpoint_stats_list,
@@ -907,4 +1001,5 @@ def _handle_outputs(
             service_stats_list=service_stats_list,
             service_group_mapping_file=service_group_mapping,
         )
-        progress.update(json_task, advance=1)
+        if not quiet and progress and json_task:
+            progress.update(json_task, advance=1)

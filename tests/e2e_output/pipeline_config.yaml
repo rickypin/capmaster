@@ -1,0 +1,3 @@
+pipeline:
+  - name: analyze
+    module: http_response

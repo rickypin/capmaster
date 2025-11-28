@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 import click
 
-from capmaster.utils.cli_options import dual_file_input_options, validate_database_params
+from capmaster.utils.cli_options import unified_input_options, validate_database_params
 
 
 def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) -> None:
@@ -19,8 +19,8 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
     the provided plugin instance to execute the logic.
     """
 
-    @cli_group.command(name=plugin.name)
-    @dual_file_input_options
+    @cli_group.command(name=plugin.name, context_settings=dict(help_option_names=["-h", "--help"]))
+    @unified_input_options
     @click.option(
         "-o",
         "--output",
@@ -72,15 +72,6 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
         ),
     )
     @click.option(
-        "--silent",
-        is_flag=True,
-        default=False,
-        help=(
-            "Silent mode: suppress progress bars and screen output "
-            "(logs and file output still work)"
-        ),
-    )
-    @click.option(
         "--match-mode",
         type=click.Choice(["one-to-one", "one-to-many"], case_sensitive=False),
         default="one-to-one",
@@ -104,9 +95,15 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
         ctx: click.Context,
         input_path: str | None,
         file1: Path | None,
-        file1_pcapid: int | None,
         file2: Path | None,
-        file2_pcapid: int | None,
+        file3: Path | None,
+        file4: Path | None,
+        file5: Path | None,
+        file6: Path | None,
+
+        allow_no_input: bool,
+        strict: bool,
+        quiet: bool,
         output_file: Path | None,
         threshold: float,
         bucket: str,
@@ -114,11 +111,10 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
         matched_only: bool,
         db_connection: str | None,
         kase_id: int | None,
-        silent: bool,
         match_mode: str,
         match_file: Path | None,
     ) -> None:
-        """Compare TCP connections at packet level between PCAP files.
+        """Compare TCP connections at packet level.
 
         This command first matches TCP connections between two PCAP files,
         then performs detailed packet-level comparison for each matched pair.
@@ -161,15 +157,15 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
             --db-connection "postgresql://postgres:password@172.16.200.156:5433/r2" \
             --kase-id 133
 
-          # Use file1/file2 with pcap_id mapping
-          capmaster compare --file1 a.pcap --file1-pcapid 0 --file2 b.pcap --file2-pcapid 1 \
+          # Use file1/file2
+          capmaster compare --file1 a.pcap --file2 b.pcap \
             --show-flow-hash --db-connection "postgresql://..." --kase-id 133
 
         \b
         Input:
           The input can be a directory containing exactly 2 PCAP files,
           or a comma-separated list of exactly 2 PCAP files,
-          or specified using --file1 and --file2 with their corresponding pcap IDs.
+          or specified using --file1 and --file2.
 
         \b
         Output:
@@ -190,9 +186,14 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
         exit_code = plugin.execute(
             input_path=input_path,
             file1=file1,
-            file1_pcapid=file1_pcapid,
             file2=file2,
-            file2_pcapid=file2_pcapid,
+            file3=file3,
+            file4=file4,
+            file5=file5,
+            file6=file6,
+            allow_no_input=allow_no_input,
+            strict=strict,
+            quiet=quiet,
             output_file=output_file,
             score_threshold=threshold,
             bucket_strategy=bucket,
@@ -200,7 +201,6 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
             matched_only=matched_only,
             db_connection=db_connection,
             kase_id=kase_id,
-            silent=silent,
             match_mode=match_mode,
             match_file=match_file,
         )
