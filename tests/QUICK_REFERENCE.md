@@ -49,8 +49,14 @@ pytest tests/test_plugins/test_compare/ -v
 # Preprocess 插件
 pytest tests/test_plugins/test_preprocess/ -v
 
-# Clean 插件
-pytest tests/test_plugins/test_clean.py -v
+# Topology 插件
+pytest tests/test_plugins/test_topology/ -v
+
+# StreamDiff 插件
+pytest tests/test_plugins/test_streamdiff/ -v
+
+# Pipeline 插件
+pytest tests/test_plugins/test_pipeline/ -v
 ```
 
 ### 按文件/类/方法运行

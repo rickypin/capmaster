@@ -13,10 +13,12 @@ tests/
 │   └── test_tshark_wrapper.py
 ├── test_plugins/           # Plugin tests
 │   ├── test_analyze/       # Analyze plugin tests
-│   ├── test_clean/         # Clean plugin tests
 │   ├── test_compare/       # Compare plugin tests
 │   ├── test_match/         # Match plugin tests
-│   └── test_preprocess/    # Preprocess plugin tests
+│   ├── test_pipeline/      # Pipeline plugin tests
+│   ├── test_preprocess/    # Preprocess plugin tests
+│   ├── test_streamdiff/    # StreamDiff plugin tests
+│   └── test_topology/      # Topology plugin tests
 ├── test_flow_hash.py       # Flow hash unit tests
 ├── test_flow_hash_rust_compatibility.py  # Rust compatibility tests
 └── conftest.py             # Shared fixtures

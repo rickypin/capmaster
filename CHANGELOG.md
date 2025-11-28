@@ -147,7 +147,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Legacy shell scripts (replaced by Python CLI):
   - `analyze_pcap.sh` → `capmaster analyze`
   - `match_tcp_conns.sh` → `capmaster match`
-  - `remove_one_way_tcp.sh` → `capmaster filter`
+  - `remove_one_way_tcp.sh` → `capmaster preprocess` (one-way filtering stage)
 
 ### Removed
 
@@ -216,7 +216,7 @@ capmaster match -i dir/
 capmaster match -i dir/ --mode header --threshold 0.60
 ```
 
-#### Filter Command
+#### One-Way Filtering (Former `filter` Command)
 
 **Before:**
 ```bash
@@ -224,11 +224,14 @@ capmaster match -i dir/ --mode header --threshold 0.60
 ./remove_one_way_tcp.sh -i test.pcap -t 100
 ```
 
-**After:**
+**After (current releases):**
 ```bash
-capmaster filter -i test.pcap
-capmaster filter -i test.pcap -t 100
+capmaster preprocess -i test.pcap
 ```
+
+The preprocess pipeline automatically detects and removes one-way TCP streams.
+The legacy `capmaster filter` subcommand has been retired and is no longer
+distributed.
 
 ### Configuration Changes
 

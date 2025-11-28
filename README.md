@@ -321,8 +321,10 @@ capmaster/
 │   │   └── modules/         # Analysis modules (2nd layer)
 │   ├── match/               # Matching plugin
 │   ├── compare/             # Comparative analysis plugin
-│   ├── clean/               # Cleanup plugin
-│   └── preprocess/          # Preprocessing pipeline
+│   ├── preprocess/          # Preprocessing pipeline
+│   ├── topology/            # Topology rendering plugin
+│   ├── streamdiff/          # TCP stream diffing plugin
+│   └── pipeline/            # Batch workflow runner
 └── utils/                   # Utilities
     └── logger.py            # Logging configuration
 ```
@@ -399,7 +401,7 @@ CapMaster is designed with extensibility in mind. You can easily add new plugins
 
 See **[AI Plugin Extension Guide](docs/AI_PLUGIN_EXTENSION_GUIDE.md)** for quick reference on:
 
-- Adding new top-level plugins (like analyze, match, compare, preprocess, clean)
+- Adding new top-level plugins (like analyze, match, compare, preprocess, topology, streamdiff, pipeline)
 - Adding new analysis modules for the analyze plugin
 - tshark command patterns and post-processing techniques
 - Code templates, testing, and validation
