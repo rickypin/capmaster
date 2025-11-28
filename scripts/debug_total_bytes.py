@@ -13,7 +13,7 @@ from capmaster.core.connection.models import ConnectionBuilder
 
 def main() -> int:
     # Test with one of the cases
-    case_dir = Path("/Users/ricky/Downloads/2hops/TC-001-1-20160407")
+    case_dir = Path("data/2hops/TC-001-1-20160407")
     pcaps = sorted(case_dir.glob("*.pcap"))
     
     if len(pcaps) < 2:

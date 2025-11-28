@@ -351,10 +351,14 @@ class TestMatchPlugin:
     @pytest.fixture
     def test_case_dir(self) -> Path:
         """Return path to test case directory."""
-        test_dir = Path("cases/TC-001-1-20160407")
-        if not test_dir.exists():
-            pytest.skip(f"Test case directory not found: {test_dir}")
-        return test_dir
+        candidates = [
+            Path("data/cases/TC-001-1-20160407"),
+            Path("data/cases_02/TC-001-1-20160407"),
+        ]
+        for test_dir in candidates:
+            if test_dir.exists():
+                return test_dir
+        pytest.skip("Test case directory not found under data/cases or data/cases_02")
 
     def test_plugin_name(self, plugin: MatchPlugin):
         """Test that plugin has correct name."""

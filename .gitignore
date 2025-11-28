@@ -140,23 +140,27 @@ dmypy.json
 # Project-Specific
 # ============================================
 # Test cases and sample PCAP files
-cases/
-cases
-cases_02/
 # Preprocess plugin test cases
 tests/preprocess_cases/
-downloads/
-downloads
-2hops/
-2hops
-benchmarks/
-tmp/
+
+# Data assets (large local datasets & symlinks)
+data/*
+!data/README.md
+
+# Run artifacts
+artifacts/*
+!artifacts/README.md
+
+# Legacy top-level paths (backward compatibility)
+/benchmarks/
+/tmp/
 
 .capmaster_tmp_match/
 # Analysis output (statistics directory created by analyze_pcap.sh)
 statistics/
 **/statistics/
-analysis/
+/analysis/
+scripts/analysis/
 
 # Archive directories (keep README.md but ignore archived files)
 scripts/archive/*

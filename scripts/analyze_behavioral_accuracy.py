@@ -109,7 +109,7 @@ def analyze_case(case_dir: Path):
 
 def main():
     """Analyze multiple cases."""
-    base_dir = Path("/Users/ricky/Downloads/2hops")
+    base_dir = Path("data/2hops")
     
     # Test cases with Auto matches
     test_cases = [

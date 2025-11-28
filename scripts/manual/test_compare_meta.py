@@ -3,7 +3,7 @@
 
 NOTE:
 - This is a standalone script and is not part of the automated pytest suite.
-- It depends on local PCAP files under cases/dbs_20251028-Masked.
+- It depends on local PCAP files under data/cases/dbs_20251028-Masked.
 """
 
 import json
@@ -11,21 +11,23 @@ import subprocess
 import sys
 from pathlib import Path
 
+ARTIFACT_DIR = Path("artifacts/tmp")
+
 
 def test_compare_command():
     """Test compare command with meta.json generation."""
-    
+    ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     # Test command
     cmd = [
         "capmaster", "compare",
-        "--file1", "cases/dbs_20251028-Masked/B_processed.pcap",
+        "--file1", "data/cases/dbs_20251028-Masked/B_processed.pcap",
         "--file1-pcapid", "1",
-        "--file2", "cases/dbs_20251028-Masked/A_processed.pcap",
+        "--file2", "data/cases/dbs_20251028-Masked/A_processed.pcap",
         "--file2-pcapid", "0",
         "--show-flow-hash",
         "--matched-only",
         "--match-mode", "one-to-many",
-        "-o", "tmp/packet_differences.md"
+        "-o", str(ARTIFACT_DIR / "packet_differences.md")
     ]
     
     print("=" * 80)
@@ -49,7 +51,7 @@ def test_compare_command():
     print()
     
     # Check output file
-    output_file = Path("tmp/packet_differences.md")
+    output_file = ARTIFACT_DIR / "packet_differences.md"
     if not output_file.exists():
         print(f"❌ Output file not found: {output_file}")
         return False
@@ -57,7 +59,7 @@ def test_compare_command():
     print(f"✓ Output file exists: {output_file}")
     
     # Check meta.json file
-    meta_file = Path("tmp/packet_differences.meta.json")
+    meta_file = ARTIFACT_DIR / "packet_differences.meta.json"
     if not meta_file.exists():
         print(f"❌ Meta.json file not found: {meta_file}")
         return False

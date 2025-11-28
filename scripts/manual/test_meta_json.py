@@ -2,7 +2,7 @@
 """Manual/local test script to verify meta.json file generation for match commands.
 
 NOTE:
-- This script uses a hard-coded local path (/Users/ricky/Downloads/2hops/dbs_1112_2/) and is not portable.
+- This script expects test data under data/2hops/dbs_1112_2/ inside the repo root.
 - It is not collected by pytest; treat it as a personal helper/legacy script.
 """
 
@@ -43,21 +43,21 @@ def main():
     print("=" * 80)
     
     # Test data directory
-    test_dir = Path("/Users/ricky/Downloads/2hops/dbs_1112_2/")
+    test_dir = Path("data/2hops/dbs_1112_2/")
     
     if not test_dir.exists():
         print(f"Error: Test directory not found: {test_dir}")
         print("Please update the test_dir path in the script.")
         return 1
     
-    # Create tmp directory for outputs
-    tmp_dir = Path("tmp")
+    # Create artifacts/tmp directory for outputs
+    tmp_dir = Path("artifacts/tmp")
     tmp_dir.mkdir(exist_ok=True)
     
     tests = [
         {
             "name": "Match command",
-            "cmd": ["python", "-m", "capmaster", "match", "-i", str(test_dir), "-o", "tmp/test_matched_connections.txt"],
+            "cmd": ["python", "-m", "capmaster", "match", "-i", str(test_dir), "-o", str(tmp_dir / "test_matched_connections.txt")],
             "output": tmp_dir / "test_matched_connections.txt",
             "expected_id": "matched_connections",
             "expected_source": "basic",
@@ -72,9 +72,9 @@ def main():
                 "-i",
                 str(test_dir),
                 "--matched-connections",
-                "tmp/test_matched_connections.txt",
+                str(tmp_dir / "test_matched_connections.txt"),
                 "-o",
-                "tmp/test_topology.txt",
+                str(tmp_dir / "test_topology.txt"),
             ],
             "output": tmp_dir / "test_topology.txt",
             "expected_id": "topology",

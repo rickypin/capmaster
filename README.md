@@ -305,6 +305,54 @@ capmaster -v analyze -i sample.pcap
 capmaster -vv match -i captures/
 ```
 
+## Repository Layout
+
+- `capmaster/` – Core CLI, plugins, and utilities.
+- `resources/` – Versioned assets such as `services.txt` (pass via
+  `--service-list resources/services.txt`) and pipeline templates like
+  `pipeline_match_test.yaml`.
+- `data/` – Workspace-local datasets (symlinks to `2hops`, `cases`, `downloads`,
+  etc.). These entries are gitignored; create or update them per your machine.
+- `scripts/` – Automation helpers and manual experiments. Subdirectories include
+  `scripts/debug/` and `scripts/tests/` for relocated tooling.
+- `artifacts/` – Default drop zone for runtime outputs. Ignored by Git; create
+  subfolders such as `analysis/`, `benchmarks/`, and `tmp/` as needed.
+- `reports/` – Curated, version-controlled deliverables promoted from
+  `artifacts/analysis/`.
+
+## Artifacts and Reports
+
+1. Point CLI commands and scripts to `artifacts/...` using `-o/--output` or
+   script arguments.
+2. Inspect the generated files locally.
+3. Copy the finalized report to `reports/analysis/<case>/` (or another tracked
+   folder) before committing.
+
+Example:
+
+```bash
+mkdir -p artifacts/tmp
+capmaster match -i data/2hops/aomenjinguanju_10MB -o artifacts/tmp/matched_connections.txt
+cp artifacts/tmp/matched_connections.txt reports/analysis/aomenjinguanju-matched.txt
+```
+
+## Utility Scripts
+
+- Debug TCP roles extracted from PCAPs:
+
+  ```bash
+  python scripts/debug/debug_topology_streams.py
+  ```
+
+- Verify that `ServerDetector` honors the bundled service list:
+
+  ```bash
+  python scripts/tests/test_service_list.py
+  ```
+
+  Both scripts expect to be executed from the repository root so relative paths
+  (e.g., `resources/services.txt`) resolve correctly.
+
 ## Architecture
 
 CapMaster uses a two-layer plugin architecture:

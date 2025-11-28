@@ -169,7 +169,7 @@ def test_single_case(case_dir: Path) -> dict:
 def main():
     """Compare all strategies on multiple representative cases."""
     # Test cases directory
-    base_dir = Path("/Users/ricky/Downloads/2hops")
+    base_dir = Path("data/2hops")
     if not base_dir.exists():
         print(f"Error: Base directory not found: {base_dir}")
         return 1

@@ -47,7 +47,7 @@ def test_config(
     }
 
 def main() -> int:
-    case_dir = Path("/Users/ricky/Downloads/2hops/TC-001-1-20160407")
+    case_dir = Path("data/2hops/TC-001-1-20160407")
     pcaps = sorted(case_dir.glob("*.pcap"))
     
     if len(pcaps) < 2:

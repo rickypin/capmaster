@@ -620,11 +620,11 @@ Use `capmaster preprocess --help` 查看完整参数说明，包括：
 
 ## Pipeline Command
 
-`run-pipeline` 允许借助 YAML 描述多步骤流程，例如先 match、再 topology、再 quality analysis。示例配置见 `examples/pipeline_standard.yaml`。
+`run-pipeline` 允许借助 YAML 描述多步骤流程，例如先 match、再 topology、再 quality analysis。示例配置见 `examples/pipeline_standard.yaml`，最小可运行模板位于 `resources/pipeline_match_test.yaml`。
 
 ```bash
 capmaster run-pipeline --file1 A.pcap --file2 B.pcap \
-  -c tmp/topology_and_comparison.yaml -o tmp/output
+  -c resources/pipeline_match_test.yaml -o artifacts/tmp/pipeline_output
 ```
 
 全局 CLI 参数会自动传入每个步骤：
@@ -663,6 +663,30 @@ Pipeline 支持在每个步骤上添加 `when` 守卫来做条件执行，例如
 
 当某一步因 `when` 条件不满足而跳过时，后续引用其输出的步骤需要额外 `require_steps` 保护，否则变量解析会失败。
 
+## Artifact Workspace
+
+所有运行产出默认落在 `artifacts/` 下，按类型划分：
+
+- `artifacts/analysis/`：脚本与手工汇总的 Markdown/JSON 报告。
+- `artifacts/benchmarks/`：批量基准脚本的原始 stdout 与汇总 CSV。
+- `artifacts/tmp/`：一次性调试输出（match/topology/streamdiff/pipeline 等）。
+
+采集报告推荐流程：
+
+1. 将 CLI 的 `-o/--output`、脚本输出目录等指向 `artifacts/...`。
+2. 检查生成内容是否符合预期。
+3. 需要版本沉淀时，将成品复制到 `reports/analysis/<case>/` 并在提交中跟踪。
+
+示例：
+
+```bash
+mkdir -p artifacts/tmp
+capmaster match -i data/2hops/aomenjinguanju_10MB -o artifacts/tmp/matched_connections.txt
+cp artifacts/tmp/matched_connections.txt reports/analysis/aomenjinguanju-matched.txt
+```
+
+示例服务列表位于 `resources/services.txt`，可通过 `--service-list resources/services.txt` 传给 match/topology/pipeline 命令。
+
 ## Topology Command
 
 The `topology` command renders network topology for one or two capture points.
@@ -674,7 +698,7 @@ The `topology` command renders network topology for one or two capture points.
 capmaster topology --single-file single_capture.pcap -o single_topology.txt
 
 # Directory containing exactly two captures + matched connections
-capmaster topology -i /path/to/2hops/ --matched-connections matched_connections.txt -o topology.txt
+capmaster topology -i /path/to/data/2hops/ --matched-connections matched_connections.txt -o topology.txt
 
 # Explicit files
 capmaster topology --file1 a.pcap --file2 b.pcap --matched-connections matched_connections.txt -o topology.txt
@@ -924,8 +948,13 @@ capmaster -vv analyze -i capture.pcap 2> debug.log
 project/
 ├── raw/              # Original captures
 ├── filtered/         # Filtered captures
-├── analysis/         # Analysis results
-└── matches/          # Match results
+├── data/             # Symlinks to large datasets (2hops, cases, downloads, etc.)
+├── artifacts/        # Runtime outputs (ignored by Git)
+│   ├── analysis/
+│   ├── benchmarks/
+│   └── tmp/
+└── reports/          # Curated, versioned deliverables
+    └── analysis/
 ```
 
 ### 2. Naming Conventions
@@ -940,8 +969,8 @@ server_2024-01-15_10-30.pcap
 
 Remove temporary files:
 ```bash
-# Clean old statistics
-find analysis/ -name "*.txt" -mtime +30 -delete
+# Clean old statistics stored under artifacts
+find artifacts/analysis -name "*.txt" -mtime +30 -delete
 ```
 
 ### 4. Version Control

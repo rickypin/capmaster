@@ -2,8 +2,12 @@
 """Test script to verify ServerDetector behavior with service list."""
 
 from pathlib import Path
-from capmaster.plugins.match.server_detector import ServerDetector
+
 from capmaster.core.connection.models import TcpConnection
+from capmaster.plugins.match.server_detector import ServerDetector
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SERVICE_LIST_PATH = REPO_ROOT / "resources" / "services.txt"
 
 # Create a test connection
 def create_test_connection():
@@ -53,15 +57,14 @@ print()
 
 # Test with service list
 print("=" * 80)
-print("Test 2: With service list (services.txt)")
+print(f"Test 2: With service list ({SERVICE_LIST_PATH})")
 print("=" * 80)
-service_list_path = Path("services.txt")
-if service_list_path.exists():
+if SERVICE_LIST_PATH.exists():
     print(f"Service list content:")
-    print(service_list_path.read_text())
+    print(SERVICE_LIST_PATH.read_text())
     print()
     
-    detector2 = ServerDetector(service_list_path=service_list_path)
+    detector2 = ServerDetector(service_list_path=SERVICE_LIST_PATH)
     print(f"Loaded service list IPs: {detector2._service_list_ips}")
     print(f"Loaded service list endpoints: {detector2._service_list_endpoints}")
     print()
@@ -88,5 +91,5 @@ if service_list_path.exists():
     print(f"  server_matched: {server_matched}")
     print(f"  client_matched: {client_matched}")
 else:
-    print("services.txt not found!")
+    print(f"{SERVICE_LIST_PATH} not found!")
 

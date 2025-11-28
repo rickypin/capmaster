@@ -14,7 +14,7 @@ from capmaster.core.connection.behavioral_matcher import BehavioralMatcher
 from capmaster.core.connection.matcher import BucketStrategy, MatchMode
 
 def main() -> int:
-    case_dir = Path("/Users/ricky/Downloads/2hops/TC-001-1-20160407")
+    case_dir = Path("data/2hops/TC-001-1-20160407")
     pcaps = sorted(case_dir.glob("*.pcap"))
     
     if len(pcaps) < 2:

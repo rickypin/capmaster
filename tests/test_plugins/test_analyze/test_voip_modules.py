@@ -234,10 +234,10 @@ class TestVoIPModulesIntegration:
     @pytest.fixture
     def voip_pcap(self) -> Path:
         """Return path to VOIP test PCAP file."""
-        pcap_path = Path("cases_02/V-001/VOIP.pcap")
+        pcap_path = Path("data/cases_02/V-001/VOIP.pcap")
         if not pcap_path.exists():
             # Try alternative path
-            pcap_path = Path("cases/V-001/VOIP.pcap")
+            pcap_path = Path("data/cases/V-001/VOIP.pcap")
         if not pcap_path.exists():
             pytest.skip(f"VOIP test PCAP file not found")
         return pcap_path

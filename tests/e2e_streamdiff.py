@@ -5,7 +5,7 @@ import shutil
 
 # Configuration
 CAPMASTER_BIN = [sys.executable, "-m", "capmaster"]
-TEST_DATA_DIR = Path("cases_02")
+TEST_DATA_DIR = Path("data/cases_02")
 DUAL_PCAP_DIR = TEST_DATA_DIR / "TC-001-1-20160407"
 PCAP_A = DUAL_PCAP_DIR / "TC-001-1-20160407-A.pcap"
 PCAP_B = DUAL_PCAP_DIR / "TC-001-1-20160407-B.pcap"

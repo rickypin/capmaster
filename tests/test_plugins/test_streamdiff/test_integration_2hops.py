@@ -7,7 +7,7 @@ These tests exercise the happy-path end-to-end flow:
 - run `capmaster streamdiff` on the same case using that matched-connections file
 - assert that streamdiff exits successfully and prints a report header
 
-Tests will be automatically skipped if the local `2hops/` directory is not
+Tests will be automatically skipped if the local `data/2hops/` directory is not
 present (since these PCAPs are not part of the repository).
 """
 
@@ -20,7 +20,7 @@ import sys
 import pytest
 
 
-BASE_2HOPS_DIR = Path("2hops")
+BASE_2HOPS_DIR = Path("data/2hops")
 
 
 def _have_2hops_data() -> bool:
@@ -28,7 +28,9 @@ def _have_2hops_data() -> bool:
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(not _have_2hops_data(), reason="2hops directory not present; skipping integration tests")
+@pytest.mark.skipif(
+    not _have_2hops_data(), reason="data/2hops directory not present; skipping integration tests"
+)
 class TestStreamDiff2Hops:
     """End-to-end streamdiff integration tests on real 2hops cases."""
 

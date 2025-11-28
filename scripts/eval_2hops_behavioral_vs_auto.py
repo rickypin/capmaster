@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 
-ROOT_CASES = Path(os.environ.get("EVAL_CASES_DIR", "/Users/ricky/Downloads/2hops"))
+ROOT_CASES = Path(os.environ.get("EVAL_CASES_DIR", "data/2hops"))
 OUT_ROOT = Path(os.environ.get("EVAL_OUT_DIR", "eval_results/2hops"))
 PARALLEL = int(os.environ.get("EVAL_PARALLEL", "3"))
 MAX_CASES: Optional[int] = int(os.environ["EVAL_MAX_CASES"]) if os.environ.get("EVAL_MAX_CASES") else None

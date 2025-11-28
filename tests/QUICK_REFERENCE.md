@@ -193,7 +193,7 @@ pytest --strict-warnings
 - tshark 4.0+
 
 ### 可选
-- PCAP 测试文件（`cases/` 目录）
+- PCAP 测试文件（`data/cases/` 目录）
   - 如果缺失，相关测试会自动跳过
 
 ## 常见问题

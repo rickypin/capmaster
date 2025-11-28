@@ -27,6 +27,6 @@ def print_stream_roles(pcap_path: str, label: str) -> None:
 
 
 if __name__ == "__main__":
-    print_stream_roles("2hops/dbs_ori/0215-0315_10.64.0.125.pcap", "Capture A")
-    print_stream_roles("2hops/dbs_ori/idc_appdbdefault_20250910030547.pcap", "Capture B")
+    print_stream_roles("data/2hops/dbs_ori/0215-0315_10.64.0.125.pcap", "Capture A")
+    print_stream_roles("data/2hops/dbs_ori/idc_appdbdefault_20250910030547.pcap", "Capture B")
 

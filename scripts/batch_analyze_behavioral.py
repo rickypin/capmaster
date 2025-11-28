@@ -91,7 +91,7 @@ def analyze_case(case_dir: Path) -> dict[str, Any] | None:
     }
 
 def main() -> int:
-    root_cases = Path("/Users/ricky/Downloads/2hops")
+    root_cases = Path("data/2hops")
     if not root_cases.exists():
         print(f"Error: {root_cases} not found", file=sys.stderr)
         return 1

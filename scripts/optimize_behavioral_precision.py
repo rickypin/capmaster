@@ -136,7 +136,7 @@ def analyze_case(case_dir: Path):
 
 def main():
     """Optimize Behavioral precision on multiple cases."""
-    base_dir = Path("/Users/ricky/Downloads/2hops")
+    base_dir = Path("data/2hops")
     
     # Test cases
     test_cases = [

@@ -24,7 +24,7 @@ class TestTopologyCLIInputValidation:
         result = self._run_topology([])
 
         assert result.returncode != 0
-        assert "Input file count mismatch" in result.stderr
+        assert "No valid input files found" in result.stderr
 
     def test_cli_input_and_dual_file_mutually_exclusive(self, tmp_path: Path) -> None:
         """-i/--input cannot be used together with --file1/--file2."""

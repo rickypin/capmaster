@@ -71,7 +71,12 @@ def test_dual_pipeline_no_pairs_fallback_single(monkeypatch, tmp_path: Path) -> 
             self.file_name = file_name
             self.services = []
 
-    def fake_single(file_path: Path, *, service_list: Path | None) -> DummySingleTopology:  # type: ignore[override]
+    def fake_single(
+        file_path: Path,
+        *,
+        service_list: Path | None,
+        quiet: bool = False,
+    ) -> DummySingleTopology:  # type: ignore[override]
         return DummySingleTopology(file_path.name)
 
     def fake_format(single: DummySingleTopology, *, capture_label: str = "A") -> str:  # type: ignore[override]
@@ -152,7 +157,12 @@ def test_dual_pipeline_no_rebuilt_matches_respects_behavior(monkeypatch, tmp_pat
             self.file_name = file_name
             self.services = []
 
-    def fake_single2(file_path: Path, *, service_list: Path | None) -> DummySingleTopology2:  # type: ignore[override]
+    def fake_single2(
+        file_path: Path,
+        *,
+        service_list: Path | None,
+        quiet: bool = False,
+    ) -> DummySingleTopology2:  # type: ignore[override]
         return DummySingleTopology2(file_path.name)
 
     def fake_format2(single: DummySingleTopology2, *, capture_label: str = "A") -> str:  # type: ignore[override]
