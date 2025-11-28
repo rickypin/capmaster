@@ -141,11 +141,14 @@ dmypy.json
 # ============================================
 # Test cases and sample PCAP files
 cases/
+cases
 cases_02/
 # Preprocess plugin test cases
 tests/preprocess_cases/
 downloads/
+downloads
 2hops/
+2hops
 benchmarks/
 tmp/
 
