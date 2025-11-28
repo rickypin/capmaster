@@ -1,0 +1,3 @@
+HTTP Response Summary
+Status,Severity,Count,Share
+200,Low,3651,100.0%

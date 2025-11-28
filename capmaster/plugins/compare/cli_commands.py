@@ -124,7 +124,7 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
         match_mode: str,
         match_file: Path | None,
     ) -> None:
-        """Compare TCP connections at packet level between PCAP files.
+        """Compare TCP connections at packet level.
 
         This command first matches TCP connections between two PCAP files,
         then performs detailed packet-level comparison for each matched pair.

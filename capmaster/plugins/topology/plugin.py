@@ -99,7 +99,7 @@ class TopologyPlugin(PluginBase):
             service_list: Path | None,
             silent: bool,
         ) -> None:
-            """Render network topology for one or two capture points.
+            """Render network topology for captures.
 
             Examples:
               # Single capture

@@ -177,9 +177,7 @@ class AnalyzePlugin(PluginBase):
             file4: Path | None,
             file5: Path | None,
             file6: Path | None,
-            allow_no_input: bool,
-            strict: bool,
-            quiet: bool,
+            silent_exit: bool,
             output_dir: Path | None,
             workers: int,
             output_format: str,
@@ -246,9 +244,7 @@ class AnalyzePlugin(PluginBase):
                 file4=file4,
                 file5=file5,
                 file6=file6,
-                allow_no_input=allow_no_input,
-                strict=strict,
-                quiet=quiet,
+                silent_exit=silent_exit,
                 output_dir=output_dir,
                 workers=workers,
                 output_format=output_format,
@@ -267,9 +263,7 @@ class AnalyzePlugin(PluginBase):
         file4: Path | None = None,
         file5: Path | None = None,
         file6: Path | None = None,
-        allow_no_input: bool = False,
-        strict: bool = False,
-        quiet: bool = False,
+        silent_exit: bool = False,
         output_dir: Path | None = None,
         workers: int = 1,
         output_format: str = "txt",
@@ -279,7 +273,7 @@ class AnalyzePlugin(PluginBase):
         **kwargs: Any,
     ) -> int:
         """Execute analyze plugin logic."""
-        with _silence_analyze_logger(silent or quiet):
+        with _silence_analyze_logger(silent):
             return self._execute_impl(
                 input_path=input_path,
                 file1=file1,
@@ -288,9 +282,7 @@ class AnalyzePlugin(PluginBase):
                 file4=file4,
                 file5=file5,
                 file6=file6,
-                allow_no_input=allow_no_input,
-                strict=strict,
-                quiet=quiet,
+                silent_exit=silent_exit,
                 output_dir=output_dir,
                 workers=workers,
                 output_format=output_format,
@@ -309,9 +301,7 @@ class AnalyzePlugin(PluginBase):
         file4: Path | None = None,
         file5: Path | None = None,
         file6: Path | None = None,
-        allow_no_input: bool = False,
-        strict: bool = False,
-        quiet: bool = False,
+        silent_exit: bool = False,
         output_dir: Path | None = None,
         workers: int = 1,
         output_format: str = "txt",
@@ -327,7 +317,7 @@ class AnalyzePlugin(PluginBase):
         input_files = InputManager.resolve_inputs(input_path, file_args)
         
         # Validate for AnalyzePlugin (needs at least 1 file)
-        InputManager.validate_file_count(input_files, min_files=1, allow_no_input=allow_no_input)
+        InputManager.validate_file_count(input_files, min_files=1, silent_exit=silent_exit)
         
         pcap_files = [f.path for f in input_files]
 

@@ -118,9 +118,7 @@ class StreamDiffPlugin(PluginBase):
             file4: Path | None,
             file5: Path | None,
             file6: Path | None,
-            allow_no_input: bool,
-            strict: bool,
-            quiet: bool,
+            silent_exit: bool,
             matched_connections: Path | None,
             pair_index: int | None,
             file1_stream_id: int | None,
@@ -153,9 +151,7 @@ class StreamDiffPlugin(PluginBase):
                 file4=file4,
                 file5=file5,
                 file6=file6,
-                allow_no_input=allow_no_input,
-                strict=strict,
-                quiet=quiet,
+                silent_exit=silent_exit,
                 matched_connections=matched_connections,
                 pair_index=pair_index,
                 file1_stream_id=file1_stream_id,
@@ -174,9 +170,7 @@ class StreamDiffPlugin(PluginBase):
         file4: Path | None = None,
         file5: Path | None = None,
         file6: Path | None = None,
-        allow_no_input: bool = False,
-        strict: bool = False,
-        quiet: bool = False,
+        silent_exit: bool = False,
         matched_connections: Path | None = None,
         pair_index: int | None = None,
         file1_stream_id: int | None = None,
@@ -185,7 +179,7 @@ class StreamDiffPlugin(PluginBase):
         silent: bool = False,
     ) -> int:
         """Execute the streamdiff plugin."""
-        with _silence_streamdiff_logger(silent or quiet):
+        with _silence_streamdiff_logger(silent):
             return self._execute_impl(
                 input_path=input_path,
                 file1=file1,
@@ -194,9 +188,7 @@ class StreamDiffPlugin(PluginBase):
                 file4=file4,
                 file5=file5,
                 file6=file6,
-                allow_no_input=allow_no_input,
-                strict=strict,
-                quiet=quiet,
+                silent_exit=silent_exit,
                 matched_connections=matched_connections,
                 pair_index=pair_index,
                 file1_stream_id=file1_stream_id,
@@ -213,9 +205,7 @@ class StreamDiffPlugin(PluginBase):
         file4: Path | None = None,
         file5: Path | None = None,
         file6: Path | None = None,
-        allow_no_input: bool = False,
-        strict: bool = False,
-        quiet: bool = False,
+        silent_exit: bool = False,
         matched_connections: Path | None = None,
         pair_index: int | None = None,
         file1_stream_id: int | None = None,
@@ -223,17 +213,14 @@ class StreamDiffPlugin(PluginBase):
         output_file: Path | None = None,
     ) -> int:
         """Internal implementation for streamdiff execution."""
-        try:
-            # Resolve inputs
-            file_args = {
-                1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6
-            }
-            input_files = InputManager.resolve_inputs(input_path, file_args)
-            
-            # Validate for StreamDiffPlugin (needs exactly 2 files)
-            InputManager.validate_file_count(input_files, min_files=2, max_files=2, allow_no_input=allow_no_input)
-        except CapMasterError as exc:
-            return handle_error(exc, show_traceback=False)
+        # Resolve inputs
+        file_args = {
+            1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6
+        }
+        input_files = InputManager.resolve_inputs(input_path, file_args)
+        
+        # Validate for StreamDiffPlugin (needs exactly 2 files)
+        InputManager.validate_file_count(input_files, min_files=2, max_files=2, silent_exit=silent_exit)
         
         # Extract files
         file_a = input_files[0].path
