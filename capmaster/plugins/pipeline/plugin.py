@@ -120,5 +120,7 @@ class PipelinePlugin(PluginBase):
             output_dir=output_dir,
             dry_run=dry_run,
             quiet=quiet,
+            allow_no_input=allow_no_input,
+            strict=strict,
         )
         return runner.run()

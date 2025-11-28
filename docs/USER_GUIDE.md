@@ -618,6 +618,51 @@ Use `capmaster preprocess --help` 查看完整参数说明，包括：
 - `--archive-original-files` / `--no-archive-original-files`
 - 报告控制：`--no-report`、`--report-path`
 
+## Pipeline Command
+
+`run-pipeline` 允许借助 YAML 描述多步骤流程，例如先 match、再 topology、再 quality analysis。示例配置见 `examples/pipeline_standard.yaml`。
+
+```bash
+capmaster run-pipeline --file1 A.pcap --file2 B.pcap \
+  -c tmp/topology_and_comparison.yaml -o tmp/output
+```
+
+全局 CLI 参数会自动传入每个步骤：
+
+- `-q/--quiet`：所有步骤以安静模式运行，不需要在 YAML 中逐一设置。
+- `--strict`：子命令共享同一严格模式，任何 warning 直接提升为错误。
+- `--allow-no-input`：当输入文件数量不足时，各子命令会按其内建逻辑静默退出（必要时会触发 `SystemExit(0)`，由 pipeline 捕获后跳过该步骤）。
+- `-i/--input` 与 `--file1`~`--file6`：默认继承到每个步骤，除非在 YAML 的该步骤 `args` 中显式覆盖。若步骤引用的 `${FILEn}` 未能替换（例如只提供了 file1），该参数会被自动移除，从而触发 `allow-no-input` 的验证。
+
+如果确实需要让某个步骤覆盖这些行为，仍可在 YAML 的对应 `args` 中显式设置 `quiet`/`strict`/`allow-no-input`，该值会覆盖从 CLI 继承的标志。
+
+### 条件执行（`when`）
+
+Pipeline 支持在每个步骤上添加 `when` 守卫来做条件执行，例如：
+
+```yaml
+- id: match_conn
+  command: match
+  when:
+    min_input_files: 2          # 至少需要双抓包
+  args:
+    output: "${OUTPUT}/matched_connections.txt"
+
+- id: topo_analysis
+  command: topology
+  when:
+    require_steps: [match_conn] # 依赖上一步已执行
+  args:
+    matched-connections: "${STEP.match_conn.output}"
+```
+
+可用条件：
+
+- `min_input_files` / `max_input_files`：以 run-pipeline 实际输入数量做上下限；不满足时跳过该步。
+- `require_steps`：字符串或字符串列表；只有在列出的步骤已经成功执行并产生输出时才运行当前步骤。适合处理“若 match 被跳过则 topology 也跳过”的场景。
+
+当某一步因 `when` 条件不满足而跳过时，后续引用其输出的步骤需要额外 `require_steps` 保护，否则变量解析会失败。
+
 ## Topology Command
 
 The `topology` command renders network topology for one or two capture points.
