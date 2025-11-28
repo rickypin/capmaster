@@ -69,11 +69,10 @@ def unified_input_options(func: Callable) -> Callable:
     Adds the following parameters:
     - -i/--input: Directory, file, or comma-separated list
     - --file1 through --file6: Individual file inputs
-    - --silent-exit: Exit with code 0 if file count requirements are not met
+    - --allow-no-input: Exit with code 0 if file count requirements are not met
 
     These options are designed to be processed by InputManager.resolve_inputs().
     """
-    # Add --silent-exit
     # Add --allow-no-input (formerly --silent-exit)
     func = click.option(
         "--allow-no-input",

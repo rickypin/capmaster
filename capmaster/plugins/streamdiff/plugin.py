@@ -103,11 +103,6 @@ class StreamDiffPlugin(PluginBase):
             type=click.Path(path_type=Path),
             help="Output file for the streamdiff report (default: stdout).",
         )
-        @click.option(
-            "--silent",
-            is_flag=True,
-            help="Suppress progress bars and non-error logs.",
-        )
         @click.pass_context
         def streamdiff_command(
             ctx: click.Context,
@@ -118,13 +113,14 @@ class StreamDiffPlugin(PluginBase):
             file4: Path | None,
             file5: Path | None,
             file6: Path | None,
-            silent_exit: bool,
+            allow_no_input: bool,
+            strict: bool,
+            quiet: bool,
             matched_connections: Path | None,
             pair_index: int | None,
             file1_stream_id: int | None,
             file2_stream_id: int | None,
             output_file: Path | None,
-            silent: bool,
         ) -> None:
             """Compare a single TCP connection between two captures and list
             packets that are present only in A or only in B.
@@ -151,13 +147,14 @@ class StreamDiffPlugin(PluginBase):
                 file4=file4,
                 file5=file5,
                 file6=file6,
-                silent_exit=silent_exit,
+                allow_no_input=allow_no_input,
+                strict=strict,
+                quiet=quiet,
                 matched_connections=matched_connections,
                 pair_index=pair_index,
                 file1_stream_id=file1_stream_id,
                 file2_stream_id=file2_stream_id,
                 output_file=output_file,
-                silent=silent,
             )
             ctx.exit(exit_code)
 
@@ -170,16 +167,19 @@ class StreamDiffPlugin(PluginBase):
         file4: Path | None = None,
         file5: Path | None = None,
         file6: Path | None = None,
-        silent_exit: bool = False,
+        allow_no_input: bool = False,
+        strict: bool = False,
+        quiet: bool = False,
         matched_connections: Path | None = None,
         pair_index: int | None = None,
         file1_stream_id: int | None = None,
         file2_stream_id: int | None = None,
         output_file: Path | None = None,
-        silent: bool = False,
     ) -> int:
         """Execute the streamdiff plugin."""
-        with _silence_streamdiff_logger(silent):
+        effective_quiet = quiet
+
+        with _silence_streamdiff_logger(effective_quiet):
             return self._execute_impl(
                 input_path=input_path,
                 file1=file1,
@@ -188,7 +188,9 @@ class StreamDiffPlugin(PluginBase):
                 file4=file4,
                 file5=file5,
                 file6=file6,
-                silent_exit=silent_exit,
+                allow_no_input=allow_no_input,
+                strict=strict,
+                quiet=quiet,
                 matched_connections=matched_connections,
                 pair_index=pair_index,
                 file1_stream_id=file1_stream_id,
@@ -205,7 +207,9 @@ class StreamDiffPlugin(PluginBase):
         file4: Path | None = None,
         file5: Path | None = None,
         file6: Path | None = None,
-        silent_exit: bool = False,
+        allow_no_input: bool = False,
+        strict: bool = False,
+        quiet: bool = False,
         matched_connections: Path | None = None,
         pair_index: int | None = None,
         file1_stream_id: int | None = None,
@@ -220,7 +224,12 @@ class StreamDiffPlugin(PluginBase):
         input_files = InputManager.resolve_inputs(input_path, file_args)
         
         # Validate for StreamDiffPlugin (needs exactly 2 files)
-        InputManager.validate_file_count(input_files, min_files=2, max_files=2, silent_exit=silent_exit)
+        InputManager.validate_file_count(
+            input_files,
+            min_files=2,
+            max_files=2,
+            allow_no_input=allow_no_input,
+        )
         
         # Extract files
         file_a = input_files[0].path

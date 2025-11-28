@@ -47,12 +47,6 @@ class PipelinePlugin(PluginBase):
             default=False,
             help="Simulate pipeline execution without running commands.",
         )
-        @click.option(
-            "--silent",
-            is_flag=True,
-            default=False,
-            help="Run in silent mode (suppress output).",
-        )
         @click.pass_context
         def command(
             ctx: click.Context,
@@ -64,10 +58,11 @@ class PipelinePlugin(PluginBase):
             file4: Path | None,
             file5: Path | None,
             file6: Path | None,
-            silent_exit: bool,
+            allow_no_input: bool,
+            strict: bool,
+            quiet: bool,
             output_dir: Path,
             dry_run: bool,
-            silent: bool,
         ) -> None:
             """Run a multi-step analysis pipeline."""
             exit_code = self.execute(
@@ -79,10 +74,11 @@ class PipelinePlugin(PluginBase):
                 file4=file4,
                 file5=file5,
                 file6=file6,
-                silent_exit=silent_exit,
+                allow_no_input=allow_no_input,
+                strict=strict,
+                quiet=quiet,
                 output_dir=output_dir,
                 dry_run=dry_run,
-                silent=silent,
             )
             ctx.exit(exit_code)
 
@@ -97,9 +93,10 @@ class PipelinePlugin(PluginBase):
         file4: Path | None = None,
         file5: Path | None = None,
         file6: Path | None = None,
-        silent_exit: bool = False,
+        allow_no_input: bool = False,
+        strict: bool = False,
+        quiet: bool = False,
         dry_run: bool = False,
-        silent: bool = False,
         **kwargs,
     ) -> int:
         """Execute the pipeline."""
@@ -110,7 +107,11 @@ class PipelinePlugin(PluginBase):
         input_files = InputManager.resolve_inputs(input_path, file_args)
         
         # Validate for PipelinePlugin (needs at least 1 file)
-        InputManager.validate_file_count(input_files, min_files=1, silent_exit=silent_exit)
+        InputManager.validate_file_count(
+            input_files,
+            min_files=1,
+            allow_no_input=allow_no_input,
+        )
 
         runner = PipelineRunner(
             config_path=config_path,
@@ -118,6 +119,6 @@ class PipelinePlugin(PluginBase):
             input_files=input_files,
             output_dir=output_dir,
             dry_run=dry_run,
-            silent=silent,
+            quiet=quiet,
         )
         return runner.run()

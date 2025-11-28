@@ -84,15 +84,15 @@ expect_failure() {
 
 # Analyze plugin scenarios
 ANALYZE_MULTI_DIR="$WORK_DIR/analyze_multi"
-run_cli "analyze via -i on $CASE_MULTI_DIR" analyze -i "$CASE_MULTI_DIR" --silent -o "$ANALYZE_MULTI_DIR"
+run_cli "analyze via -i on $CASE_MULTI_DIR" analyze -i "$CASE_MULTI_DIR" --quiet -o "$ANALYZE_MULTI_DIR"
 [[ -d "$ANALYZE_MULTI_DIR" ]]
 
 ANALYZE_SINGLE_DIR="$WORK_DIR/analyze_single"
-run_cli "analyze via --file1" analyze --file1 "$CASE_MULTI_FILE_APP" --silent -o "$ANALYZE_SINGLE_DIR"
+run_cli "analyze via --file1" analyze --file1 "$CASE_MULTI_FILE_APP" --quiet -o "$ANALYZE_SINGLE_DIR"
 [[ -d "$ANALYZE_SINGLE_DIR" ]]
 
 ANALYZE_COMMA_DIR="$WORK_DIR/analyze_comma"
-run_cli "analyze via comma-separated -i" analyze -i "$CASE_MULTI_FILE_APP,$CASE_MULTI_FILE_LB" --silent -o "$ANALYZE_COMMA_DIR"
+run_cli "analyze via comma-separated -i" analyze -i "$CASE_MULTI_FILE_APP,$CASE_MULTI_FILE_LB" --quiet -o "$ANALYZE_COMMA_DIR"
 [[ -d "$ANALYZE_COMMA_DIR" ]]
 
 ANALYZE_FILES_DIR="$WORK_DIR/analyze_files_args"
@@ -100,16 +100,16 @@ run_cli "analyze via multiple --fileN" analyze \
   --file1 "$CASE_MULTI_FILE_APP" \
   --file2 "$CASE_MULTI_FILE_LB" \
   --file3 "$CASE_SINGLE_FILE_A" \
-  --silent -o "$ANALYZE_FILES_DIR"
+  --quiet -o "$ANALYZE_FILES_DIR"
 [[ -d "$ANALYZE_FILES_DIR" ]]
 
 EMPTY_INPUT="$WORK_DIR/empty_input"
 mkdir -p "$EMPTY_INPUT"
-run_cli "analyze silent-exit on empty directory" analyze -i "$EMPTY_INPUT" --silent-exit --silent -o "$WORK_DIR/analyze_empty"
+run_cli "analyze allow-no-input on empty directory" analyze -i "$EMPTY_INPUT" --allow-no-input --quiet -o "$WORK_DIR/analyze_empty"
 
-expect_failure "analyze fails when only --file2 provided" analyze --file2 "$CASE_MULTI_FILE_LB" --silent -o "$WORK_DIR/analyze_invalid"
+expect_failure "analyze fails when only --file2 provided" analyze --file2 "$CASE_MULTI_FILE_LB" --quiet -o "$WORK_DIR/analyze_invalid"
 
-expect_failure "analyze fails when mixing -i and --fileX" analyze -i "$CASE_MULTI_DIR" --file1 "$CASE_MULTI_FILE_APP" --silent -o "$WORK_DIR/analyze_mix"
+expect_failure "analyze fails when mixing -i and --fileX" analyze -i "$CASE_MULTI_DIR" --file1 "$CASE_MULTI_FILE_APP" --quiet -o "$WORK_DIR/analyze_mix"
 
 # Match plugin scenarios
 MATCH_OUTPUT="$WORK_DIR/matched_connections.txt"
@@ -120,13 +120,13 @@ MATCH_FILES_OUTPUT="$WORK_DIR/matched_connections_files.txt"
 run_cli "match via --file1/--file2" match --file1 "$HOPS_FILE1" --file2 "$HOPS_FILE2" -o "$MATCH_FILES_OUTPUT"
 [[ -f "$MATCH_FILES_OUTPUT" ]]
 
-expect_failure "match requires two files when --silent-exit not set" match --file1 "$HOPS_FILE1"
+expect_failure "match requires two files when --allow-no-input not set" match --file1 "$HOPS_FILE1"
 
-run_cli "match silent-exit with single file" match --file1 "$HOPS_FILE1" --silent-exit
+run_cli "match allow-no-input with single file" match --file1 "$HOPS_FILE1" --allow-no-input
 
 # Streamdiff scenarios
 STREAMDIFF_OUTPUT="$WORK_DIR/streamdiff_report.txt"
-run_cli "streamdiff with matched-connections" streamdiff -i "$HOPS_DIR" --matched-connections "$MATCH_OUTPUT" --pair-index 1 --silent --output "$STREAMDIFF_OUTPUT"
+run_cli "streamdiff with matched-connections" streamdiff -i "$HOPS_DIR" --matched-connections "$MATCH_OUTPUT" --pair-index 1 --quiet --output "$STREAMDIFF_OUTPUT"
 [[ -f "$STREAMDIFF_OUTPUT" ]]
 
 next_scenario "extract stream IDs from matched-report"
@@ -153,19 +153,19 @@ expect_failure "streamdiff fails with insufficient --file inputs" streamdiff --f
 
 # Preprocess scenarios
 PREPROCESS_DIR_OUTPUT="$WORK_DIR/preprocess_dir"
-run_cli "preprocess via -i" preprocess -i "$CASE_SINGLE_DIR" --silent -o "$PREPROCESS_DIR_OUTPUT"
+run_cli "preprocess via -i" preprocess -i "$CASE_SINGLE_DIR" --quiet -o "$PREPROCESS_DIR_OUTPUT"
 [[ -d "$PREPROCESS_DIR_OUTPUT" ]]
 
 PREPROCESS_FILES_OUTPUT="$WORK_DIR/preprocess_files"
-run_cli "preprocess via --file1/--file2" preprocess --file1 "$CASE_SINGLE_FILE_A" --file2 "$CASE_SINGLE_FILE_B" --silent -o "$PREPROCESS_FILES_OUTPUT"
+run_cli "preprocess via --file1/--file2" preprocess --file1 "$CASE_SINGLE_FILE_A" --file2 "$CASE_SINGLE_FILE_B" --quiet -o "$PREPROCESS_FILES_OUTPUT"
 [[ -d "$PREPROCESS_FILES_OUTPUT" ]]
 
-run_cli "preprocess silent-exit with empty input" preprocess -i "$EMPTY_INPUT" --silent-exit --silent -o "$WORK_DIR/preprocess_empty"
+run_cli "preprocess allow-no-input with empty input" preprocess -i "$EMPTY_INPUT" --allow-no-input --quiet -o "$WORK_DIR/preprocess_empty"
 
 # Topology + comparative analysis scenarios
 TOPOLOGY_OUTPUT="$WORK_DIR/topology.txt"
 run_cli "topology with matched connections" \
-  topology -i "$HOPS_DIR" --matched-connections "$MATCH_OUTPUT" --service-list "$SERVICE_LIST" --silent --output "$TOPOLOGY_OUTPUT"
+  topology -i "$HOPS_DIR" --matched-connections "$MATCH_OUTPUT" --service-list "$SERVICE_LIST" --quiet --output "$TOPOLOGY_OUTPUT"
 [[ -f "$TOPOLOGY_OUTPUT" ]]
 
 COMPARATIVE_SERVICE_OUTPUT="$WORK_DIR/comparative_service.txt"
@@ -181,17 +181,17 @@ run_cli "comparative-analysis matched-connections mode" \
 # Pipeline scenarios
 PIPELINE_INPUT_DIR="$WORK_DIR/pipeline_from_input"
 run_cli "run pipeline_standard with -i" \
-  run-pipeline -c examples/pipeline_standard.yaml -i "$HOPS_DIR" -o "$PIPELINE_INPUT_DIR" --silent
+  run-pipeline -c examples/pipeline_standard.yaml -i "$HOPS_DIR" -o "$PIPELINE_INPUT_DIR" --quiet
 [[ -d "$PIPELINE_INPUT_DIR" ]]
 
 PIPELINE_FILE_DIR="$WORK_DIR/pipeline_from_files"
 run_cli "run pipeline_standard with --file1/--file2" \
-  run-pipeline -c examples/pipeline_standard.yaml --file1 "$HOPS_FILE1" --file2 "$HOPS_FILE2" -o "$PIPELINE_FILE_DIR" --silent
+  run-pipeline -c examples/pipeline_standard.yaml --file1 "$HOPS_FILE1" --file2 "$HOPS_FILE2" -o "$PIPELINE_FILE_DIR" --quiet
 [[ -d "$PIPELINE_FILE_DIR" ]]
 
 PIPELINE_SINGLE_DIR="$WORK_DIR/pipeline_single"
-run_cli "run single-input pipeline with silent-exit step" \
-  run-pipeline -c examples/pipeline_single_input.yaml --file1 "$CASE_SINGLE_FILE_A" -o "$PIPELINE_SINGLE_DIR" --silent
+run_cli "run single-input pipeline with allow-no-input step" \
+  run-pipeline -c examples/pipeline_single_input.yaml --file1 "$CASE_SINGLE_FILE_A" -o "$PIPELINE_SINGLE_DIR" --quiet
 [[ -d "$PIPELINE_SINGLE_DIR" ]]
 
 expect_failure "pipeline rejects mixed -i and --file inputs" \

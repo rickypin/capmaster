@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 批量比较 PCAP 文件示例脚本
-使用 --silent 模式减少屏幕输出
+使用 --quiet 模式减少屏幕输出
 """
 
 import subprocess
@@ -97,7 +97,7 @@ class BatchComparer:
             "--file1-pcapid", str(task.pcapid1),
             "--file2", str(task.file2),
             "--file2-pcapid", str(task.pcapid2),
-            "--silent",
+            "--quiet",
             "-o", str(output_file),
         ]
         
@@ -172,7 +172,7 @@ class BatchComparer:
         
         # 打印头部
         self.log("=" * 80)
-        self.log("Batch PCAP Comparison - Silent Mode")
+        self.log("Batch PCAP Comparison - Quiet Mode")
         self.log("=" * 80)
         self.log(f"Total pairs to process: {self.total}")
         self.log(f"Output directory: {self.output_dir}")

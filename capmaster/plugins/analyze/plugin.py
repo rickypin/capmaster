@@ -162,11 +162,6 @@ class AnalyzePlugin(PluginBase):
             is_flag=True,
             help="Generate a JSON sidecar (*.meta.json) for each module output.",
         )
-        @click.option(
-            "--silent",
-            is_flag=True,
-            help="Suppress progress bars and non-error logs.",
-        )
         @click.pass_context
         def analyze_command(
             ctx: click.Context,
@@ -177,13 +172,14 @@ class AnalyzePlugin(PluginBase):
             file4: Path | None,
             file5: Path | None,
             file6: Path | None,
-            silent_exit: bool,
+            allow_no_input: bool,
+            strict: bool,
+            quiet: bool,
             output_dir: Path | None,
             workers: int,
             output_format: str,
             selected_modules: tuple[str, ...],
             generate_sidecar: bool,
-            silent: bool,
         ) -> None:
             """
             Analyze PCAP files and generate statistics.
@@ -244,13 +240,14 @@ class AnalyzePlugin(PluginBase):
                 file4=file4,
                 file5=file5,
                 file6=file6,
-                silent_exit=silent_exit,
+                allow_no_input=allow_no_input,
+                strict=strict,
+                quiet=quiet,
                 output_dir=output_dir,
                 workers=workers,
                 output_format=output_format,
                 selected_modules=selected_modules,
                 generate_sidecar=generate_sidecar,
-                silent=silent,
             )
             ctx.exit(exit_code)
 
@@ -263,17 +260,20 @@ class AnalyzePlugin(PluginBase):
         file4: Path | None = None,
         file5: Path | None = None,
         file6: Path | None = None,
-        silent_exit: bool = False,
+        allow_no_input: bool = False,
+        strict: bool = False,
+        quiet: bool = False,
         output_dir: Path | None = None,
         workers: int = 1,
         output_format: str = "txt",
         selected_modules: tuple[str, ...] | None = None,
         generate_sidecar: bool = False,
-        silent: bool = False,
         **kwargs: Any,
     ) -> int:
         """Execute analyze plugin logic."""
-        with _silence_analyze_logger(silent):
+        effective_quiet = quiet
+
+        with _silence_analyze_logger(effective_quiet):
             return self._execute_impl(
                 input_path=input_path,
                 file1=file1,
@@ -282,13 +282,14 @@ class AnalyzePlugin(PluginBase):
                 file4=file4,
                 file5=file5,
                 file6=file6,
-                silent_exit=silent_exit,
+                allow_no_input=allow_no_input,
+                strict=strict,
+                quiet=quiet,
                 output_dir=output_dir,
                 workers=workers,
                 output_format=output_format,
                 selected_modules=selected_modules,
                 generate_sidecar=generate_sidecar,
-                silent=silent,
                 **kwargs,
             )
 
@@ -301,13 +302,14 @@ class AnalyzePlugin(PluginBase):
         file4: Path | None = None,
         file5: Path | None = None,
         file6: Path | None = None,
-        silent_exit: bool = False,
+        allow_no_input: bool = False,
+        strict: bool = False,
+        quiet: bool = False,
         output_dir: Path | None = None,
         workers: int = 1,
         output_format: str = "txt",
         selected_modules: tuple[str, ...] | None = None,
         generate_sidecar: bool = False,
-        silent: bool = False,
         **kwargs: Any,
     ) -> int:
         # Resolve inputs
@@ -317,7 +319,11 @@ class AnalyzePlugin(PluginBase):
         input_files = InputManager.resolve_inputs(input_path, file_args)
         
         # Validate for AnalyzePlugin (needs at least 1 file)
-        InputManager.validate_file_count(input_files, min_files=1, silent_exit=silent_exit)
+        InputManager.validate_file_count(
+            input_files,
+            min_files=1,
+            allow_no_input=allow_no_input,
+        )
         
         pcap_files = [f.path for f in input_files]
 
@@ -371,7 +377,7 @@ class AnalyzePlugin(PluginBase):
             total_outputs = 0
             failed_files = 0
 
-            progress_ctx = nullcontext() if silent else Progress(
+            progress_ctx = nullcontext() if quiet else Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
                 BarColumn(),

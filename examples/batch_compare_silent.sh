@@ -1,6 +1,6 @@
 #!/bin/bash
 # 批量比较 PCAP 文件示例脚本
-# 使用 --silent 模式减少屏幕输出
+# 使用 --quiet 模式减少屏幕输出
 
 set -e  # 遇到错误立即退出
 
@@ -30,7 +30,7 @@ SUCCESS=0
 FAILED=0
 
 echo "========================================" | tee -a "$LOG_FILE"
-echo "Batch PCAP Comparison - Silent Mode" | tee -a "$LOG_FILE"
+echo "Batch PCAP Comparison - Quiet Mode" | tee -a "$LOG_FILE"
 echo "========================================" | tee -a "$LOG_FILE"
 echo "Total pairs to process: $TOTAL" | tee -a "$LOG_FILE"
 echo "Output directory: $OUTPUT_DIR" | tee -a "$LOG_FILE"
@@ -75,7 +75,7 @@ for i in "${!FILE_PAIRS[@]}"; do
         --file1-pcapid "$PCAPID1" \
         --file2 "$FILE2" \
         --file2-pcapid "$PCAPID2" \
-        --silent \
+        --quiet \
         -o "$OUTPUT_FILE" \
         --show-flow-hash \
         --db-connection "$DB_CONNECTION" \

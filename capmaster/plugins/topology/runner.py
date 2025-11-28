@@ -40,7 +40,7 @@ def run_topology_analysis(
     empty_match_behavior: str = "error",
     output_file: Path | None = None,
     service_list: Path | None = None,
-    silent: bool = False,
+    quiet: bool = False,
 ) -> int:
     """Run topology analysis for single-point or dual-point captures."""
     try:
@@ -57,7 +57,7 @@ def run_topology_analysis(
                     "Matched connections file is not needed for single-file topology analysis.",
                     "Remove --matched-connections or provide two PCAP files.",
                 )
-            result = _run_single_capture_pipeline(files[0], service_list=service_list, silent=silent)
+            result = _run_single_capture_pipeline(files[0], service_list=service_list, quiet=quiet)
             output_text = format_single_topology(result)
         else:
             if matched_connections_file is None:
@@ -71,7 +71,7 @@ def run_topology_analysis(
                 matched_file=matched_connections_file,
                 service_list=service_list,
                 empty_match_behavior=empty_match_behavior,
-                silent=silent,
+                quiet=quiet,
             )
 
         _output_results(output_text, output_file)
@@ -150,7 +150,7 @@ def _run_single_capture_pipeline(
     file_path: Path,
     *,
     service_list: Path | None,
-    silent: bool = False,
+    quiet: bool = False,
 ) -> SingleTopologyInfo:
     """
     Execute single-capture topology analysis.
@@ -160,7 +160,7 @@ def _run_single_capture_pipeline(
     """
     logger.info(f"Analyzing topology for single capture: {file_path.name}")
 
-    with _progress(silent=silent) as progress:
+    with _progress(quiet=quiet) as progress:
         extract_task = None
         if progress:
             extract_task = progress.add_task("[cyan]Extracting connections...", total=1)
@@ -276,7 +276,7 @@ def _run_dual_capture_pipeline(
     matched_file: Path,
     service_list: Path | None,
     empty_match_behavior: str = "error",
-    silent: bool = False,
+    quiet: bool = False,
 ) -> str:
     """Execute dual-capture topology analysis using a matched connections file.
 
@@ -291,7 +291,7 @@ def _run_dual_capture_pipeline(
 
     behavior = empty_match_behavior.lower()
 
-    with _progress(silent=silent) as progress:
+    with _progress(quiet=quiet) as progress:
         parse_task = None
         if progress:
             parse_task = progress.add_task("[cyan]Parsing matched connections...", total=1)
@@ -302,7 +302,7 @@ def _run_dual_capture_pipeline(
                     "No valid connection pairs found in matched connections file. "
                     "Falling back to per-capture single-point topology analysis.",
                 )
-                return _run_dual_single_fallback(file_a, file_b, service_list, silent=silent)
+                return _run_dual_single_fallback(file_a, file_b, service_list, quiet=quiet)
             raise CapMasterError(
                 "No valid connection pairs found in matched connections file.",
                 "Verify the file was generated with 'capmaster match -o ...'.",
@@ -333,7 +333,7 @@ def _run_dual_capture_pipeline(
                     "Could not rebuild any connection matches from the provided file. "
                     "Falling back to per-capture single-point topology analysis.",
                 )
-                return _run_dual_single_fallback(file_a, file_b, service_list, silent=silent)
+                return _run_dual_single_fallback(file_a, file_b, service_list, quiet=quiet)
             raise CapMasterError(
                 "Could not rebuild any connection matches from the provided file.",
                 "Ensure the matched_connections file matches the selected PCAP files.",
@@ -353,7 +353,7 @@ def _run_dual_single_fallback(
     file_a: Path,
     file_b: Path,
     service_list: Path | None,
-    silent: bool = False,
+    quiet: bool = False,
 ) -> str:
     """Run single-capture topology for each file and combine outputs.
 
@@ -361,8 +361,8 @@ def _run_dual_single_fallback(
     of any valid cross-capture matches and ``empty_match_behavior`` is set to
     ``"fallback-single"``.
     """
-    single_a = _run_single_capture_pipeline(file_a, service_list=service_list, silent=silent)
-    single_b = _run_single_capture_pipeline(file_b, service_list=service_list, silent=silent)
+    single_a = _run_single_capture_pipeline(file_a, service_list=service_list, quiet=quiet)
+    single_b = _run_single_capture_pipeline(file_b, service_list=service_list, quiet=quiet)
 
     lines = []
     lines.append(
@@ -451,11 +451,11 @@ def _output_results(output_text: str, output_file: Path | None) -> None:
         print(output_text)
 
 @contextmanager
-def _progress(silent: bool = False) -> Iterator[Progress | None]:
+def _progress(quiet: bool = False) -> Iterator[Progress | None]:
     """
     Context manager that yields a Progress instance with consistent styling.
     """
-    if silent:
+    if quiet:
         yield None
         return
 

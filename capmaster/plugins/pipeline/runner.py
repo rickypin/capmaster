@@ -28,7 +28,7 @@ class PipelineRunner:
         input_files: list[InputFile],
         output_dir: Path,
         dry_run: bool = False,
-        silent: bool = False,
+        quiet: bool = False,
     ):
         self.config_path = config_path
         self.original_input = original_input
@@ -36,7 +36,7 @@ class PipelineRunner:
         self.output_dir = output_dir
         self.output_dir = output_dir
         self.dry_run = dry_run
-        self.silent = silent
+        self.quiet = quiet
         self.step_outputs: Dict[str, Dict[str, Any]] = {}
         self.plugins: Dict[str, PluginBase] = {}
         self._discover_plugins()
@@ -100,9 +100,9 @@ class PipelineRunner:
             # 3. Resolve arguments (CLI -> Python)
             python_args = plugin.resolve_args(command, resolved_args)
 
-            # Inject silent flag if enabled
-            if self.silent:
-                python_args["silent"] = True
+            # Inject quiet flag if enabled
+            if self.quiet:
+                python_args["quiet"] = True
 
             # 4. Type conversion
             method_name = plugin.get_command_map()[command]
@@ -127,7 +127,7 @@ class PipelineRunner:
             except click.exceptions.Exit as exc:
                 if exc.exit_code == 0:
                     logger.info(
-                        "Step %s exited silently (requested by --silent-exit). Skipping step.",
+                        "Step %s exited silently (requested by --allow-no-input, formerly --silent-exit). Skipping step.",
                         step_id,
                     )
                     continue

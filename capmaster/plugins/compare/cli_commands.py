@@ -72,15 +72,6 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
         ),
     )
     @click.option(
-        "--silent",
-        is_flag=True,
-        default=False,
-        help=(
-            "Silent mode: suppress progress bars and screen output "
-            "(logs and file output still work)"
-        ),
-    )
-    @click.option(
         "--match-mode",
         type=click.Choice(["one-to-one", "one-to-many"], case_sensitive=False),
         default="one-to-one",
@@ -120,7 +111,6 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
         matched_only: bool,
         db_connection: str | None,
         kase_id: int | None,
-        silent: bool,
         match_mode: str,
         match_file: Path | None,
     ) -> None:
@@ -211,7 +201,6 @@ def register_compare_command(plugin: "ComparePlugin", cli_group: click.Group) ->
             matched_only=matched_only,
             db_connection=db_connection,
             kase_id=kase_id,
-            silent=silent,
             match_mode=match_mode,
             match_file=match_file,
         )

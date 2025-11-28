@@ -84,7 +84,6 @@ class ComparePlugin(PluginBase):
         matched_only: bool = False,
         db_connection: str | None = None,
         kase_id: int | None = None,
-        silent: bool = False,
         match_mode: str = "one-to-one",
         match_file: Path | None = None,
     ) -> int:
@@ -109,7 +108,6 @@ class ComparePlugin(PluginBase):
             matched_only: Only compare packets that exist in both files with matching IPID
             db_connection: Database connection string (optional)
             kase_id: Case ID for database table name (optional)
-            silent: Silent mode - suppress progress bars and screen output
             match_file: JSON file containing match results from match command (optional)
 
         Returns:
@@ -133,15 +131,17 @@ class ComparePlugin(PluginBase):
                 str(compare_file): input_files[1].pcapid
             }
 
+            effective_quiet = quiet
+
             logger.info(f"Baseline file: {baseline_file.name}")
             logger.info(f"Compare file: {compare_file.name}")
             logger.info(f"Comparison direction: {compare_file.name} relative to {baseline_file.name}")
             if pcap_id_mapping:
                 logger.info(f"PCAP ID mapping: {baseline_file.name} -> {pcap_id_mapping[str(baseline_file)]}, {compare_file.name} -> {pcap_id_mapping[str(compare_file)]}")
 
-            # Use progress bar only if not in silent mode
+            # Use progress bar only if not in quiet mode
             from contextlib import nullcontext
-            progress_context = nullcontext() if silent else Progress(
+            progress_context = nullcontext() if effective_quiet else Progress(
                 SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
                 BarColumn(),
@@ -150,20 +150,28 @@ class ComparePlugin(PluginBase):
 
             with progress_context as progress:
                 # Step 1: Extract connections from both files
-                extract_task = progress.add_task("[cyan]Extracting connections...", total=2) if not silent else None
+                extract_task = (
+                    progress.add_task("[cyan]Extracting connections...", total=2)
+                    if not effective_quiet
+                    else None
+                )
 
                 baseline_connections = self._extract_connections(baseline_file)
                 logger.info(f"Found {len(baseline_connections)} connections in {baseline_file.name}")
-                if not silent:
+                if not effective_quiet:
                     progress.update(extract_task, advance=1)
 
                 compare_connections = self._extract_connections(compare_file)
                 logger.info(f"Found {len(compare_connections)} connections in {compare_file.name}")
-                if not silent:
+                if not effective_quiet:
                     progress.update(extract_task, advance=1)
 
                 # Step 2: Match connections
-                match_task = progress.add_task("[yellow]Matching connections...", total=1) if not silent else None
+                match_task = (
+                    progress.add_task("[yellow]Matching connections...", total=1)
+                    if not effective_quiet
+                    else None
+                )
 
                 if match_file:
                     # Load matches from file
@@ -191,7 +199,7 @@ class ComparePlugin(PluginBase):
                     )
                     logger.info(f"Found {len(matches)} matched connection pairs")
 
-                if not silent:
+                if not effective_quiet:
                     progress.update(match_task, advance=1)
 
                 if not matches:
@@ -199,10 +207,14 @@ class ComparePlugin(PluginBase):
                     return 0
 
                 # Step 3: Compare packets for each matched connection
-                compare_task = progress.add_task(
-                    "[green]Comparing packets...",
-                    total=len(matches),
-                ) if not silent else None
+                compare_task = (
+                    progress.add_task(
+                        "[green]Comparing packets...",
+                        total=len(matches),
+                    )
+                    if not effective_quiet
+                    else None
+                )
 
                 extractor = PacketExtractor()
                 comparator = PacketComparator()
@@ -245,11 +257,15 @@ class ComparePlugin(PluginBase):
                     )
                     results.append((match, baseline_packets, compare_packets, result))
 
-                    if not silent:
+                    if not effective_quiet:
                         progress.update(compare_task, advance=1)
 
                 # Step 4: Output results
-                output_task = progress.add_task("[blue]Writing results...", total=1) if not silent else None
+                output_task = (
+                    progress.add_task("[blue]Writing results...", total=1)
+                    if not effective_quiet
+                    else None
+                )
                 self._output_results(
                     baseline_file,
                     compare_file,
@@ -260,9 +276,9 @@ class ComparePlugin(PluginBase):
                     db_connection,
                     kase_id,
                     pcap_id_mapping,
-                    silent,
+                    effective_quiet,
                 )
-                if not silent:
+                if not effective_quiet:
                     progress.update(output_task, advance=1)
 
             logger.info("Comparison complete")
@@ -394,7 +410,7 @@ class ComparePlugin(PluginBase):
         db_connection: str | None = None,
         kase_id: int | None = None,
         pcap_id_mapping: dict[str, int] | None = None,
-        silent: bool = False,
+        quiet: bool = False,
     ) -> None:
         """
         Output comparison results with categorized statistics.
@@ -412,7 +428,7 @@ class ComparePlugin(PluginBase):
             db_connection: Database connection string (optional)
             kase_id: Case ID for database table name (optional)
             pcap_id_mapping: Mapping from file path to pcap_id (optional)
-            silent: Silent mode - suppress screen output (default: False)
+            quiet: Suppress screen output (default: False)
         """
         # OPTIMIZATION: Cache flow hash calculations to avoid redundant computation
         # Cache key: (client_ip, server_ip, client_port, server_port)
@@ -443,8 +459,8 @@ class ComparePlugin(PluginBase):
                 command_id="packet_differences",
                 source="basic",
             )
-        elif not silent:
-            # Only print to stdout if not in silent mode and no output file specified
+        elif not quiet:
+            # Only print to stdout if not in quiet mode and no output file specified
             print(output_text)
 
         # Write to database if connection parameters provided

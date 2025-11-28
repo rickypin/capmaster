@@ -39,7 +39,7 @@ class TestCompareCLIInputValidation:
                 str(pcap_dir),
                 "--file1",
                 str(file1),
-                "--silent",
+                "--quiet",
             ]
         )
 
@@ -60,7 +60,7 @@ class TestCompareCLIInputValidation:
             [
                 "-i",
                 input_str,
-                "--silent",
+                "--quiet",
             ]
         )
 

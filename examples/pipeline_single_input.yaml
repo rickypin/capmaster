@@ -7,12 +7,12 @@ steps:
     args:
       file1: "${FILE1}"
       output: "${OUTPUT}/matched_optional.txt"
-      silent-exit: true
-      silent: true
+      allow-no-input: true
+      quiet: true
 
   - id: analyze_single
     command: analyze
     args:
       file1: "${FILE1}"
-      silent: true
+      quiet: true
       output: "${OUTPUT}/single_analysis"

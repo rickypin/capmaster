@@ -137,16 +137,6 @@ class PreprocessPlugin(PluginBase):
             default=None,
             help="Custom path for Markdown report",
         )
-        @click.option(
-            "--silent",
-            "silent",
-            is_flag=True,
-            default=False,
-            help=(
-                "Silent mode: suppress info and warning logs from preprocess "
-                "steps (errors are still shown)"
-            ),
-        )
         @click.pass_context
         def preprocess_command(  # noqa: PLR0913 - many CLI options by design
             ctx: click.Context,
@@ -157,7 +147,9 @@ class PreprocessPlugin(PluginBase):
             file4: Path | None,
             file5: Path | None,
             file6: Path | None,
-            silent_exit: bool,
+            allow_no_input: bool,
+            strict: bool,
+            quiet: bool,
             output_dir: Path | None,
             config_path: Path | None,
             steps: Sequence[str],
@@ -177,7 +169,6 @@ class PreprocessPlugin(PluginBase):
             workers: int | None,
             no_report: bool,
             report_path: Path | None,
-            silent: bool,
         ) -> None:
             """Preprocess PCAP files before further analysis.
 
@@ -230,7 +221,9 @@ class PreprocessPlugin(PluginBase):
                 file4=file4,
                 file5=file5,
                 file6=file6,
-                silent_exit=silent_exit,
+                allow_no_input=allow_no_input,
+                strict=strict,
+                quiet=quiet,
                 output_dir=output_dir,
                 config_path=config_path,
                 steps=list(steps),
@@ -250,7 +243,6 @@ class PreprocessPlugin(PluginBase):
                 workers=workers,
                 no_report=no_report,
                 report_path=report_path,
-                silent=silent,
             )
             ctx.exit(exit_code)
 
@@ -263,7 +255,9 @@ class PreprocessPlugin(PluginBase):
         file4: Path | None = None,
         file5: Path | None = None,
         file6: Path | None = None,
-        silent_exit: bool = False,
+        allow_no_input: bool = False,
+        strict: bool = False,
+        quiet: bool = False,
         output_dir: Path | None = None,
         config_path: Path | None = None,
         steps: Sequence[str] | None = None,
@@ -283,19 +277,18 @@ class PreprocessPlugin(PluginBase):
         workers: int | None = None,
         no_report: bool = False,
         report_path: Path | None = None,
-        silent: bool = False,
         **kwargs: Any,
     ) -> int:
         """Execute the preprocess pipeline with merged configuration.
 
-        The ``silent`` flag only affects this plugin's logger to avoid
+        The ``quiet`` flag only affects this plugin's logger to avoid
         changing the global ``capmaster`` logger level, which could
         interfere with other commands running in the same process.
         """
         plugin_logger = logger
         previous_level = plugin_logger.level
 
-        if silent:
+        if quiet:
             plugin_logger.setLevel(logging.ERROR)
 
         try:
@@ -306,7 +299,11 @@ class PreprocessPlugin(PluginBase):
             input_files = InputManager.resolve_inputs(input_path, file_args)
             
             # Validate for PreprocessPlugin (needs at least 1 file)
-            InputManager.validate_file_count(input_files, min_files=1, silent_exit=silent_exit)
+            InputManager.validate_file_count(
+                input_files,
+                min_files=1,
+                allow_no_input=allow_no_input,
+            )
             
             pcap_files = [f.path for f in input_files]
 
@@ -408,7 +405,7 @@ class PreprocessPlugin(PluginBase):
             return 0
 
         except click.exceptions.Exit as exc:
-            # Allow Click's silent-exit (exit code 0) or other explicit exits to propagate cleanly
+            # Allow Click's allow-no-input (exit code 0, formerly silent-exit) or other explicit exits to propagate cleanly
             return exc.exit_code
         except (OSError, PermissionError) as e:
             error = CapMasterError(
@@ -421,6 +418,6 @@ class PreprocessPlugin(PluginBase):
             show_traceback = logger.getEffectiveLevel() <= logging.DEBUG
             return handle_error(e, show_traceback=show_traceback)
         finally:
-            if silent:
+            if quiet:
                 plugin_logger.setLevel(previous_level)
 

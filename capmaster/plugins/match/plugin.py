@@ -84,8 +84,6 @@ class MatchPlugin(PluginBase):
         service_group_mapping: Path | None = None,
         match_json: Path | None = None,
         service_list: Path | None = None,
-
-        silent: bool = False,
         strict: bool = False,
         quiet: bool = False,
     ) -> int:
@@ -135,7 +133,6 @@ class MatchPlugin(PluginBase):
             service_group_mapping=service_group_mapping,
             match_json=match_json,
             service_list=service_list,
-            silent=silent,
             strict=strict,
             allow_no_input=allow_no_input,
             quiet=quiet,
@@ -180,7 +177,9 @@ class MatchPlugin(PluginBase):
         file4: Path | None = None,
         file5: Path | None = None,
         file6: Path | None = None,
-        silent_exit: bool = False,
+        allow_no_input: bool = False,
+        strict: bool = False,
+        quiet: bool = False,
         analysis_type: str = "service",
         topology_file: Path | None = None,
         matched_connections_file: Path | None = None,
@@ -195,7 +194,9 @@ class MatchPlugin(PluginBase):
             file1: Path to first PCAP file (alternative to input_path)
             file2: Path to second PCAP file (alternative to input_path)
             file3-file6: Additional files (ignored for this command)
-            silent_exit: Exit silently if file count mismatch
+            allow_no_input: Exit silently if file count mismatch
+            strict: Reserved for stricter validation modes
+            quiet: Reserved for quiet/low-noise execution
             analysis_type: Type of analysis ("service", "connections", or "both")
             topology_file: Path to topology file (required for service analysis)
             matched_connections_file: Path to matched connections file
@@ -212,7 +213,12 @@ class MatchPlugin(PluginBase):
         input_files = InputManager.resolve_inputs(input_path, file_args)
         
         # Validate for Comparative Analysis (needs exactly 2 files)
-        InputManager.validate_file_count(input_files, min_files=2, max_files=2, silent_exit=silent_exit)
+        InputManager.validate_file_count(
+            input_files,
+            min_files=2,
+            max_files=2,
+            allow_no_input=allow_no_input,
+        )
         
         # Extract files
         f1 = input_files[0]

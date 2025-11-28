@@ -39,7 +39,7 @@ class TestPreprocessPluginCLI:
         assert "--enable-oneway" in result.output
         assert "--enable-time-align" in result.output
         assert "--archive-original-files" in result.output
-        assert "--silent" in result.output
+        assert "--quiet" in result.output
 
     def test_missing_input_is_error(self, runner) -> None:
         """Running without -i/--input should be rejected by Click."""
@@ -47,7 +47,10 @@ class TestPreprocessPluginCLI:
         result = runner.invoke(cli, ["preprocess"])
 
         assert result.exit_code != 0
-        assert "Input file count mismatch" in result.output
+        assert (
+            "Input file count mismatch" in result.output
+            or "No valid input files found" in result.output
+        )
 
     def test_conflicting_enable_disable_flags_error(self, runner) -> None:
         """Conflicting enable/disable flags should result in a user-friendly error."""
@@ -116,7 +119,7 @@ class TestPreprocessPluginCLI:
                     "report.md",
                     "--workers",
                     "4",
-                    "--silent",
+                    "--quiet",
                 ],
             )
 
@@ -129,7 +132,7 @@ class TestPreprocessPluginCLI:
         # report_path is created by Click as a Path object
         assert str(called_kwargs["report_path"]).endswith("report.md")
         assert called_kwargs["workers"] == 4
-        assert called_kwargs["silent"] is True
+        assert called_kwargs["quiet"] is True
 
 
 

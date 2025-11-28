@@ -75,11 +75,6 @@ class TopologyPlugin(PluginBase):
             type=click.Path(exists=True, dir_okay=False, path_type=Path),
             help="Optional service list file (ip:port or ip:*) to aid server detection.",
         )
-        @click.option(
-            "--silent",
-            is_flag=True,
-            help="Suppress progress bars and non-error logs.",
-        )
         @click.pass_context
         def topology_command(
             ctx: click.Context,
@@ -97,7 +92,6 @@ class TopologyPlugin(PluginBase):
             empty_match_behavior: str,
             output_file: Path | None,
             service_list: Path | None,
-            silent: bool,
         ) -> None:
             """Render network topology for captures.
 
@@ -121,7 +115,6 @@ class TopologyPlugin(PluginBase):
                 file5=file5,
                 file6=file6,
 
-                silent=silent,
                 matched_connections=matched_connections,
                 empty_match_behavior=empty_match_behavior,
                 output_file=output_file,
@@ -148,10 +141,9 @@ class TopologyPlugin(PluginBase):
         empty_match_behavior: str = "error",
         output_file: Path | None = None,
         service_list: Path | None = None,
-        silent: bool = False,
     ) -> int:
         """Execute the topology plugin."""
-        with _silence_topology_logger(silent or quiet):
+        with _silence_topology_logger(quiet):
             return self._execute_impl(
                 input_path=input_path,
                 file1=file1,
@@ -185,7 +177,6 @@ class TopologyPlugin(PluginBase):
         empty_match_behavior: str = "error",
         output_file: Path | None = None,
         service_list: Path | None = None,
-        silent: bool = False,
     ) -> int:
         """Delegate to the topology runner."""
         # Resolve inputs
@@ -217,7 +208,7 @@ class TopologyPlugin(PluginBase):
             empty_match_behavior=empty_match_behavior,
             output_file=output_file,
             service_list=service_list,
-            silent=silent,
+            quiet=quiet,
         )
 
     def get_command_map(self) -> dict[str, str]:

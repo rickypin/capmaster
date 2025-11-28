@@ -323,7 +323,7 @@ result = tshark.execute(
    - 所有插件命令必须使用 `capmaster.utils.cli_options.unified_input_options` 来声明输入参数：
      - `-i/--input`: 支持目录、文件或逗号分隔的文件列表。
      - `--file1` 至 `--file6`: 支持显式指定最多 6 个文件。
-     - `--silent-exit`: 支持在文件数量不满足要求时静默退出（返回码 0）。
+      - `--allow-no-input`: 支持在文件数量不满足要求时静默退出（返回码 0，原 --silent-exit）。
    - **禁止**在各个命令中手写上述选项，避免与全局规则不一致。
 
 2. **必须使用 `InputManager` 进行解析**
@@ -344,13 +344,13 @@ result = tshark.execute(
    @cli_group.command()
    @unified_input_options
    @click.pass_context
-   def my_command(ctx, input_path, file1, file2, file3, file4, file5, file6, silent_exit, ...):
+     def my_command(ctx, input_path, file1, file2, file3, file4, file5, file6, allow_no_input, ...):
        # 1. 解析输入
        file_args = {1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6}
        input_files = InputManager.resolve_inputs(input_path, file_args)
        
        # 2. 验证数量 (例如需要至少 1 个文件)
-       InputManager.validate_file_count(input_files, min_files=1, silent_exit=silent_exit)
+       InputManager.validate_file_count(input_files, min_files=1, allow_no_input=allow_no_input)
        
        # 3. 业务逻辑
        for input_file in input_files:

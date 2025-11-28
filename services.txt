@@ -1,2 +1,4 @@
+# Sample service definitions used by regression scripts
+# Format: ip:port per line. Use * to match all ports on a host.
 10.38.92.44:*
 10.38.92.45:*
