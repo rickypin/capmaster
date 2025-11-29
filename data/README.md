@@ -5,6 +5,7 @@ This directory groups all large or external datasets consumed by CapMaster:
 - `2hops/` – Symlink to dual-capture benchmark cases.
 - `cases/` – Symlink to legacy single-capture examples.
 - `cases_02/` – Local directory with curated regression inputs.
+- `preprocess_cases/` – Large troubleshooting datasets for preprocess tests.
 - `downloads/` – Symlink to miscellaneous sample captures.
 
 All entries are ignored by Git to keep the repository lightweight. Create the
