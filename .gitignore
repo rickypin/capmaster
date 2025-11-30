@@ -162,6 +162,11 @@ statistics/
 /analysis/
 scripts/analysis/
 
+# PyInstaller build artifacts
+.pyinstaller/
+*.pkg
+*.toc
+
 # Archive directories (keep README.md but ignore archived files)
 scripts/archive/*
 !scripts/archive/README.md

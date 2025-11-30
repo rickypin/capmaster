@@ -49,6 +49,10 @@ Welcome to the CapMaster documentation! This directory contains comprehensive gu
   - Creating new plugins
   - Code sharing patterns
   - Best practices
+- **[BINARY_PACKAGING_PLAN.md](BINARY_PACKAGING_PLAN.md)** - macOS PyInstaller packaging workflow
+  - Spec file layout & hooks
+  - Build and smoke-test automation
+  - Release checklist and artifacts
 
 ## 🚀 Quick Start
 

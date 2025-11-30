@@ -99,6 +99,17 @@ pip install -r requirements-dev.txt
 pip install -r requirements-database.txt
 ```
 
+## macOS Binary Packaging
+
+Use the PyInstaller tooling in this repo to produce a standalone macOS binary:
+
+1. Create a clean environment with Python 3.12: `python3.12 -m venv .venv && source .venv/bin/activate`.
+2. Install all dependencies plus PyInstaller 6.x: `pip install -r requirements.txt -r requirements-dev.txt -r requirements-database.txt && pip install "pyinstaller==6.*"`.
+3. Build the binary: `./scripts/build_binary.sh`. The script checks for `tshark`, signs the binary, copies the result to `dist/capmaster`, and archives `artifacts/capmaster-macos-<arch>-v<version>.tar.gz`.
+4. Run the smoke test to ensure the bundle boots: `./scripts/tests/run_binary_smoke.sh dist/capmaster` (optional `SMOKE_PCAP` overrides the analyzer input).
+
+For more background (spec layout, hooks, release checklist), see `docs/BINARY_PACKAGING_PLAN.md`.
+
 ## Quick Start
 
 ### 1. Analyze PCAP Files
