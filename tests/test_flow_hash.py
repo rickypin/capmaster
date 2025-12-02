@@ -6,7 +6,7 @@ For Rust compatibility tests, see test_flow_hash_rust_compatibility.py.
 
 import pytest
 
-from capmaster.plugins.compare.flow_hash import (
+from capmaster.plugins.compare_common.flow_hash import (
     FlowSide,
     calculate_connection_flow_hash,
     calculate_flow_hash,
@@ -176,4 +176,3 @@ class TestFlowHash:
         )
 
         assert hash1 != hash2, "Different protocols should produce different hashes"
-

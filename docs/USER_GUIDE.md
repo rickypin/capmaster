@@ -424,7 +424,7 @@ capmaster compare -i captures/ --show-flow-hash
 - Group packets belonging to the same flow
 - Correlate connections in network analysis
 
-For implementation details of the flow hash algorithm (bidirectional, 5-tuple based, normalized), see the code and tests around `capmaster.plugins.compare.flow_hash` and `tests/test_flow_hash.py`.
+For implementation details of the flow hash algorithm (bidirectional, 5-tuple based, normalized), see the code and tests around `capmaster.plugins.compare_common.flow_hash` and `tests/test_flow_hash.py`.
 
 ### Score Threshold
 
@@ -1010,4 +1010,3 @@ Document your analysis:
 - 如需以编程方式集成 CapMaster，当前推荐通过 CLI 封装（例如 Python 的 `subprocess.run(["capmaster", ...])`），或直接阅读 `capmaster/` 源码和对应 tests 了解调用方式（目前仓库中不再维护单独的 API.md 文档）。
 - Check the [CHANGELOG](../CHANGELOG.md) for version history
 - Report issues on [GitHub](https://github.com/yourusername/capmaster/issues)
-

@@ -6,7 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
 
-from capmaster.plugins.compare.packet_extractor import TcpPacket
+from .packet_extractor import TcpPacket
 
 logger = logging.getLogger(__name__)
 

@@ -13,8 +13,8 @@ from capmaster.core.connection.connection_extractor import extract_connections_f
 from capmaster.core.input_manager import InputManager
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
-from capmaster.plugins.compare.packet_comparator import PacketComparator
-from capmaster.plugins.compare.packet_extractor import PacketExtractor
+from capmaster.plugins.compare_common.packet_comparator import PacketComparator
+from capmaster.plugins.compare_common.packet_extractor import PacketExtractor
 from capmaster.utils.cli_options import validate_database_params
 from capmaster.utils.errors import (
     InsufficientFilesError,
@@ -23,7 +23,11 @@ from capmaster.utils.errors import (
 
 logger = logging.getLogger(__name__)
 from capmaster.plugins.compare.cli_commands import register_compare_command
-from capmaster.plugins.compare.utils import to_nanoseconds, parse_tcp_flags, format_tcp_flags_change
+from capmaster.plugins.compare_common.utils import (
+    format_tcp_flags_change,
+    parse_tcp_flags,
+    to_nanoseconds,
+)
 
 
 
@@ -435,7 +439,7 @@ class ComparePlugin(PluginBase):
         flow_hash_cache: dict[tuple[str, str, int, int], tuple[int, Any]] = {}
 
         # Build output text via helper to keep this module lean and tests stable
-        from capmaster.plugins.compare.output_formatter import build_report_text
+        from capmaster.plugins.compare_common.output_formatter import build_report_text
         output_text = build_report_text(
             results=results,
             baseline_file=baseline_file,
@@ -498,8 +502,8 @@ class ComparePlugin(PluginBase):
             pcap_id_mapping: Mapping from file path to pcap_id (optional)
             flow_hash_cache: Cache of flow hash calculations (optional, for optimization)
         """
-        from capmaster.plugins.compare.flow_hash import calculate_connection_flow_hash
-        from capmaster.plugins.compare.packet_comparator import DiffType
+        from capmaster.plugins.compare_common.flow_hash import calculate_connection_flow_hash
+        from capmaster.plugins.compare_common.packet_comparator import DiffType
         from capmaster.plugins.compare.db_writer import DatabaseWriter
 
         logger.info(f"Writing results to database (kase_id={kase_id})...")
@@ -668,4 +672,3 @@ class ComparePlugin(PluginBase):
         except Exception as e:
             logger.error(f"Failed to write to database: {e}")
             raise
-

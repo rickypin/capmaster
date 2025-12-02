@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
 from capmaster.core.tshark_wrapper import TsharkWrapper
-from capmaster.plugins.compare.flow_hash import FlowSide, calculate_flow_hash
+from capmaster.plugins.compare_common.flow_hash import FlowSide, calculate_flow_hash
 from capmaster.plugins.match.ttl_utils import most_common_hops
 from capmaster.plugins.topology.analysis import ServiceTopologyInfo
 
@@ -328,4 +328,3 @@ def extract_udp_services_for_topology(pcap_file: Path) -> List[ServiceTopologyIn
 
     services.sort(key=lambda s: (s.protocol, s.server_port))
     return services
-

@@ -5,7 +5,7 @@ the same results as the Rust xuanwu-core implementation.
 """
 
 import pytest
-from capmaster.plugins.compare.flow_hash import (
+from capmaster.plugins.compare_common.flow_hash import (
     calculate_flow_hash,
     calculate_connection_flow_hash,
     FlowSide,
@@ -262,4 +262,3 @@ class TestFlowHashRustCompatibility:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
-
