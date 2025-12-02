@@ -2,7 +2,7 @@
 
 These tests are based on the design in
 `docs/DESIGN_preprocess_and_config.md` and use real-world
-PCAP cases copied into ``tests/preprocess_cases``.
+PCAP cases copied into ``data/preprocess_cases``.
 
 The goal is to provide a clear contract for the future
 preprocess implementation without enforcing behaviour yet.
@@ -22,7 +22,7 @@ from capmaster.plugins.preprocess.pipeline import run_preprocess
 
 
 # Root directory containing copied troubleshooting cases used as test data.
-CASES_ROOT = Path(__file__).resolve().parents[2] / "preprocess_cases"
+CASES_ROOT = Path(__file__).resolve().parents[3] / "data" / "preprocess_cases"
 
 # Design document path for reference in test failure messages.
 DESIGN_DOC_PATH = (
@@ -33,7 +33,7 @@ DESIGN_DOC_PATH = (
 
 # The subset of troubleshooting cases that were copied into this repository
 # for preprocess testing. These names correspond 1:1 to directories under
-# ``tests/preprocess_cases``.
+# ``data/preprocess_cases``.
 EXPECTED_CASES = [
     "TC-060-2-20210730",  # F5 front/back, strong dedup signal, large files
     "TC-035-06-20240704",  # Video stutter analysis, large single PCAP
@@ -102,13 +102,13 @@ def test_preprocess_cases_layout() -> None:
     """Ensure that preprocess test cases are present on disk.
 
     This test only validates that the expected directory structure exists
-    under ``tests/preprocess_cases``. Behavioural expectations are
+    under ``data/preprocess_cases``. Behavioural expectations are
     documented in ``DESIGN_preprocess_and_config.md`` and should be
     enforced by the integration tests below once the preprocess plugin
     is implemented.
     """
 
-    assert CASES_ROOT.is_dir(), "tests/preprocess_cases directory is missing"
+    assert CASES_ROOT.is_dir(), "data/preprocess_cases directory is missing"
 
     missing = [case for case in EXPECTED_CASES if not (CASES_ROOT / case).is_dir()]
     assert not missing, (
@@ -151,7 +151,7 @@ class TestPreprocessPluginIntegration:
         )
         if not originals:
             pytest.skip(
-                "No PCAP files found for TC-060-2-20210730; populate tests/preprocess_cases "
+                "No PCAP files found for TC-060-2-20210730; populate data/preprocess_cases "
                 "according to the design document before enabling this test.",
             )
 
@@ -217,7 +217,7 @@ class TestPreprocessPluginIntegration:
         originals = sorted(case_dir.glob("*.pcap*"))
         if not originals:
             pytest.skip(
-                "No PCAP files found for TC-035-06-20240704; populate tests/preprocess_cases "
+                "No PCAP files found for TC-035-06-20240704; populate data/preprocess_cases "
                 "according to the design document before enabling this test.",
             )
 
@@ -459,7 +459,7 @@ class TestPreprocessPluginIntegration:
         originals = sorted(case_dir.glob("*.pcap*"))
         if not originals:
             pytest.skip(
-                "No PCAP files found for TC-014-1-20231212; populate tests/preprocess_cases "
+                "No PCAP files found for TC-014-1-20231212; populate data/preprocess_cases "
                 "according to the design document before enabling this test.",
             )
 
@@ -571,7 +571,7 @@ class TestPreprocessPluginIntegration:
         originals = sorted(case_dir.glob("*.pcap*"))
         if not originals:
             pytest.skip(
-                "No PCAP files found for TC-028-1-20240308; populate tests/preprocess_cases "
+                "No PCAP files found for TC-028-1-20240308; populate data/preprocess_cases "
                 "according to the design document before enabling this test.",
             )
 

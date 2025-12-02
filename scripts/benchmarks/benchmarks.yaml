@@ -1,0 +1,280 @@
+suites:
+  analyze:
+    description: "Analyze plugin baseline scenarios"
+    cases:
+      - id: analyze_single
+        description: "Single PCAP, default modules"
+        command:
+          - "{PYTHON_BIN}"
+          - -m
+          - capmaster
+          - analyze
+          - --file1
+          - data/cases_02/TC-032-8-20240603-O/TC-032-8-20240603-O.pcap
+          - -o
+          - artifacts/tmp/benchmarks/analyze_single
+        runs: 1
+        warmup: 0
+      - id: analyze_parallel
+        description: "Directory input with parallel workers and Markdown output"
+        command:
+          - "{PYTHON_BIN}"
+          - -m
+          - capmaster
+          - analyze
+          - -i
+          - data/cases_02/TC-034-9-20230222-O-2
+          - -o
+          - artifacts/tmp/benchmarks/analyze_parallel
+          - -w
+          - "2"
+          - --format
+          - md
+          - --sidecar
+        runs: 1
+        warmup: 0
+
+  match:
+    description: "Match plugin representative workloads"
+    cases:
+      - id: match_auto
+        description: "Auto mode with directory input"
+        command:
+          - "{PYTHON_BIN}"
+          - -m
+          - capmaster
+          - match
+          - -i
+          - data/2hops/TC-001-1-20160407
+          - -o
+          - artifacts/tmp/benchmarks/match_auto.txt
+          - --mode
+          - auto
+        runs: 1
+        warmup: 0
+      - id: match_behavioral_sampling
+        description: "Behavioral mode with sampling enabled"
+        command:
+          - "{PYTHON_BIN}"
+          - -m
+          - capmaster
+          - match
+          - --file1
+          - data/2hops/TC-001-4-20190810/TC-001-4-20190810-A-ASAOUTSIDE.pcap
+          - --file2
+          - data/2hops/TC-001-4-20190810/TC-001-4-20190810-B-ASAINSIDE.pcap
+          - --mode
+          - behavioral
+          - --enable-sampling
+          - --sample-threshold
+          - "800"
+          - --sample-rate
+          - "0.4"
+          - -o
+          - artifacts/tmp/benchmarks/match_behavioral.txt
+        runs: 1
+        warmup: 0
+
+  compare:
+    description: "Compare plugin scenarios"
+    cases:
+      - id: compare_live
+        description: "On-the-fly matching and comparison"
+        command:
+          - "{PYTHON_BIN}"
+          - -m
+          - capmaster
+          - compare
+          - -i
+          - data/2hops/TC-001-1-20160407
+          - -o
+          - artifacts/tmp/benchmarks/compare_live.txt
+          - --bucket
+          - auto
+          - --threshold
+          - "0.6"
+        runs: 1
+        warmup: 0
+      - id: compare_with_match_file
+        description: "Comparison using pre-generated match results"
+        setup:
+          - - "{PYTHON_BIN}"
+            - -m
+            - capmaster
+            - match
+            - -i
+            - data/2hops/TC-001-1-20160407
+            - --match-json
+            - artifacts/tmp/benchmarks/compare_match_file.json
+            - --mode
+            - auto
+        command:
+          - "{PYTHON_BIN}"
+          - -m
+          - capmaster
+          - compare
+          - -i
+          - data/2hops/TC-001-1-20160407
+          - -o
+          - artifacts/tmp/benchmarks/compare_with_match_file.txt
+          - --match-file
+          - artifacts/tmp/benchmarks/compare_match_file.json
+          - --matched-only
+        runs: 1
+        warmup: 0
+
+  preprocess:
+    description: "Preprocess pipeline"
+    cases:
+      - id: preprocess_steps
+        description: "Explicit time-align and dedup steps"
+        command:
+          - "{PYTHON_BIN}"
+          - -m
+          - capmaster
+          - preprocess
+          - -i
+          - data/cases_02/TC-034-5-20211105
+          - -o
+          - artifacts/tmp/benchmarks/preprocess_steps
+          - --step
+          - time-align
+          - --step
+          - dedup
+        runs: 1
+        warmup: 0
+      - id: preprocess_configured
+        description: "Config-driven run with workers override"
+        command:
+          - "{PYTHON_BIN}"
+          - -m
+          - capmaster
+          - preprocess
+          - -i
+          - data/cases_02/TC-032-8-20240603-O
+          - -o
+          - artifacts/tmp/benchmarks/preprocess_configured
+          - --config
+          - resources/preprocess_benchmark.yaml
+          - --workers
+          - "2"
+          - --archive-original-files
+        runs: 1
+        warmup: 0
+
+  topology:
+    description: "Topology plugin cases"
+    cases:
+      - id: topology_single
+        description: "Single-capture topology report"
+        command:
+          - "{PYTHON_BIN}"
+          - -m
+          - capmaster
+          - topology
+          - --file1
+          - data/2hops/TC-001-1-20160407/TC-001-1-20160407-A.pcap
+          - -o
+          - artifacts/tmp/benchmarks/topology_single.txt
+          - --service-list
+          - resources/services.txt
+        runs: 1
+        warmup: 0
+      - id: topology_dual_with_matches
+        description: "Dual-capture topology using existing match output"
+        setup:
+          - - "{PYTHON_BIN}"
+            - -m
+            - capmaster
+            - match
+            - -i
+            - data/2hops/TC-001-1-20160407
+            - -o
+            - artifacts/tmp/benchmarks/topology_matches.txt
+            - --mode
+            - auto
+        command:
+          - "{PYTHON_BIN}"
+          - -m
+          - capmaster
+          - topology
+          - -i
+          - data/2hops/TC-001-1-20160407
+          - --matched-connections
+          - artifacts/tmp/benchmarks/topology_matches.txt
+          - --empty-match-behavior
+          - fallback-single
+          - -o
+          - artifacts/tmp/benchmarks/topology_dual.txt
+          - --service-list
+          - resources/services.txt
+        runs: 1
+        warmup: 0
+
+  streamdiff:
+    description: "Streamdiff command coverage"
+    cases:
+      - id: streamdiff_from_matches
+        description: "Run streamdiff for first matched pair"
+        setup:
+          - - "{PYTHON_BIN}"
+            - -m
+            - capmaster
+            - match
+            - -i
+            - data/2hops/TC-001-1-20160407
+            - -o
+            - artifacts/tmp/benchmarks/streamdiff_matches.txt
+            - --mode
+            - auto
+        command:
+          - "{PYTHON_BIN}"
+          - -m
+          - capmaster
+          - streamdiff
+          - -i
+          - data/2hops/TC-001-1-20160407
+          - --matched-connections
+          - artifacts/tmp/benchmarks/streamdiff_matches.txt
+          - --pair-index
+          - "1"
+          - -o
+          - artifacts/tmp/benchmarks/streamdiff_pair1.txt
+        runs: 1
+        warmup: 0
+
+  pipeline:
+    description: "Pipeline orchestration"
+    cases:
+      - id: pipeline_standard
+        description: "Execute standard pipeline with two captures"
+        command:
+          - "{PYTHON_BIN}"
+          - -m
+          - capmaster
+          - run-pipeline
+          - -c
+          - examples/pipeline_standard.yaml
+          - -i
+          - data/2hops/TC-001-1-20160407
+          - -o
+          - artifacts/tmp/benchmarks/pipeline_standard
+        runs: 1
+        warmup: 0
+      - id: pipeline_dry_run
+        description: "Dry run of the same pipeline for comparison"
+        command:
+          - "{PYTHON_BIN}"
+          - -m
+          - capmaster
+          - run-pipeline
+          - -c
+          - examples/pipeline_standard.yaml
+          - -i
+          - data/2hops/TC-001-1-20160407
+          - -o
+          - artifacts/tmp/benchmarks/pipeline_dry_run
+          - --dry-run
+        runs: 1
+        warmup: 0
+

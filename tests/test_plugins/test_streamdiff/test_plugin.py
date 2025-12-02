@@ -28,9 +28,7 @@ def test_execute_requires_stream_selection(tmp_path: Path) -> None:
     exit_code = plugin.execute(
         input_path=None,
         file1=file1,
-        file1_pcapid=0,
         file2=file2,
-        file2_pcapid=1,
     )
 
     assert exit_code != 0

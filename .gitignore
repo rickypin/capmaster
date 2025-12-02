@@ -76,6 +76,7 @@ tramp
 *.log
 logs/
 log/
+eval_*.log
 
 # ============================================
 # Python
@@ -140,20 +141,32 @@ dmypy.json
 # Project-Specific
 # ============================================
 # Test cases and sample PCAP files
-cases/
-cases_02/
 # Preprocess plugin test cases
 tests/preprocess_cases/
-downloads/
-2hops/
-benchmarks/
-tmp/
+
+# Data assets (large local datasets & symlinks)
+data/*
+!data/README.md
+
+# Run artifacts
+artifacts/*
+!artifacts/README.md
+
+# Legacy top-level paths (backward compatibility)
+/benchmarks/
+/tmp/
 
 .capmaster_tmp_match/
 # Analysis output (statistics directory created by analyze_pcap.sh)
 statistics/
 **/statistics/
-analysis/
+/analysis/
+scripts/analysis/
+
+# PyInstaller build artifacts
+.pyinstaller/
+*.pkg
+*.toc
 
 # Archive directories (keep README.md but ignore archived files)
 scripts/archive/*

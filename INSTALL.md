@@ -250,7 +250,9 @@ capmaster --help
 capmaster analyze --help
 capmaster match --help
 capmaster compare --help
-capmaster filter --help
+capmaster preprocess --help
+capmaster topology --help
+capmaster streamdiff --help
 
 # 4. 依赖检查
 python -c "import click, rich, yaml; print('Core dependencies: OK')"

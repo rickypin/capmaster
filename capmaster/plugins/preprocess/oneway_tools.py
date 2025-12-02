@@ -123,7 +123,7 @@ def _feed_detector_from_lines(
     """Feed TCP packet lines into a one-way detector.
 
     The input format matches the ``tshark`` output built by
-    :func:`detect_one_way_streams` in this module and in the filter plugin.
+    :func:`detect_one_way_streams` in this module.
     """
 
     for raw_line in lines:
@@ -177,8 +177,8 @@ def _collect_one_way_stream_ids(
 def detect_one_way_streams(*, input_file: Path, ack_threshold: int) -> list[int]:
     """Detect one-way TCP streams in a PCAP file.
 
-    This mirrors the behaviour of the filter plugin's one-way detection but is
-    exposed as a pure function for reuse in the preprocess pipeline.
+    This function analyzes TCP streams to identify one-way connections based on
+    ACK increment patterns and is used in the preprocess pipeline.
     """
 
     tshark = TsharkWrapper()

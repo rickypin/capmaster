@@ -49,8 +49,14 @@ pytest tests/test_plugins/test_compare/ -v
 # Preprocess 插件
 pytest tests/test_plugins/test_preprocess/ -v
 
-# Clean 插件
-pytest tests/test_plugins/test_clean.py -v
+# Topology 插件
+pytest tests/test_plugins/test_topology/ -v
+
+# StreamDiff 插件
+pytest tests/test_plugins/test_streamdiff/ -v
+
+# Pipeline 插件
+pytest tests/test_plugins/test_pipeline/ -v
 ```
 
 ### 按文件/类/方法运行
@@ -187,7 +193,7 @@ pytest --strict-warnings
 - tshark 4.0+
 
 ### 可选
-- PCAP 测试文件（`cases/` 目录）
+- PCAP 测试文件（`data/cases/` 目录）
   - 如果缺失，相关测试会自动跳过
 
 ## 常见问题

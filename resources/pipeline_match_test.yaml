@@ -1,0 +1,6 @@
+name: test_match_only
+steps:
+  - id: match_conn
+    command: match
+    args:
+      output: "${OUTPUT}/matched_connections.txt"

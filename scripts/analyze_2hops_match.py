@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Run capmaster match on all TC-* subdirectories under a root directory (e.g. /Users/ricky/Downloads/2hops)
+Run capmaster match on all TC-* subdirectories under a root directory (e.g. data/2hops)
 and summarize results into Markdown and JSON.
 
 - Uses AUTO bucket by default (now NAT-aware), can be overridden via --bucket
 - Parses the Statistics block from CLI output
 - Uses match JSON to count strong/normal IPID matches, and F5 / TLS based matches
 
-Outputs:
-- analysis/2hops_match_summary.md
-- analysis/2hops_match_summary.json
+Outputs (saved under artifacts/analysis/ by default):
+- artifacts/analysis/2hops_match_summary.md
+- artifacts/analysis/2hops_match_summary.json
 """
 from __future__ import annotations
 
@@ -217,7 +217,7 @@ def format_markdown(results: List[CaseResult]) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="Run capmaster match across 2hops cases and summarize")
-    parser.add_argument("root", nargs="?", default="/Users/ricky/Downloads/2hops", help="Root dir containing TC-* subdirs")
+    parser.add_argument("root", nargs="?", default="data/2hops", help="Root dir containing TC-* subdirs")
     parser.add_argument("--bucket", default="auto", choices=["auto", "server", "port", "none"], help="Bucketing strategy")
     args = parser.parse_args()
 

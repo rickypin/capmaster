@@ -20,10 +20,14 @@ class TestAnalyzeIntegration:
     @pytest.fixture
     def test_pcap(self) -> Path:
         """Return path to test PCAP file."""
-        pcap_path = Path("cases/V-001/VOIP.pcap")
-        if not pcap_path.exists():
-            pytest.skip(f"Test PCAP file not found: {pcap_path}")
-        return pcap_path
+        candidates = [
+            Path("data/cases/V-001/VOIP.pcap"),
+            Path("data/cases_02/V-001/VOIP.pcap"),
+        ]
+        for pcap_path in candidates:
+            if pcap_path.exists():
+                return pcap_path
+        pytest.skip("Test PCAP file not found under data/cases or data/cases_02")
 
     def test_plugin_name(self, plugin: AnalyzePlugin):
         """Test that plugin has correct name."""
@@ -88,8 +92,8 @@ class TestAnalyzeIntegration:
         # Test with non-existent file
         non_existent = tmp_path / "non_existent.pcap"
         
-        # Should raise FileNotFoundError
-        with pytest.raises(FileNotFoundError):
+        # Should surface as click.BadParameter (InputManager wraps FileNotFoundError)
+        with pytest.raises(click.BadParameter):
             plugin.execute(
                 input_path=non_existent,
                 output_dir=tmp_path / "output",

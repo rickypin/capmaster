@@ -60,16 +60,18 @@ class YourPlugin(PluginBase):
 plugin_modules = [
     "capmaster.plugins.analyze",
     "capmaster.plugins.match",
-    "capmaster.plugins.clean",
     "capmaster.plugins.compare",
     "capmaster.plugins.preprocess",
+    "capmaster.plugins.topology",
+    "capmaster.plugins.streamdiff",
+    "capmaster.plugins.pipeline",
     "capmaster.plugins.your_plugin",  # 新增插件
 ]
 ```
 
 ### 1.4 参考现有插件
 
-- **简单**: `clean/plugin.py` - 单一功能
+- **简单**: `streamdiff/plugin.py` - 单连接对比
 - **中等**: `compare/plugin.py` - 双文件比较逻辑
 - **复杂**: `analyze/plugin.py` - 包含子模块系统
 
@@ -447,7 +449,7 @@ result = tshark.execute(
 - 新顶层插件：至少编写 1–2 个单元测试，覆盖 `execute` 的成功和失败路径。
 - 新 Analyze 模块：至少测试 `build_tshark_args` 和必要的 `post_process` 行为。
 - 推荐参考：
-  - `tests/test_plugins/test_clean/`
+  - `tests/test_plugins/test_streamdiff/`
   - `tests/test_plugins/test_analyze/`
 - 确保相关测试在本地或 CI 中通过 `pytest` 运行。
 

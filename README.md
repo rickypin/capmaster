@@ -99,6 +99,17 @@ pip install -r requirements-dev.txt
 pip install -r requirements-database.txt
 ```
 
+## macOS Binary Packaging
+
+Use the PyInstaller tooling in this repo to produce a standalone macOS binary:
+
+1. Create a clean environment with Python 3.12: `python3.12 -m venv .venv && source .venv/bin/activate`.
+2. Install all dependencies plus PyInstaller 6.x: `pip install -r requirements.txt -r requirements-dev.txt -r requirements-database.txt && pip install "pyinstaller==6.*"`.
+3. Build the binary: `./scripts/build_binary.sh`. The script checks for `tshark`, signs the binary, copies the result to `dist/capmaster`, and archives `artifacts/capmaster-macos-<arch>-v<version>.tar.gz`.
+4. Run the smoke test to ensure the bundle boots: `./scripts/tests/run_binary_smoke.sh dist/capmaster` (optional `SMOKE_PCAP` overrides the analyzer input).
+
+For more background (spec layout, hooks, release checklist), see `docs/BINARY_PACKAGING_PLAN.md`.
+
 ## Quick Start
 
 ### 1. Analyze PCAP Files
@@ -305,6 +316,54 @@ capmaster -v analyze -i sample.pcap
 capmaster -vv match -i captures/
 ```
 
+## Repository Layout
+
+- `capmaster/` – Core CLI, plugins, and utilities.
+- `resources/` – Versioned assets such as `services.txt` (pass via
+  `--service-list resources/services.txt`) and pipeline templates like
+  `pipeline_match_test.yaml`.
+- `data/` – Workspace-local datasets (symlinks to `2hops`, `cases`, `downloads`,
+  etc.). These entries are gitignored; create or update them per your machine.
+- `scripts/` – Automation helpers and manual experiments. Subdirectories include
+  `scripts/debug/` and `scripts/tests/` for relocated tooling.
+- `artifacts/` – Default drop zone for runtime outputs. Ignored by Git; create
+  subfolders such as `analysis/`, `benchmarks/`, and `tmp/` as needed.
+- `reports/` – Curated, version-controlled deliverables promoted from
+  `artifacts/analysis/`.
+
+## Artifacts and Reports
+
+1. Point CLI commands and scripts to `artifacts/...` using `-o/--output` or
+   script arguments.
+2. Inspect the generated files locally.
+3. Copy the finalized report to `reports/analysis/<case>/` (or another tracked
+   folder) before committing.
+
+Example:
+
+```bash
+mkdir -p artifacts/tmp
+capmaster match -i data/2hops/aomenjinguanju_10MB -o artifacts/tmp/matched_connections.txt
+cp artifacts/tmp/matched_connections.txt reports/analysis/aomenjinguanju-matched.txt
+```
+
+## Utility Scripts
+
+- Debug TCP roles extracted from PCAPs:
+
+  ```bash
+  python scripts/debug/debug_topology_streams.py
+  ```
+
+- Verify that `ServerDetector` honors the bundled service list:
+
+  ```bash
+  python scripts/tests/test_service_list.py
+  ```
+
+  Both scripts expect to be executed from the repository root so relative paths
+  (e.g., `resources/services.txt`) resolve correctly.
+
 ## Architecture
 
 CapMaster uses a two-layer plugin architecture:
@@ -321,8 +380,10 @@ capmaster/
 │   │   └── modules/         # Analysis modules (2nd layer)
 │   ├── match/               # Matching plugin
 │   ├── compare/             # Comparative analysis plugin
-│   ├── clean/               # Cleanup plugin
-│   └── preprocess/          # Preprocessing pipeline
+│   ├── preprocess/          # Preprocessing pipeline
+│   ├── topology/            # Topology rendering plugin
+│   ├── streamdiff/          # TCP stream diffing plugin
+│   └── pipeline/            # Batch workflow runner
 └── utils/                   # Utilities
     └── logger.py            # Logging configuration
 ```
@@ -399,7 +460,7 @@ CapMaster is designed with extensibility in mind. You can easily add new plugins
 
 See **[AI Plugin Extension Guide](docs/AI_PLUGIN_EXTENSION_GUIDE.md)** for quick reference on:
 
-- Adding new top-level plugins (like analyze, match, compare, preprocess, clean)
+- Adding new top-level plugins (like analyze, match, compare, preprocess, topology, streamdiff, pipeline)
 - Adding new analysis modules for the analyze plugin
 - tshark command patterns and post-processing techniques
 - Code templates, testing, and validation

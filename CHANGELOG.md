@@ -45,11 +45,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Header-only mode support
   - Configurable score threshold (0.0-1.0)
 
-- **Filter Plugin**: One-way TCP connection filtering
+- **Preprocess Plugin**: PCAP preprocessing pipeline
+  - One-way TCP connection filtering
   - ACK increment analysis
   - 32-bit sequence number wraparound handling
   - Pure ACK packet detection (tcp.len==0)
   - Configurable threshold for one-way detection
+  - Duplicate packet removal (dedup)
+  - Time alignment across multiple PCAPs
 
 #### Core Components
 - **PcapScanner**: Intelligent PCAP file discovery
@@ -98,7 +101,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Performance Improvements
 - **Analyze**: 126% of original script performance (21% faster)
 - **Match**: 111% of original script performance (11% faster)
-- **Filter**: 107% of original script performance (7% faster)
 - Optimized tshark command generation
 - Efficient memory usage for large files
 
@@ -110,11 +112,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Improved IPID matching logic
   - Fixed IPID=0 false rejection bug
   - Support for connections without SYN packets
-
-- **Filter Plugin**: Improved detection accuracy
-  - Better ACK increment calculation
-  - Proper handling of sequence number wraparound
-  - More accurate pure ACK identification
 
 ### Fixed
 
@@ -137,17 +134,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed module execution order
   - Fixed protocol detection for edge cases
 
-- **Filter Plugin**:
-  - Fixed ACK wraparound calculation
-  - Fixed pure ACK detection logic
-  - Fixed stream ID extraction
-
 ### Deprecated
 
 - Legacy shell scripts (replaced by Python CLI):
   - `analyze_pcap.sh` → `capmaster analyze`
   - `match_tcp_conns.sh` → `capmaster match`
-  - `remove_one_way_tcp.sh` → `capmaster filter`
+  - `remove_one_way_tcp.sh` → `capmaster preprocess` (one-way filtering stage)
 
 ### Removed
 
@@ -169,7 +161,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial beta release
 - Basic analyze functionality
 - Prototype match algorithm
-- Simple filter implementation
 
 ### Known Issues
 - Match algorithm used simplified 4-feature scoring
@@ -216,7 +207,7 @@ capmaster match -i dir/
 capmaster match -i dir/ --mode header --threshold 0.60
 ```
 
-#### Filter Command
+#### One-Way Filtering (Former `filter` Command)
 
 **Before:**
 ```bash
@@ -224,11 +215,14 @@ capmaster match -i dir/ --mode header --threshold 0.60
 ./remove_one_way_tcp.sh -i test.pcap -t 100
 ```
 
-**After:**
+**After (current releases):**
 ```bash
-capmaster filter -i test.pcap
-capmaster filter -i test.pcap -t 100
+capmaster preprocess -i test.pcap
 ```
+
+The preprocess pipeline automatically detects and removes one-way TCP streams.
+The legacy `capmaster filter` subcommand has been retired and is no longer
+distributed.
 
 ### Configuration Changes
 
@@ -258,7 +252,6 @@ capmaster filter -i test.pcap -t 100
 3. **Performance**: All operations are now faster than original scripts
    - Analyze: +21% faster
    - Match: +11% faster
-   - Filter: +7% faster
 
 4. **Dependencies**: Updated minimum versions
    - Python 3.10+ (was 3.8+)

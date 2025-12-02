@@ -130,7 +130,7 @@ class TestComparePlugin:
         # Note: threshold validation might not be implemented in execute()
         # This test documents expected behavior
         # For now, just test that it doesn't crash
-        exit_code = plugin.execute(input_path=two_pcap_dir, score_threshold=1.5, silent=True)
+        exit_code = plugin.execute(input_path=two_pcap_dir, score_threshold=1.5, quiet=True)
         # May return 0 if validation not implemented
         assert exit_code >= 0
 
@@ -187,7 +187,7 @@ class TestComparePlugin:
             exit_code = plugin.execute(
                 input_path=two_pcap_dir,
                 output_file=output_file,
-                silent=True
+                quiet=True
             )
 
             # Should return 0 even with no matches
@@ -249,26 +249,26 @@ class TestComparePlugin:
             plugin.execute(
                 input_path=two_pcap_dir,
                 output_file=output_file,
-                silent=True
+                quiet=True
             )
 
             # Output file should be created
             assert output_file.exists()
 
-    def test_execute_silent_mode_suppresses_output(
+    def test_execute_quiet_mode_suppresses_output(
         self, plugin: ComparePlugin, two_pcap_dir: Path, capsys
     ):
-        """Test that silent mode suppresses console output."""
+        """Test that quiet mode suppresses console output."""
         with patch("capmaster.plugins.compare.plugin.extract_connections_from_pcap") as mock_extract, \
              patch("capmaster.plugins.match.plugin.MatchPlugin.match_connections_in_memory") as mock_match:
 
             mock_extract.return_value = []
             mock_match.return_value = []
 
-            plugin.execute(input_path=two_pcap_dir, silent=True)
+            plugin.execute(input_path=two_pcap_dir, quiet=True)
 
             captured = capsys.readouterr()
-            # Silent mode should produce minimal output
+            # Quiet mode should produce minimal output
             # (some logging might still occur, but no progress bars)
             assert "Extracting connections" not in captured.out
             assert "Matching connections" not in captured.out
@@ -293,7 +293,7 @@ class TestComparePlugin:
             mock_extract.return_value = []
             mock_match.return_value = []
 
-            exit_code = plugin.execute(input_path=input_path, silent=True)
+            exit_code = plugin.execute(input_path=input_path, quiet=True)
             assert exit_code == 0
 
     def test_execute_alphabetical_ordering(
@@ -318,7 +318,7 @@ class TestComparePlugin:
             mock_extract.return_value = []
             mock_match.return_value = []
 
-            plugin.execute(input_path=test_dir, silent=True)
+            plugin.execute(input_path=test_dir, quiet=True)
 
             # First call should be for a_file.pcap (alphabetically first)
             first_call_file = mock_extract.call_args_list[0][0][0]
@@ -337,7 +337,7 @@ class TestComparePlugin:
             exit_code = plugin.execute(
                 input_path=two_pcap_dir,
                 match_mode="one-to-many",
-                silent=True
+                quiet=True
             )
 
             # Should succeed
@@ -358,7 +358,7 @@ class TestComparePlugin:
         exit_code = plugin.execute(
             input_path=two_pcap_dir,
             match_mode="invalid-mode",
-            silent=True
+            quiet=True
         )
 
         # Should fail with non-zero exit code
@@ -395,7 +395,7 @@ class TestComparePlugin:
 
             exit_code = plugin.execute(
                 input_path=two_pcap_dir,
-                silent=True
+                quiet=True
             )
 
             assert exit_code == 0

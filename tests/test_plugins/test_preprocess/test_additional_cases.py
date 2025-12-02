@@ -3,7 +3,7 @@
 These tests focus on covering extra combinations of the
 ``dedup``, ``time-align`` and ``oneway`` flags using
 real-world troubleshooting cases copied into
-``tests/preprocess_cases``.
+``data/preprocess_cases``.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from capmaster.plugins.preprocess.oneway_tools import detect_one_way_streams
 
 
 # Root directory containing copied troubleshooting cases used as test data.
-CASES_ROOT = Path(__file__).resolve().parents[2] / "preprocess_cases"
+CASES_ROOT = Path(__file__).resolve().parents[3] / "data" / "preprocess_cases"
 
 # Mark all tests in this module as integration tests.
 pytestmark = pytest.mark.integration
@@ -34,14 +34,14 @@ def _ensure_case_dir(case_name: str) -> Path:
 
     This mirrors the behaviour in ``test_integration.py``: if the
     local developer/CI environment has not populated the
-    ``tests/preprocess_cases`` directory, the tests are skipped
+    ``data/preprocess_cases`` directory, the tests are skipped
     instead of failing.
     """
 
     case_dir = CASES_ROOT / case_name
     if not case_dir.is_dir():
         pytest.skip(
-            f"{case_name} case directory is missing; populate tests/preprocess_cases "
+            f"{case_name} case directory is missing; populate data/preprocess_cases "
             "according to the preprocess design document before enabling this test.",
         )
     return case_dir
@@ -63,7 +63,7 @@ def test_tc0541_no_steps_pipeline_is_noop(tmp_path: Path) -> None:
     )
     if not originals:
         pytest.skip(
-            "No PCAP files found for TC-054-1-20230825; populate tests/preprocess_cases "
+            "No PCAP files found for TC-054-1-20230825; populate data/preprocess_cases "
             "according to the design document before enabling this test.",
         )
 

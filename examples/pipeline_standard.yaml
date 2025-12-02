@@ -23,12 +23,12 @@ steps:
       max_input_files: 1
       min_input_files: 1
     args:
-      service-list: "services.txt"
+      service-list: "resources/services.txt"
       output: "${OUTPUT}/topology.txt"
 
   # ========================================================================
   # Step 1: TCP Connection Matching
-  # Command: capmaster match -i ... -o tmp/matched_connections.txt
+  # Command: capmaster match -i ... -o artifacts/tmp/matched_connections.txt
   # ========================================================================
   - id: match_conn
     command: match
@@ -49,7 +49,7 @@ steps:
       require_steps: [match_conn]
     args:
       matched-connections: "${STEP.match_conn.output}"
-      service-list: "services.txt"
+      service-list: "resources/services.txt"
       output: "${OUTPUT}/topology.txt"
 
   # ========================================================================

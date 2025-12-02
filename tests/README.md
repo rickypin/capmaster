@@ -13,10 +13,12 @@ tests/
 │   └── test_tshark_wrapper.py
 ├── test_plugins/           # Plugin tests
 │   ├── test_analyze/       # Analyze plugin tests
-│   ├── test_clean/         # Clean plugin tests
 │   ├── test_compare/       # Compare plugin tests
 │   ├── test_match/         # Match plugin tests
-│   └── test_preprocess/    # Preprocess plugin tests
+│   ├── test_pipeline/      # Pipeline plugin tests
+│   ├── test_preprocess/    # Preprocess plugin tests
+│   ├── test_streamdiff/    # StreamDiff plugin tests
+│   └── test_topology/      # Topology plugin tests
 ├── test_flow_hash.py       # Flow hash unit tests
 ├── test_flow_hash_rust_compatibility.py  # Rust compatibility tests
 └── conftest.py             # Shared fixtures
@@ -141,10 +143,10 @@ pytest -k "test_scan or test_parse" -v
 
 ### Optional Test Data
 
-Some integration tests require PCAP files in the `cases/` directory:
+Some integration tests require PCAP files in the `data/cases/` directory:
 
 ```
-cases/
+data/cases/
 ├── V-001/VOIP.pcap              # VoIP test case
 ├── TC-001-1-20160407/           # TCP connection matching
 ├── TC-001-5-20190905/           # Single file test
@@ -157,7 +159,7 @@ Tests will automatically skip if required files are not found:
 ```python
 @pytest.fixture
 def test_pcap(self) -> Path:
-    pcap_path = Path("cases/V-001/VOIP.pcap")
+    pcap_path = Path("data/cases/V-001/VOIP.pcap")
     if not pcap_path.exists():
         pytest.skip(f"Test PCAP file not found: {pcap_path}")
     return pcap_path

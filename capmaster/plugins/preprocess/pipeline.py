@@ -445,10 +445,11 @@ def _dedup_step(context: PreprocessContext, files: list[Path]) -> list[Path]:
 def _oneway_step(context: PreprocessContext, files: list[Path]) -> list[Path]:
     """Filter out one-way TCP connections based on ACK heuristics.
 
-    This step reuses the TCP one-way detection logic from the filter plugin
-    (``OneWayDetector``) via :mod:`capmaster.plugins.preprocess.oneway_tools`.
-    For each input file, it detects one-way ``tcp.stream`` IDs using tshark
-    and writes a new PCAP with those streams removed.
+    The TCP one-way detection helpers live in
+    :mod:`capmaster.plugins.preprocess.oneway_tools` (where the legacy filter
+    plugin logic was consolidated). For each input file, it detects one-way
+    ``tcp.stream`` IDs using tshark and writes a new PCAP with those streams
+    removed.
     """
 
     logger.debug("oneway step invoked for %d files", len(files))

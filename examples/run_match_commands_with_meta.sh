@@ -5,7 +5,7 @@
 set -e  # Exit on error
 
 # Configuration
-INPUT_DIR="/Users/ricky/Downloads/2hops/dbs_1112_2/"
+INPUT_DIR="data/2hops/dbs_1112_2/"
 OUTPUT_DIR="tmp"
 
 # Create output directory

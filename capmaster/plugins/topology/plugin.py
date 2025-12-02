@@ -97,13 +97,15 @@ class TopologyPlugin(PluginBase):
 
             Examples:
               # Single capture
-              capmaster topology --single-file cases/sample.pcap
+              capmaster topology --single-file data/cases/sample.pcap
 
               # Directory containing exactly two captures + matched connections
-              capmaster topology -i /path/to/2hops/ --matched-connections tmp/matched_connections.txt
+              capmaster topology -i /path/to/data/2hops/ \
+                --matched-connections artifacts/tmp/matched_connections.txt
 
               # Explicit files
-              capmaster topology --file1 a.pcap --file2 b.pcap --matched-connections tmp/matched.txt
+              capmaster topology --file1 a.pcap --file2 b.pcap \
+                --matched-connections artifacts/tmp/matched.txt
             """
 
             exit_code = self.execute(

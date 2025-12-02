@@ -620,11 +620,11 @@ Use `capmaster preprocess --help` 查看完整参数说明，包括：
 
 ## Pipeline Command
 
-`run-pipeline` 允许借助 YAML 描述多步骤流程，例如先 match、再 topology、再 quality analysis。示例配置见 `examples/pipeline_standard.yaml`。
+`run-pipeline` 允许借助 YAML 描述多步骤流程，例如先 match、再 topology、再 quality analysis。示例配置见 `examples/pipeline_standard.yaml`，最小可运行模板位于 `resources/pipeline_match_test.yaml`。
 
 ```bash
 capmaster run-pipeline --file1 A.pcap --file2 B.pcap \
-  -c tmp/topology_and_comparison.yaml -o tmp/output
+  -c resources/pipeline_match_test.yaml -o artifacts/tmp/pipeline_output
 ```
 
 全局 CLI 参数会自动传入每个步骤：
@@ -663,6 +663,30 @@ Pipeline 支持在每个步骤上添加 `when` 守卫来做条件执行，例如
 
 当某一步因 `when` 条件不满足而跳过时，后续引用其输出的步骤需要额外 `require_steps` 保护，否则变量解析会失败。
 
+## Artifact Workspace
+
+所有运行产出默认落在 `artifacts/` 下，按类型划分：
+
+- `artifacts/analysis/`：脚本与手工汇总的 Markdown/JSON 报告。
+- `artifacts/benchmarks/`：批量基准脚本的原始 stdout 与汇总 CSV。
+- `artifacts/tmp/`：一次性调试输出（match/topology/streamdiff/pipeline 等）。
+
+采集报告推荐流程：
+
+1. 将 CLI 的 `-o/--output`、脚本输出目录等指向 `artifacts/...`。
+2. 检查生成内容是否符合预期。
+3. 需要版本沉淀时，将成品复制到 `reports/analysis/<case>/` 并在提交中跟踪。
+
+示例：
+
+```bash
+mkdir -p artifacts/tmp
+capmaster match -i data/2hops/aomenjinguanju_10MB -o artifacts/tmp/matched_connections.txt
+cp artifacts/tmp/matched_connections.txt reports/analysis/aomenjinguanju-matched.txt
+```
+
+示例服务列表位于 `resources/services.txt`，可通过 `--service-list resources/services.txt` 传给 match/topology/pipeline 命令。
+
 ## Topology Command
 
 The `topology` command renders network topology for one or two capture points.
@@ -674,7 +698,7 @@ The `topology` command renders network topology for one or two capture points.
 capmaster topology --single-file single_capture.pcap -o single_topology.txt
 
 # Directory containing exactly two captures + matched connections
-capmaster topology -i /path/to/2hops/ --matched-connections matched_connections.txt -o topology.txt
+capmaster topology -i /path/to/data/2hops/ --matched-connections matched_connections.txt -o topology.txt
 
 # Explicit files
 capmaster topology --file1 a.pcap --file2 b.pcap --matched-connections matched_connections.txt -o topology.txt
@@ -725,190 +749,20 @@ For详细说明（丢包、重传、ACK Lost、Real Loss 等指标，以及服�
 - `docs/COMPARATIVE_ANALYSIS_GUIDE.md`
 - `docs/ACK_LOST_SEGMENT_FEATURE.md`
 
-## Clean Command
+## Managing Statistics Cleanup
 
-The `clean` command removes statistics directories and their contents, helping you manage disk space and clean up analysis outputs.
-
-### Basic Usage
+CapMaster previously shipped a dedicated `capmaster clean` subcommand to remove `statistics/` directories. That utility is no longer maintained. Use your operating system tools (or custom scripts) to reclaim disk space when analysis outputs are no longer needed.
 
 ```bash
-# Clean statistics directories recursively (with confirmation)
-capmaster clean -i /path/to/data
-
-# Clean only top-level statistics directory
-capmaster clean -i /path/to/data -r
-
-# Dry run to see what would be deleted
-capmaster clean -i /path/to/data --dry-run
-
-# Clean without confirmation prompt
-capmaster clean -i /path/to/data -y
+# Preview then remove statistics directories on Linux/macOS
+find /path/to/data -type d -name "statistics" -print -exec rm -rf {} +
 ```
 
-### How It Works
+Best practices:
 
-The clean command:
-
-1. Searches for all directories named `statistics` under the specified path
-2. Calculates the total size of files to be deleted
-3. Shows a preview of what will be deleted
-4. Asks for confirmation (unless `-y` flag is used)
-5. Deletes the directories and shows progress
-
-### Options
-
-#### Recursive vs Non-Recursive
-
-```bash
-# Recursive (default): Find all statistics directories in subdirectories
-capmaster clean -i /path/to/data
-
-# Non-recursive: Only clean top-level statistics directory
-capmaster clean -i /path/to/data -r
-```
-
-**Example directory structure:**
-```
-/path/to/data/
-├── statistics/           ← Deleted in both modes
-├── dir1/
-│   └── statistics/       ← Deleted only in recursive mode
-└── dir2/
-    └── statistics/       ← Deleted only in recursive mode
-```
-
-#### Dry Run Mode
-
-Preview what will be deleted without actually deleting:
-
-```bash
-capmaster clean -i /path/to/data --dry-run
-```
-
-**Output:**
-```
-INFO     Found 3 statistics directories
-
-         Directories to be deleted:
-INFO       - /path/to/data/dir1/statistics (1.25 MB)
-INFO       - /path/to/data/dir2/statistics (856.00 KB)
-INFO       - /path/to/data/statistics (2.10 MB)
-
-         Total size: 4.21 MB
-
-INFO     [DRY RUN] No files were deleted
-```
-
-#### Auto-Confirm Mode
-
-Skip the confirmation prompt (use with caution):
-
-```bash
-# Dangerous: Deletes immediately without asking
-capmaster clean -i /path/to/data -y
-```
-
-### Safety Features
-
-The clean command includes several safety features:
-
-1. **Confirmation Prompt**: By default, asks for confirmation before deleting
-2. **Dry Run**: Preview deletions with `--dry-run`
-3. **Specific Target**: Only deletes directories named `statistics`
-4. **Size Display**: Shows total size before deletion
-5. **Progress Tracking**: Shows deletion progress
-6. **Error Handling**: Continues if some directories fail to delete
-
-### Use Cases
-
-#### 1. Clean Up After Analysis
-
-```bash
-# Analyze PCAP files
-capmaster analyze -i captures/
-
-# Review the statistics
-ls captures/statistics/
-
-# Clean up when done
-capmaster clean -i captures/ -y
-```
-
-#### 2. Reclaim Disk Space
-
-```bash
-# Check what would be deleted
-capmaster clean -i /large/dataset --dry-run
-
-# Clean if satisfied
-capmaster clean -i /large/dataset
-```
-
-#### 3. Batch Cleanup
-
-```bash
-# Clean multiple directories
-for dir in project1 project2 project3; do
-    capmaster clean -i "$dir" -y
-done
-```
-
-#### 4. Selective Cleanup
-
-```bash
-# Clean only top-level statistics (keep nested ones)
-capmaster clean -i /path/to/data -r -y
-```
-
-### Output Example
-
-```bash
-$ capmaster clean -i /tmp/test_data -y
-
-INFO     Searching for statistics directories in: /tmp/test_data
-INFO     Found 3 statistics directories
-
-         Directories to be deleted:
-INFO       - /tmp/test_data/dir1/statistics (12.00 B)
-INFO       - /tmp/test_data/dir2/statistics (12.00 B)
-INFO       - /tmp/test_data/dir1/subdir/statistics (12.00 B)
-
-         Total size: 36.00 B
-
-⠋ Deleting 3 directories... ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   0%
-INFO     Deleted: /tmp/test_data/dir1/statistics
-INFO     Deleted: /tmp/test_data/dir2/statistics
-INFO     Deleted: /tmp/test_data/dir1/subdir/statistics
-  Deleting 3 directories... ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100%
-
-INFO     Successfully deleted 3/3 directories (36.00 B freed)
-```
-
-### Best Practices
-
-1. **Always use dry-run first** when cleaning important data:
-   ```bash
-   capmaster clean -i /important/data --dry-run
-   ```
-
-2. **Use verbose mode** to see detailed information:
-   ```bash
-   capmaster -v clean -i /path/to/data
-   ```
-
-3. **Backup important statistics** before cleaning:
-   ```bash
-   tar -czf statistics_backup.tar.gz */statistics/
-   capmaster clean -i . -y
-   ```
-
-4. **Be careful with auto-confirm** in scripts:
-   ```bash
-   # Good: Check if directory exists first
-   if [ -d "/path/to/data" ]; then
-       capmaster clean -i /path/to/data -y
-   fi
-   ```
+1. Run destructive commands behind a "dry run" preview (for example, execute the `find` command without `-exec` first).
+2. Keep CapMaster outputs organized per capture so whole directories can be removed safely—`capmaster preprocess` already writes artifacts under `statistics/` for each input file.
+3. Archive important reports (e.g., `tar -czf statistics_backup.tar.gz */statistics/`) before deleting local copies.
 
 ## Advanced Usage
 
@@ -1094,8 +948,13 @@ capmaster -vv analyze -i capture.pcap 2> debug.log
 project/
 ├── raw/              # Original captures
 ├── filtered/         # Filtered captures
-├── analysis/         # Analysis results
-└── matches/          # Match results
+├── data/             # Symlinks to large datasets (2hops, cases, downloads, etc.)
+├── artifacts/        # Runtime outputs (ignored by Git)
+│   ├── analysis/
+│   ├── benchmarks/
+│   └── tmp/
+└── reports/          # Curated, versioned deliverables
+    └── analysis/
 ```
 
 ### 2. Naming Conventions
@@ -1110,8 +969,8 @@ server_2024-01-15_10-30.pcap
 
 Remove temporary files:
 ```bash
-# Clean old statistics
-find analysis/ -name "*.txt" -mtime +30 -delete
+# Clean old statistics stored under artifacts
+find artifacts/analysis -name "*.txt" -mtime +30 -delete
 ```
 
 ### 4. Version Control

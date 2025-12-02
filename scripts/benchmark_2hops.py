@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Run capmaster match over all subdirectories under a base directory (default: /Users/ricky/Downloads/2hops),
+Run capmaster match over all subdirectories under a base directory (default: data/2hops),
 collect summary statistics, and store both raw outputs and an aggregated CSV.
 
 Usage:
   python scripts/benchmark_2hops.py [BASE_DIR] [--tag AFTER]
 
-Outputs:
-  - benchmarks/2hops_<tag>/<case>.out.txt  (raw stdout of capmaster)
-  - benchmarks/2hops_<tag>/summary.csv     (aggregated summary)
+Outputs (written under artifacts/benchmarks/):
+  - artifacts/benchmarks/2hops_<tag>/<case>.out.txt  (raw stdout of capmaster)
+  - artifacts/benchmarks/2hops_<tag>/summary.csv     (aggregated summary)
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-BASE_DEFAULT = "/Users/ricky/Downloads/2hops"
+BASE_DEFAULT = "data/2hops"
 TAG_DEFAULT = "after"
 
 RE_INT = re.compile(r"^\s*Total connections \(file 1\):\s*(\d+)")

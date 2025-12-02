@@ -111,7 +111,7 @@ def main():
     }
     
     # Find test cases
-    test_cases_dir = Path("/Users/ricky/Downloads/2hops")
+    test_cases_dir = Path("data/2hops")
     if not test_cases_dir.exists():
         print(f"Error: Test cases directory not found: {test_cases_dir}")
         return 1

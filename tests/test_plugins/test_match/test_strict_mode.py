@@ -46,9 +46,9 @@ def test_allow_no_input_flag():
     import click
     
     # Test with allow_no_input=True
-    with pytest.raises(click.exceptions.Exit) as exc:
+    with pytest.raises(SystemExit) as exc:
         InputManager.validate_file_count([], min_files=1, allow_no_input=True)
-    assert exc.value.exit_code == 0
+    assert exc.value.code == 0
     
     # Test with allow_no_input=False
     with pytest.raises(click.BadParameter):

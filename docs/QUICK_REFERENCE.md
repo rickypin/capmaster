@@ -450,7 +450,6 @@ capmaster match \
 - **README**: Installation and quick start
 - **USER_GUIDE**: Detailed usage guide with advanced features
 - **CHANGELOG**: Version history
-- **PERFORMANCE_REPORT**: Benchmark results
 - **MATCH_LOGIC_COMPLETE**: Detailed matching algorithm documentation
 
 ---
