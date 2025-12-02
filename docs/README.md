@@ -60,12 +60,12 @@ Welcome to the CapMaster documentation! This directory contains comprehensive gu
 
 1. Start with **[USER_GUIDE.md](USER_GUIDE.md)** for comprehensive introduction
 2. Use **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** for quick command lookup
-3. For supported protocols and modules, prefer inspecting `capmaster/plugins/analyze/modules/` and running CLI `--help`; historical protocol coverage snapshot is available at **[archive/PROTOCOL_COVERAGE_REPORT.md](archive/PROTOCOL_COVERAGE_REPORT.md)**.
+3. For supported protocols and modules, inspect `capmaster/plugins/analyze/modules/` and run `capmaster analyze --help`
 
 ### Advanced Users
 
 1. Read **[MATCH_LOGIC_COMPLETE.md](MATCH_LOGIC_COMPLETE.md)** to understand matching algorithm
-2. Review **[PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md)** for optimization tips
+2. Check runtime behavior from code (`capmaster/core/`, `capmaster/plugins/`) and tests for performance characteristics
 3. Explore **[COMPARATIVE_ANALYSIS_GUIDE.md](COMPARATIVE_ANALYSIS_GUIDE.md)** for advanced analysis
 
 ### Developers
@@ -96,8 +96,8 @@ docs/
 - **Installation**: USER_GUIDE.md → Getting Started
 - **Command Usage**: QUICK_REFERENCE.md or USER_GUIDE.md
 - **Matching Algorithm**: MATCH_LOGIC_COMPLETE.md
-- **Performance**: runtime behavior from code (`capmaster/core/`, `capmaster/plugins/`) and tests; historical benchmarks in **[archive/PERFORMANCE_REPORT.md](archive/PERFORMANCE_REPORT.md)**
-- **Protocols**: current modules under `capmaster/plugins/analyze/modules/`; historical coverage snapshot in **[archive/PROTOCOL_COVERAGE_REPORT.md](archive/PROTOCOL_COVERAGE_REPORT.md)**
+- **Performance**: runtime behavior from code (`capmaster/core/`, `capmaster/plugins/`) and tests
+- **Protocols**: current modules under `capmaster/plugins/analyze/modules/`
 - **Development**: AI_PLUGIN_EXTENSION_GUIDE.md
 - **History**: git history (git log)
 
@@ -106,19 +106,9 @@ docs/
 - **First-time user**: USER_GUIDE.md
 - **Quick command lookup**: QUICK_REFERENCE.md
 - **Understanding match results**: MATCH_LOGIC_COMPLETE.md
-- **Optimizing performance**: PERFORMANCE_REPORT.md
+- **Optimizing performance**: Check code and tests for runtime behavior
 - **Creating plugins**: AI_PLUGIN_EXTENSION_GUIDE.md
 - **Troubleshooting**: USER_GUIDE.md → Troubleshooting
-
-## 📝 Documentation Maintenance
-
-This documentation was reorganized on 2025-11-13 to:
-
-- Remove obsolete development documents
-- Consolidate feature documentation into core guides
-- Improve navigation and discoverability
-
-For the complete list of changes, see the git history.
 
 ## 🆘 Getting Help
 
