@@ -353,12 +353,12 @@ class TestMatchPlugin:
         """Return path to test case directory."""
         candidates = [
             Path("data/cases/TC-001-1-20160407"),
-            Path("data/cases_02/TC-001-1-20160407"),
+            Path("data/cases/TC-001-1-20160407"),
         ]
         for test_dir in candidates:
             if test_dir.exists():
                 return test_dir
-        pytest.skip("Test case directory not found under data/cases or data/cases_02")
+        pytest.skip("Test case directory not found under data/cases or data/cases")
 
     def test_plugin_name(self, plugin: MatchPlugin):
         """Test that plugin has correct name."""

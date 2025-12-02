@@ -948,7 +948,7 @@ capmaster -vv analyze -i capture.pcap 2> debug.log
 project/
 ├── raw/              # Original captures
 ├── filtered/         # Filtered captures
-├── data/             # Symlinks to large datasets (2hops, cases, downloads, etc.)
+├── data/             # Symlinks to large datasets (2hops, cases, sample_captures, etc.)
 ├── artifacts/        # Runtime outputs (ignored by Git)
 │   ├── analysis/
 │   ├── benchmarks/

@@ -322,7 +322,7 @@ capmaster -vv match -i captures/
 - `resources/` – Versioned assets such as `services.txt` (pass via
   `--service-list resources/services.txt`) and pipeline templates like
   `pipeline_match_test.yaml`.
-- `data/` – Workspace-local datasets (symlinks to `2hops`, `cases`, `downloads`,
+- `data/` – Workspace-local datasets (symlinks to `2hops`, `cases`, `sample_captures`,
   etc.). These entries are gitignored; create or update them per your machine.
 - `scripts/` – Automation helpers and manual experiments. Subdirectories include
   `scripts/debug/` and `scripts/tests/` for relocated tooling.

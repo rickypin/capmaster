@@ -22,12 +22,12 @@ class TestAnalyzeIntegration:
         """Return path to test PCAP file."""
         candidates = [
             Path("data/cases/V-001/VOIP.pcap"),
-            Path("data/cases_02/V-001/VOIP.pcap"),
+            Path("data/cases/V-001/VOIP.pcap"),
         ]
         for pcap_path in candidates:
             if pcap_path.exists():
                 return pcap_path
-        pytest.skip("Test PCAP file not found under data/cases or data/cases_02")
+        pytest.skip("Test PCAP file not found under data/cases or data/cases")
 
     def test_plugin_name(self, plugin: AnalyzePlugin):
         """Test that plugin has correct name."""

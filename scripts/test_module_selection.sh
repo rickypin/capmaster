@@ -16,13 +16,13 @@ NC='\033[0m' # No Color
 
 # Test PCAP file
 PRIMARY_PCAP="data/cases/V-001/VOIP.pcap"
-FALLBACK_PCAP="data/cases_02/V-001/VOIP.pcap"
+FALLBACK_PCAP="data/cases/V-001/VOIP.pcap"
 if [ -f "$PRIMARY_PCAP" ]; then
     TEST_PCAP="$PRIMARY_PCAP"
 elif [ -f "$FALLBACK_PCAP" ]; then
     TEST_PCAP="$FALLBACK_PCAP"
 else
-    echo -e "${RED}✗ Test PCAP file not found under data/cases or data/cases_02${NC}"
+    echo -e "${RED}✗ Test PCAP file not found under data/cases or data/cases${NC}"
     exit 1
 fi
 

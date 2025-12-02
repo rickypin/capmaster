@@ -10,7 +10,7 @@ suites:
           - capmaster
           - analyze
           - --file1
-          - data/cases_02/TC-032-8-20240603-O/TC-032-8-20240603-O.pcap
+          - data/cases/TC-032-8-20240603-O/TC-032-8-20240603-O.pcap
           - -o
           - artifacts/tmp/benchmarks/analyze_single
         runs: 1
@@ -23,7 +23,7 @@ suites:
           - capmaster
           - analyze
           - -i
-          - data/cases_02/TC-034-9-20230222-O-2
+          - data/cases/TC-034-9-20230222-O-2
           - -o
           - artifacts/tmp/benchmarks/analyze_parallel
           - -w
@@ -134,7 +134,7 @@ suites:
           - capmaster
           - preprocess
           - -i
-          - data/cases_02/TC-034-5-20211105
+          - data/cases/TC-034-5-20211105
           - -o
           - artifacts/tmp/benchmarks/preprocess_steps
           - --step
@@ -151,7 +151,7 @@ suites:
           - capmaster
           - preprocess
           - -i
-          - data/cases_02/TC-032-8-20240603-O
+          - data/cases/TC-032-8-20240603-O
           - -o
           - artifacts/tmp/benchmarks/preprocess_configured
           - --config
