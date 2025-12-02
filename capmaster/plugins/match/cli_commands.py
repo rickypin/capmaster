@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import click
+from click.core import ParameterSource
 
 from capmaster.utils.cli_options import unified_input_options, validate_database_params
 
@@ -365,6 +366,57 @@ def register_comparative_analysis_command(plugin: Any, cli_group: click.Group) -
         type=click.Path(path_type=Path),
         help="Output file for comparative analysis report (default: stdout)",
     )
+    @click.option(
+        "--packet-diff",
+        is_flag=True,
+        default=False,
+        help="Run packet-level diff identical to `capmaster compare`.",
+    )
+    @click.option(
+        "--threshold",
+        type=float,
+        default=0.60,
+        help="Packet diff mode: minimum normalized score threshold for matches (0.0-1.0, default: 0.60).",
+    )
+    @click.option(
+        "--bucket",
+        type=click.Choice(["auto", "server", "port", "none"], case_sensitive=False),
+        default="auto",
+        help="Packet diff mode: bucketing strategy for matching.",
+    )
+    @click.option(
+        "--show-flow-hash",
+        is_flag=True,
+        default=False,
+        help="Packet diff mode: calculate and display flow hash for each TCP connection.",
+    )
+    @click.option(
+        "--matched-only",
+        is_flag=True,
+        default=False,
+        help="Packet diff mode: only compare packets that exist in both files with matching IPID.",
+    )
+    @click.option(
+        "--db-connection",
+        type=str,
+        help='Packet diff mode: database connection string (e.g., "postgresql://user:pass@host:port/db").',
+    )
+    @click.option(
+        "--kase-id",
+        type=int,
+        help="Packet diff mode: case ID for database table name (requires --db-connection).",
+    )
+    @click.option(
+        "--match-mode",
+        type=click.Choice(["one-to-one", "one-to-many"], case_sensitive=False),
+        default="one-to-one",
+        help="Packet diff mode: matching mode (one-to-one or one-to-many).",
+    )
+    @click.option(
+        "--match-file",
+        type=click.Path(exists=True, path_type=Path),
+        help="Packet diff mode: reuse matches saved from `capmaster match --match-json`.",
+    )
     @click.pass_context
     def comparative_analysis_command(
         ctx: click.Context,
@@ -383,12 +435,22 @@ def register_comparative_analysis_command(plugin: Any, cli_group: click.Group) -
         top_n: int | None,
         topology: Path | None,
         output_file: Path | None,
+        packet_diff: bool,
+        threshold: float,
+        bucket: str,
+        show_flow_hash: bool,
+        matched_only: bool,
+        db_connection: str | None,
+        kase_id: int | None,
+        match_mode: str,
+        match_file: Path | None,
     ) -> None:
         """
         Perform comparative analysis between two PCAP files.
 
         This command performs comparative analysis to identify differences
-        and quality metrics between two capture points.
+        and quality metrics between two capture points. Use --packet-diff to
+        run the packet-level comparison that mirrors `capmaster compare`.
 
         \b
         Examples:
@@ -415,6 +477,10 @@ def register_comparative_analysis_command(plugin: Any, cli_group: click.Group) -
           --matched-connections: Analyze network quality metrics for each matched connection pair
             Requires: matched connections file from 'capmaster match' command
 
+          --packet-diff: Perform packet-level comparison identical to 'capmaster compare'
+            Supports: --threshold, --bucket, --show-flow-hash, --matched-only,
+                      --db-connection/--kase-id, --match-mode, --match-file
+
         \b
         Output:
           Comparative analysis report showing differences and metrics
@@ -423,9 +489,13 @@ def register_comparative_analysis_command(plugin: Any, cli_group: click.Group) -
         # Dual-file input validation is handled by @dual_file_input_options callback.
 
         # Validate analysis type parameters
-        if not service and not matched_connections:
+        if packet_diff and (service or matched_connections):
+            ctx.fail("--packet-diff cannot be combined with --service or --matched-connections")
+
+        if not packet_diff and not service and not matched_connections:
             ctx.fail(
-                "Please specify an analysis type: --service (requires --topology) or --matched-connections"
+                "Please specify an analysis type: --service (requires --topology), "
+                "--matched-connections, or --packet-diff"
             )
 
         if service and not topology:
@@ -434,9 +504,43 @@ def register_comparative_analysis_command(plugin: Any, cli_group: click.Group) -
         if top_n is not None and not matched_connections:
             ctx.fail("--top-n can only be used with --matched-connections")
 
+        def _used(param_name: str) -> bool:
+            source = ctx.get_parameter_source(param_name)
+            return source not in (None, ParameterSource.DEFAULT)
+
+        packet_diff_only_params = [
+            "threshold",
+            "bucket",
+            "show_flow_hash",
+            "matched_only",
+            "db_connection",
+            "kase_id",
+            "match_mode",
+            "match_file",
+        ]
+        if not packet_diff:
+            for param_name in packet_diff_only_params:
+                if _used(param_name):
+                    option = param_name.replace("_", "-")
+                    ctx.fail(f"--{option} can only be used with --packet-diff")
+
+        if packet_diff:
+            validate_database_params(
+                ctx,
+                db_connection,
+                kase_id,
+                required_flag="show-flow-hash",
+                required_flag_value=show_flow_hash,
+            )
+        else:
+            if db_connection or kase_id:
+                ctx.fail("--db-connection/--kase-id can only be used with --packet-diff")
+
         # Determine analysis type
         analysis_type = None
-        if service and matched_connections:
+        if packet_diff:
+            analysis_type = "packet"
+        elif service and matched_connections:
             analysis_type = "both"
         elif service:
             analysis_type = "service"
@@ -459,5 +563,13 @@ def register_comparative_analysis_command(plugin: Any, cli_group: click.Group) -
             matched_connections_file=matched_connections,
             top_n=top_n,
             output_file=output_file,
+            score_threshold=threshold,
+            bucket_strategy=bucket,
+            show_flow_hash=show_flow_hash,
+            matched_only=matched_only,
+            db_connection=db_connection,
+            kase_id=kase_id,
+            match_mode=match_mode,
+            match_file=match_file,
         )
         ctx.exit(exit_code)

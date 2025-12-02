@@ -355,6 +355,8 @@ Match #2 (Score: 0.82)
 ## Compare Command
 
 The `compare` command performs detailed packet-level comparison of matched TCP connections between two PCAP files.
+> **Deprecation Notice**: `capmaster comparative-analysis --packet-diff` now提供完全一致的逐包对比输出，
+> 并将在稳定后取代 `capmaster compare`。可以继续使用 compare 作为回退入口，但建议尽快迁移。
 
 ### Use Cases
 
@@ -377,6 +379,9 @@ capmaster compare -i /path/to/captures/ -o comparison.txt
 
 # Show flow hash for each connection
 capmaster compare -i /path/to/captures/ --show-flow-hash
+
+# Preferred new workflow (equivalent output)
+capmaster comparative-analysis --packet-diff -i /path/to/captures/
 ```
 
 ### Input Requirements
