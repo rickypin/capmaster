@@ -15,8 +15,8 @@ class TestMatchIntegration:
 
     @pytest.fixture
     def test_cases_dir(self) -> Path:
-        """Return the test cases directory."""
-        return Path(__file__).parent.parent.parent.parent / "cases"
+        """Return the repository test cases directory under data/cases."""
+        return Path(__file__).resolve().parent.parent.parent.parent / "data" / "cases"
 
     @pytest.fixture
     def tc_001_1(self, test_cases_dir: Path) -> Path:
