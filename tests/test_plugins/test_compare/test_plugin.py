@@ -175,10 +175,10 @@ class TestComparePlugin:
         output_file = tmp_path / "output.txt"
 
         # Mock the heavy operations to make test fast
-        with patch("capmaster.plugins.compare.plugin.extract_connections_from_pcap") as mock_extract, \
-             patch("capmaster.plugins.match.plugin.MatchPlugin.match_connections_in_memory") as mock_match, \
-             patch("capmaster.plugins.compare.plugin.PacketExtractor") as mock_extractor, \
-             patch("capmaster.plugins.compare.plugin.PacketComparator") as mock_comparator:
+        with patch("capmaster.plugins.match.packet_diff_runner.extract_connections_from_pcap") as mock_extract, \
+             patch("capmaster.plugins.match.packet_diff_runner.run_match_in_memory") as mock_match, \
+             patch("capmaster.plugins.match.packet_diff_runner.PacketExtractor") as mock_extractor, \
+             patch("capmaster.plugins.match.packet_diff_runner.PacketComparator") as mock_comparator:
 
             # Setup mocks to return empty results
             mock_extract.return_value = []
@@ -199,8 +199,8 @@ class TestComparePlugin:
         """Test that execute creates output file when specified."""
         output_file = tmp_path / "comparison_results.txt"
 
-        with patch("capmaster.plugins.compare.plugin.extract_connections_from_pcap") as mock_extract, \
-             patch("capmaster.plugins.match.plugin.MatchPlugin.match_connections_in_memory") as mock_match:
+        with patch("capmaster.plugins.match.packet_diff_runner.extract_connections_from_pcap") as mock_extract, \
+             patch("capmaster.plugins.match.packet_diff_runner.run_match_in_memory") as mock_match:
 
             # Mock to return at least one match so output is generated
             from capmaster.core.connection.matcher import ConnectionMatch
@@ -259,8 +259,8 @@ class TestComparePlugin:
         self, plugin: ComparePlugin, two_pcap_dir: Path, capsys
     ):
         """Test that quiet mode suppresses console output."""
-        with patch("capmaster.plugins.compare.plugin.extract_connections_from_pcap") as mock_extract, \
-             patch("capmaster.plugins.match.plugin.MatchPlugin.match_connections_in_memory") as mock_match:
+        with patch("capmaster.plugins.match.packet_diff_runner.extract_connections_from_pcap") as mock_extract, \
+             patch("capmaster.plugins.match.packet_diff_runner.run_match_in_memory") as mock_match:
 
             mock_extract.return_value = []
             mock_match.return_value = []
@@ -287,8 +287,8 @@ class TestComparePlugin:
 
         input_path = f"{file1},{file2}"
 
-        with patch("capmaster.plugins.compare.plugin.extract_connections_from_pcap") as mock_extract, \
-             patch("capmaster.plugins.match.plugin.MatchPlugin.match_connections_in_memory") as mock_match:
+        with patch("capmaster.plugins.match.packet_diff_runner.extract_connections_from_pcap") as mock_extract, \
+             patch("capmaster.plugins.match.packet_diff_runner.run_match_in_memory") as mock_match:
 
             mock_extract.return_value = []
             mock_match.return_value = []
@@ -312,8 +312,8 @@ class TestComparePlugin:
             "192.168.1.100", "10.0.0.1", 54321, 80
         ).build(test_dir / "a_file.pcap")
 
-        with patch("capmaster.plugins.compare.plugin.extract_connections_from_pcap") as mock_extract, \
-             patch("capmaster.plugins.match.plugin.MatchPlugin.match_connections_in_memory") as mock_match:
+        with patch("capmaster.plugins.match.packet_diff_runner.extract_connections_from_pcap") as mock_extract, \
+             patch("capmaster.plugins.match.packet_diff_runner.run_match_in_memory") as mock_match:
 
             mock_extract.return_value = []
             mock_match.return_value = []
@@ -328,8 +328,8 @@ class TestComparePlugin:
         self, plugin: ComparePlugin, two_pcap_dir: Path
     ):
         """Test execute with match_mode=one-to-many parameter."""
-        with patch("capmaster.plugins.compare.plugin.extract_connections_from_pcap") as mock_extract, \
-             patch("capmaster.plugins.match.plugin.MatchPlugin.match_connections_in_memory") as mock_match:
+        with patch("capmaster.plugins.match.packet_diff_runner.extract_connections_from_pcap") as mock_extract, \
+             patch("capmaster.plugins.match.packet_diff_runner.run_match_in_memory") as mock_match:
 
             mock_extract.return_value = []
             mock_match.return_value = []
@@ -368,9 +368,9 @@ class TestComparePlugin:
         self, plugin: ComparePlugin, two_pcap_dir: Path
     ):
         """Test that batch packet extraction is used for performance optimization."""
-        with patch("capmaster.plugins.compare.plugin.extract_connections_from_pcap") as mock_extract, \
-             patch("capmaster.plugins.match.plugin.MatchPlugin.match_connections_in_memory") as mock_match, \
-             patch("capmaster.plugins.compare.plugin.PacketExtractor") as mock_extractor_class:
+        with patch("capmaster.plugins.match.packet_diff_runner.extract_connections_from_pcap") as mock_extract, \
+             patch("capmaster.plugins.match.packet_diff_runner.run_match_in_memory") as mock_match, \
+             patch("capmaster.plugins.match.packet_diff_runner.PacketExtractor") as mock_extractor_class:
 
             # Create mock connections
             from capmaster.core.connection.models import TcpConnection

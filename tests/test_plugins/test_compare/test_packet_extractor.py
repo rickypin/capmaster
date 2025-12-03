@@ -8,7 +8,7 @@ from collections import namedtuple
 
 import pytest
 
-from capmaster.plugins.compare.packet_extractor import PacketExtractor, TcpPacket
+from capmaster.plugins.compare_common.packet_extractor import PacketExtractor, TcpPacket
 from capmaster.core.tshark_wrapper import TsharkWrapper
 from capmaster.utils.errors import TsharkExecutionError
 
@@ -599,4 +599,3 @@ class TestPacketExtractor:
         assert 0 in result
         assert 1 in result
         assert 2 in result
-

@@ -265,12 +265,12 @@ class TestVoIPExtendedModulesIntegration:
     @pytest.fixture
     def voip_pcap(self):
         """Path to VoIP test PCAP file."""
-        primary = Path("data/cases_02/V-001/VOIP.pcap")
+        primary = Path("data/cases/V-001/VOIP.pcap")
         if primary.exists():
             return primary
         fallback = Path("data/cases/V-001/VOIP.pcap")
         if not fallback.exists():
-            pytest.skip("VoIP PCAP not found under data/cases_02 or data/cases")
+            pytest.skip("VoIP PCAP not found under data/cases or data/cases")
         return fallback
 
     def test_mgcp_module_with_real_pcap(self, voip_pcap):

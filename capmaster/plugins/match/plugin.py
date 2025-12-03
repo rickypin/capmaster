@@ -16,7 +16,10 @@ from capmaster.plugins.match.cli_commands import (
     register_comparative_analysis_command,
     register_match_command,
 )
-from capmaster.plugins.match.comparative_runner import run_comparative_analysis
+from capmaster.plugins.match.comparative_runner import (
+    execute_packet_diff,
+    run_comparative_analysis,
+)
 from capmaster.plugins.match.runner import (
     match_connections_in_memory as run_match_in_memory,
     run_match_pipeline,
@@ -185,6 +188,14 @@ class MatchPlugin(PluginBase):
         matched_connections_file: Path | None = None,
         top_n: int | None = None,
         output_file: Path | None = None,
+        score_threshold: float = 0.60,
+        bucket_strategy: str = "auto",
+        show_flow_hash: bool = False,
+        matched_only: bool = False,
+        db_connection: str | None = None,
+        kase_id: int | None = None,
+        match_mode: str = "one-to-one",
+        match_file: Path | None = None,
     ) -> int:
         """
         Execute comparative analysis between two PCAP files.
@@ -202,10 +213,41 @@ class MatchPlugin(PluginBase):
             matched_connections_file: Path to matched connections file
             top_n: Number of top worst connections to show
             output_file: Path to output file
+            score_threshold: Matching score threshold (packet diff mode)
+            bucket_strategy: Matching bucket strategy (packet diff mode)
+            show_flow_hash: Whether to calculate flow hash (packet diff mode)
+            matched_only: Restrict to matched packets only (packet diff mode)
+            db_connection: Database connection string (packet diff mode)
+            kase_id: Case ID for database output (packet diff mode)
+            match_mode: Matching mode (packet diff mode)
+            match_file: Precomputed match file (packet diff mode)
 
         Returns:
             Exit code (0 for success)
         """
+        if analysis_type == "packet":
+            return execute_packet_diff(
+                input_path=input_path,
+                file1=file1,
+                file2=file2,
+                file3=file3,
+                file4=file4,
+                file5=file5,
+                file6=file6,
+                allow_no_input=allow_no_input,
+                strict=strict,
+                quiet=quiet,
+                output_file=output_file,
+                score_threshold=score_threshold,
+                bucket_strategy=bucket_strategy,
+                show_flow_hash=show_flow_hash,
+                matched_only=matched_only,
+                db_connection=db_connection,
+                kase_id=kase_id,
+                match_mode=match_mode,
+                match_file=match_file,
+            )
+
         # Resolve inputs
         file_args = {
             1: file1, 2: file2, 3: file3, 4: file4, 5: file5, 6: file6
@@ -254,6 +296,7 @@ class MatchPlugin(PluginBase):
         if command == "comparative-analysis":
             # 2. Handle special logic for analysis_type
             service = args.pop("service", False)
+            packet_diff = args.pop("packet_diff", False)
             matched = args.get("matched_connections_file") or args.get(
                 "matched_connections"
             )
@@ -262,7 +305,9 @@ class MatchPlugin(PluginBase):
             if "matched_connections" in args:
                 args["matched_connections_file"] = args.pop("matched_connections")
 
-            if service and matched:
+            if packet_diff:
+                args["analysis_type"] = "packet"
+            elif service and matched:
                 args["analysis_type"] = "both"
             elif service:
                 args["analysis_type"] = "service"
@@ -274,4 +319,3 @@ class MatchPlugin(PluginBase):
                 args["topology_file"] = args.pop("topology")
 
         return args
-

@@ -11,8 +11,13 @@ import click
 
 from capmaster.plugins import register_plugin
 from capmaster.plugins.base import PluginBase
-from capmaster.plugins.compare.packet_comparator import ComparisonResult, DiffType, PacketComparator, PacketDiff
-from capmaster.plugins.compare.packet_extractor import PacketExtractor
+from capmaster.plugins.compare_common.packet_comparator import (
+    ComparisonResult,
+    DiffType,
+    PacketComparator,
+    PacketDiff,
+)
+from capmaster.plugins.compare_common.packet_extractor import PacketExtractor
 from capmaster.plugins.match.quality_analyzer import ConnectionPair, parse_matched_connections
 from capmaster.core.input_manager import InputManager
 from capmaster.utils.cli_options import unified_input_options
@@ -457,4 +462,3 @@ class StreamDiffPlugin(PluginBase):
         summary_lines.append("```")
 
         return "\n".join(header_lines + [""] + summary_lines)
-

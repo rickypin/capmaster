@@ -1,6 +1,6 @@
 # CapMaster preprocess report
 
-Generated at: 2025-11-28T03:15:13.251163+00:00
+Generated at: 2025-12-02T08:14:42.202905+00:00
 Output directory: tests/e2e_output/preprocess_normal
 Steps executed: time-align+dedup -> oneway
 

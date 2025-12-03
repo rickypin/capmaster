@@ -10,12 +10,12 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from capmaster.plugins.compare.flow_hash import (
+from .flow_hash import (
     calculate_connection_flow_hash,
     format_flow_hash,
 )
-from capmaster.plugins.compare.packet_comparator import DiffType
-from capmaster.plugins.compare.utils import (
+from .packet_comparator import DiffType
+from .utils import (
     to_nanoseconds,
     parse_tcp_flags,
     format_tcp_flags_change,
@@ -302,4 +302,3 @@ def build_report_text(
     lines.append("```")
 
     return "\n".join(lines)
-

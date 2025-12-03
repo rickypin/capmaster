@@ -6,7 +6,7 @@ This example demonstrates how to use the flow hash feature to identify
 and group TCP connections bidirectionally.
 """
 
-from capmaster.plugins.compare.flow_hash import (
+from capmaster.plugins.compare_common.flow_hash import (
     FlowSide,
     calculate_connection_flow_hash,
     calculate_flow_hash,
@@ -210,4 +210,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

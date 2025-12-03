@@ -2,9 +2,13 @@
 
 ## 概述
 
-对比分析功能用于对比分析两个 PCAP 文件之间的差异和网络质量指标。支持两种分析模式：
+对比分析功能用于对比分析两个 PCAP 文件之间的差异和网络质量指标。支持三种分析模式：
 - **服务级别对比** (`--service`): 按服务聚合统计网络质量
 - **连接对对比** (`--matched-connections`): 为每一对匹配的连接统计网络质量
+- **逐包差异对比** (`--packet-diff`): 完整复刻 `capmaster compare` 的逐包差异输出（推荐在新流程中替代 compare 命令）
+
+> **迁移提示**：`capmaster compare` 仍可作为回退路径暂时保留，但所有新脚本应切换到
+> `capmaster comparative-analysis --packet-diff`，两者的 CLI 行为和输出 100% 对齐。
 
 > **Scope（范围）**：说明对比分析子命令的外部行为、主要参数及输出结构。
 > **Contract（契约）**：约定输入/输出格式和关键指标含义（丢包率、重传率等），不保证在此维护完整实现细节。
@@ -25,6 +29,10 @@
   - 为每一对匹配的连接单独统计质量指标
   - 支持从 `capmaster match` 命令生成的匹配连接文件
   - 显示每对连接的详细质量对比
+- **逐包差异对比** (`--packet-diff`):
+  - 新增模式，直接调用 `compare_common` 逐包比对能力
+  - 支持 `--threshold`、`--bucket`、`--show-flow-hash`、`--matched-only`、`--match-file`
+  - 可配合 `--db-connection`/`--kase-id` 输出数据库记录，完全替代 `capmaster compare`
 - **组合分析**: 可同时使用 `--service` 和 `--matched-connections` 生成综合报告
 - **智能输出**: 只显示有实际流量的 PCAP 文件的统计信息
 - **灵活输入**: 支持目录、文件列表或显式指定文件
@@ -80,6 +88,31 @@ capmaster comparative-analysis \
     --topology topology.txt \
     --matched-connections matched_connections.txt \
     -o combined_report.txt
+
+### 逐包差异对比（Packet Diff）
+
+```bash
+# 与 capmaster compare 行为完全一致
+capmaster comparative-analysis \
+    --packet-diff \
+    -i /path/to/pcaps/ \
+    --threshold 0.6 \
+    --bucket auto \
+    --show-flow-hash \
+    --matched-only \
+    --match-file matches.json \
+    -o packet_diff.txt
+
+# 写入数据库示例
+capmaster comparative-analysis \
+    --packet-diff \
+    -i /path/to/pcaps/ \
+    --show-flow-hash \
+    --db-connection "postgresql://user:pass@host:port/db" \
+    --kase-id 133
+
+# 如需回退，可暂时继续使用 capmaster compare（未来版本将移除）
+```
 ```
 
 ### 保存结果到文件
@@ -102,6 +135,13 @@ capmaster comparative-analysis \
 - `--top-n`: 显示性能最差的 Top N 连接对（仅与 `--matched-connections` 一起使用）
 - `--topology`: 拓扑文件路径，包含服务信息（`--service` 分析时必需）
 - `-o, --output`: 输出文件路径（可选，默认输出到标准输出）
+- `--packet-diff`: 逐包差异模式（推荐替代 `capmaster compare`）
+- `--threshold`: Packet Diff 模式下的匹配阈值（0.0-1.0）
+- `--bucket`: Packet Diff 模式下的分桶策略（auto/server/port/none）
+- `--show-flow-hash`: Packet Diff 模式下计算并输出 Flow Hash（写入数据库时必需）
+- `--matched-only`: Packet Diff 模式下仅比较 IPID 都存在的报文
+- `--match-file`: Packet Diff 模式下复用 `capmaster match --match-json` 的结果
+- `--db-connection` 与 `--kase-id`: Packet Diff 模式下写入数据库时需要同时提供
 
 ## 生成拓扑文件
 

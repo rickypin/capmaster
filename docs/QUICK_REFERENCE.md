@@ -388,11 +388,14 @@ Ensure consistent results between match and compare commands:
 # Step 1: Match and save JSON
 capmaster match -i /path/to/pcaps/ --match-json matches.json
 
-# Step 2: Compare using saved matches
+# Step 2: Packet diff via comparative-analysis (preferred)
+capmaster comparative-analysis --packet-diff -i /path/to/pcaps/ --match-file matches.json
+
+# Legacy fallback (will be removed in a future release)
 capmaster compare -i /path/to/pcaps/ --match-file matches.json
 
 # Benefits:
-# - Guaranteed consistency between match and compare
+# - Guaranteed consistency between match and packet diff
 # - Reusable match results
 # - Faster compare (skips matching step)
 ```
@@ -506,4 +509,3 @@ capmaster match -i large_capture/ \
 
 **Quick Reference Card v1.0.0**
 *For detailed information, see USER_GUIDE.md*
-

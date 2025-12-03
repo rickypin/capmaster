@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from capmaster.plugins.compare.packet_comparator import (
+from capmaster.plugins.compare_common.packet_comparator import (
     ComparisonResult,
     DiffType,
     PacketComparator,
@@ -320,4 +320,3 @@ class TestPacketComparator:
         assert len(result.differences) == 1
         assert result.differences[0].frame_a == 10
         assert result.differences[0].frame_b == 20
-

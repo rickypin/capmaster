@@ -69,7 +69,7 @@ data_capmaster = collect_data_files("capmaster", includes=["resources/*"])
 data_root_resources = collect_data_files(
     "resources",
     includes=["*.txt", "*.yaml", "*.yml"],
-    excludes=["downloads/*", "cases/*"]
+    excludes=["sample_captures/*", "cases/*"]
 )
 ```
 在 `EXE` 段落中合并：

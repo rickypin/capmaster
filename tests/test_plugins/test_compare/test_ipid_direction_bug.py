@@ -22,8 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from capmaster.plugins.compare.packet_comparator import PacketComparator, DiffType
-from capmaster.plugins.compare.packet_extractor import PacketExtractor, TcpPacket
+from capmaster.plugins.compare_common.packet_comparator import DiffType, PacketComparator
+from capmaster.plugins.compare_common.packet_extractor import PacketExtractor, TcpPacket
 
 
 @pytest.mark.integration
@@ -276,4 +276,3 @@ class TestIPIDDirectionBug:
         # - ('S->C', 0x1234): A[nothing] vs B[pkt2] -> report IPID only in B
 
         pytest.skip("This test demonstrates the proposed fix - implementation pending")
-

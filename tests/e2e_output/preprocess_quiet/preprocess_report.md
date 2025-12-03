@@ -1,6 +1,6 @@
 # CapMaster preprocess report
 
-Generated at: 2025-11-28T03:15:14.873733+00:00
+Generated at: 2025-12-02T08:14:43.904387+00:00
 Output directory: tests/e2e_output/preprocess_quiet
 Steps executed: time-align+dedup -> oneway
 

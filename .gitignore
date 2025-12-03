@@ -89,7 +89,7 @@ __pycache__/
 build/
 develop-eggs/
 dist/
-downloads/
+sample_captures/
 eggs/
 .eggs/
 lib/

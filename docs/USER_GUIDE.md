@@ -355,6 +355,8 @@ Match #2 (Score: 0.82)
 ## Compare Command
 
 The `compare` command performs detailed packet-level comparison of matched TCP connections between two PCAP files.
+> **Deprecation Notice**: `capmaster comparative-analysis --packet-diff` now提供完全一致的逐包对比输出，
+> 并将在稳定后取代 `capmaster compare`。可以继续使用 compare 作为回退入口，但建议尽快迁移。
 
 ### Use Cases
 
@@ -377,6 +379,9 @@ capmaster compare -i /path/to/captures/ -o comparison.txt
 
 # Show flow hash for each connection
 capmaster compare -i /path/to/captures/ --show-flow-hash
+
+# Preferred new workflow (equivalent output)
+capmaster comparative-analysis --packet-diff -i /path/to/captures/
 ```
 
 ### Input Requirements
@@ -424,7 +429,7 @@ capmaster compare -i captures/ --show-flow-hash
 - Group packets belonging to the same flow
 - Correlate connections in network analysis
 
-For implementation details of the flow hash algorithm (bidirectional, 5-tuple based, normalized), see the code and tests around `capmaster.plugins.compare.flow_hash` and `tests/test_flow_hash.py`.
+For implementation details of the flow hash algorithm (bidirectional, 5-tuple based, normalized), see the code and tests around `capmaster.plugins.compare_common.flow_hash` and `tests/test_flow_hash.py`.
 
 ### Score Threshold
 
@@ -948,7 +953,7 @@ capmaster -vv analyze -i capture.pcap 2> debug.log
 project/
 ├── raw/              # Original captures
 ├── filtered/         # Filtered captures
-├── data/             # Symlinks to large datasets (2hops, cases, downloads, etc.)
+├── data/             # Symlinks to large datasets (2hops, cases, sample_captures, etc.)
 ├── artifacts/        # Runtime outputs (ignored by Git)
 │   ├── analysis/
 │   ├── benchmarks/
@@ -1010,4 +1015,3 @@ Document your analysis:
 - 如需以编程方式集成 CapMaster，当前推荐通过 CLI 封装（例如 Python 的 `subprocess.run(["capmaster", ...])`），或直接阅读 `capmaster/` 源码和对应 tests 了解调用方式（目前仓库中不再维护单独的 API.md 文档）。
 - Check the [CHANGELOG](../CHANGELOG.md) for version history
 - Report issues on [GitHub](https://github.com/yourusername/capmaster/issues)
-
